@@ -18,7 +18,7 @@ var SupportedProviders = []string{
 }
 
 func providerPreset(id string, options Options) (preset, error) {
-	value := preset{id: id, tokenAuth: TokenAuthBody, pkce: true, mapper: defaultMapper}
+	value := preset{id: id, tokenAuth: TokenAuthBody, pkce: true, mapper: providerMapper(id)}
 	switch id {
 	case "apple":
 		value.authorizationURL = "https://appleid.apple.com/auth/authorize"
@@ -278,13 +278,22 @@ func providerPreset(id string, options Options) (preset, error) {
 		value.tokenAuth = TokenAuthBasic
 		value.pkce = false
 	default:
-		if options.AuthorizationURL == "" || options.TokenURL == "" || options.UserInfoURL == "" {
+		if options.AuthorizationURL == "" || options.TokenURL == "" ||
+			(options.UserInfoURL == "" && !options.oidcDiscovery) {
 			return preset{}, fmt.Errorf("social: unknown provider %q requires explicit authorization, token, and user-info URLs", id)
 		}
 		value.authorizationURL = options.AuthorizationURL
 		value.tokenURL = options.TokenURL
 		value.userInfoURL = options.UserInfoURL
 		value.defaultScopes = nil
+		if options.oidcDiscovery {
+			value.jwksURL = options.JWKSURL
+			value.issuers = []string{options.Issuer}
+			value.oidc = true
+		}
+	}
+	if options.TokenAuth != "" {
+		value.tokenAuth = options.TokenAuth
 	}
 	return value, nil
 }

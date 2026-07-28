@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	betterauth "github.com/eadwinCode/better-auth-go"
 )
 
 type idTokenVerifier struct {
@@ -24,6 +26,7 @@ type idTokenVerifier struct {
 	issuers          []string
 	audience         string
 	maxResponseBytes int64
+	clock            betterauth.Clock
 
 	mu        sync.RWMutex
 	keys      map[string]*rsa.PublicKey
@@ -70,7 +73,7 @@ func (v *idTokenVerifier) Verify(ctx context.Context, raw, expectedNonce string)
 	if err := strictJSON(claimsBytes, &claims); err != nil {
 		return nil, errors.New("social: malformed ID token claims")
 	}
-	now := time.Now().UTC()
+	now := v.clock.Now().UTC()
 	expiry, ok := numericDate(claims["exp"])
 	if !ok || !expiry.After(now.Add(-30*time.Second)) || expiry.After(now.Add(24*time.Hour)) {
 		return nil, errors.New("social: expired or invalid ID token")
@@ -102,7 +105,7 @@ var errUnknownKey = errors.New("social: unknown signing key")
 func (v *idTokenVerifier) key(ctx context.Context, keyID string, force bool) (*rsa.PublicKey, error) {
 	v.mu.RLock()
 	key := v.keys[keyID]
-	fresh := time.Now().Before(v.expiresAt)
+	fresh := v.clock.Now().Before(v.expiresAt)
 	v.mu.RUnlock()
 	if key != nil && fresh && !force {
 		return key, nil
@@ -179,7 +182,7 @@ func (v *idTokenVerifier) refresh(ctx context.Context) error {
 		return errors.New("social: JWKS contains no supported keys")
 	}
 	v.keys = keys
-	v.expiresAt = time.Now().Add(15 * time.Minute)
+	v.expiresAt = v.clock.Now().Add(15 * time.Minute)
 	return nil
 }
 
