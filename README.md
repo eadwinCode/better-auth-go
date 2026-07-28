@@ -109,6 +109,35 @@ mux.Handle("/api/auth/", auth.Handler())
 Set `Config.BasePath` to mount elsewhere. Route paths do not contain an extra Go
 specific version segment.
 
+## Email and password options
+
+The production-sensitive Better Auth v1.6 options are grouped under
+`Config.EmailPassword`:
+
+```go
+autoSignIn := false
+config.EmailPassword = betterauth.EmailPasswordConfig{
+	DisableSignUp:                 false,
+	AutoSignIn:                    &autoSignIn,
+	RequireEmailVerification:      true,
+	RevokeSessionsOnPasswordReset: true,
+}
+```
+
+`AutoSignIn` is optional so its omitted value can preserve Better Auth's
+`true` default. Requiring verification or disabling automatic sign-in produces
+a sessionless signup and enables synthetic duplicate responses that do not
+reveal whether the email already exists. Required verification sends the
+configured mailer's single-use verification message and blocks credential
+sign-in until it is consumed.
+
+Password reset does not sign in the reset browser. Better Auth's compatible
+default preserves existing sessions; set `RevokeSessionsOnPasswordReset` when a
+reset must terminate every device. Passwords default to 8–128 bytes, and reset
+and verification tokens default to a one-hour lifetime. Applications can
+override the existing `MinPasswordBytes`, `MaxPasswordBytes`,
+`PasswordResetTTL`, and `EmailVerificationTTL` fields.
+
 ## Social providers
 
 Construct providers with `social.New` and register them by Better Auth provider

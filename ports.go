@@ -116,7 +116,7 @@ type authStore interface {
 	UpdateSession(context.Context, string, string, Record, time.Time) (Session, error)
 
 	PutOneTimeToken(context.Context, OneTimeToken) error
-	ConsumePasswordReset(context.Context, string, string, Session) (User, Session, error)
+	ConsumePasswordReset(context.Context, string, string, time.Time, bool) (User, error)
 	ConsumeEmailVerification(context.Context, string, time.Time) (User, error)
 
 	PutOAuthState(context.Context, OAuthState) error
@@ -127,10 +127,11 @@ type authStore interface {
 }
 
 type CreateEmailUserParams struct {
-	User         User
-	PasswordHash string
-	Session      Session
-	Event        DomainEvent
+	User          User
+	PasswordHash  string
+	Session       Session
+	CreateSession bool
+	Event         DomainEvent
 }
 
 type ChangePasswordParams struct {

@@ -67,10 +67,32 @@ behavior.
 
 Core user and session responses use Better Auth's camelCase field vocabulary,
 including a nullable `image` field. Public HTTP errors use top-level `code` and
-`message` fields; exact authentication and trusted-origin codes are
-differentially certified. Remaining route-specific error codes are tracked in
-`PROGRESS.md`. ADR 0009 records the accepted wire contract and the deliberately
-deferred enumeration-safe duplicate-sign-up behavior.
+`message` fields; exact authentication, trusted-origin, password-bound, and
+default duplicate-signup codes are differentially certified. Remaining
+route-specific error codes are tracked in `PROGRESS.md`. ADR 0009 records the
+core wire contract, and ADR 0010 records the email/password option and
+enumeration-protection contract.
+
+## Email/password option contract
+
+`Config.EmailPassword` implements the production-critical v1.6.25 behavior for
+`disableSignUp`, `autoSignIn`, `requireEmailVerification`, and
+`revokeSessionsOnPasswordReset`.
+
+- `autoSignIn` defaults to `true`; `rememberMe:false` uses a 24-hour signup
+  session.
+- Required verification and disabled automatic sign-in suppress signup session
+  creation.
+- Required verification sends a hash-at-rest, single-use message and blocks
+  credential sign-in until consumption.
+- Duplicate signup returns the upstream 422 error by default and a synthetic
+  success under either enumeration-protection mode.
+- Reset and verification lifetimes default to one hour.
+- Reset does not create a session and only revokes sessions when configured.
+
+The Go password policy measures bytes to place a deterministic upper bound on
+password-hashing work. Better Auth uses JavaScript UTF-16 string length, so
+non-ASCII boundary cases remain an accepted runtime-specific difference.
 
 ## Adapter map
 

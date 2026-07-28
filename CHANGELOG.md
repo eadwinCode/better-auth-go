@@ -34,6 +34,10 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 - SCIM 2.0 security and construction foundation with a hash-only provider
   schema, bounded bearer/filter parsing, organization authorization ports,
   standard metadata endpoints, and unsafe-method plugin routing.
+- Better Auth v1.6 email/password options for disabled signup, automatic
+  sign-in, required email verification, and password-reset session revocation.
+- Enumeration-safe synthetic duplicate-signup responses when verification is
+  required or automatic sign-in is disabled.
 
 ### Changed
 
@@ -43,5 +47,12 @@ All notable changes are documented here. Releases follow Semantic Versioning.
   and optional `requestId` fields while preserving stable Go error constants.
 - `POST /update-user` now returns Better Auth's `{"status":true}` response;
   updated state remains available through `GET /get-session`.
+- Password bounds now default to Better Auth v1.6's 8-byte minimum and 128-byte
+  maximum, with route-specific public validation codes.
+- Password reset no longer signs in the reset browser and revokes existing
+  sessions only when configured. Reset and verification tokens default to a
+  one-hour lifetime.
+- Missing-user credential sign-in performs password-hash work before returning
+  the generic authentication error.
 
 [Unreleased]: https://github.com/eadwinCode/better-auth-go/commits/main

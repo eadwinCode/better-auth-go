@@ -5,7 +5,14 @@ import "testing"
 func TestHTTPErrorCodesUseBetterAuthWireVocabulary(t *testing.T) {
 	expected := map[ErrorCode]string{
 		CodeBadRequest:         "BAD_REQUEST",
+		CodeValidation:         "VALIDATION_ERROR",
+		CodeInvalidEmail:       "INVALID_EMAIL",
+		CodePasswordTooShort:   "PASSWORD_TOO_SHORT",
+		CodePasswordTooLong:    "PASSWORD_TOO_LONG",
 		CodeInvalidCredentials: "INVALID_EMAIL_OR_PASSWORD",
+		CodeEmailNotVerified:   "EMAIL_NOT_VERIFIED",
+		CodeSignUpDisabled:     "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+		CodeUserAlreadyExists:  "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL",
 		CodeUnauthorized:       "UNAUTHORIZED",
 		CodeForbidden:          "FORBIDDEN",
 		CodeNotFound:           "NOT_FOUND",
