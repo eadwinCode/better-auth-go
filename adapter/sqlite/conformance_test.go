@@ -118,6 +118,10 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	configured, err = betterauth.WrapDatabaseAdapter(configured, legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
 	adaptertest.SeedReleaseBaseline(t, configured)
 
 	current := betterauth.CoreSchema()
@@ -128,6 +132,10 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 		t.Fatalf("idempotent current migration: %v", err)
 	}
 	configured, err = adapter.WithSchema(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured, err = betterauth.WrapDatabaseAdapter(configured, current)
 	if err != nil {
 		t.Fatal(err)
 	}
