@@ -19,6 +19,7 @@ type Server struct {
 	store          authStore
 	trustedOrigins map[string]struct{}
 	allowedReturns map[string]struct{}
+	plugins        pluginRuntime
 	handler        http.Handler
 }
 
@@ -27,11 +28,16 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	plugins, err := newPluginRuntime(normalized.Plugins, normalized.Hooks)
+	if err != nil {
+		return nil, err
+	}
 	server := &Server{
 		cfg:            normalized,
 		store:          newDatabaseStore(normalized.Database),
 		trustedOrigins: origins,
 		allowedReturns: returns,
+		plugins:        plugins,
 	}
 	server.handler = http.HandlerFunc(server.serveHTTP)
 	return server, nil
@@ -40,7 +46,7 @@ func New(cfg Config) (*Server, error) {
 // Handler returns an immutable, concurrency-safe standard library handler.
 func (s *Server) Handler() http.Handler { return s.handler }
 
-func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) serveCoreHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")

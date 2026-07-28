@@ -142,6 +142,56 @@ provider account, but automatic email linking remains blocked until the
 application supplies a trustworthy verification/collection policy through a
 custom profile mapper. This is a deliberate account-takeover defense.
 
+## Server plugins and hooks
+
+`Config.Plugins` provides the Better Auth-style server extension lifecycle:
+plugin initialization and dependencies, schema, exact and parameterized
+endpoints, endpoint and route middleware, before/after hooks, global
+`OnRequest`/`OnResponse`, trusted origins, rate-limit rules, database hooks, and
+background tasks. `Config.Hooks` provides the same global lifecycle for
+application-owned customization without manufacturing a plugin.
+
+```go
+auditPlugin := betterauth.Plugin{
+	ID: "audit",
+	TrustedOrigins: []string{"https://admin.example.com"},
+	Endpoints: []betterauth.PluginEndpoint{{
+		Name: "get-event",
+		Path: "/audit/events/:id",
+		Method: http.MethodGet,
+		Use: []betterauth.RequestHook{betterauth.SessionMiddleware},
+		Handler: func(ctx *betterauth.HookContext) (*betterauth.PluginResponse, error) {
+			return betterauth.JSONResponse(http.StatusOK, map[string]string{
+				"id": ctx.Params["id"],
+			})
+		},
+	}},
+	OnResponse: func(ctx *betterauth.HookContext, response *betterauth.PluginResponse) error {
+		response.Headers.Set("X-Auth-Plugin", ctx.PluginID)
+		return nil
+	},
+}
+config.Plugins = []betterauth.Plugin{auditPlugin}
+```
+
+For state-changing API requests, trusted-origin enforcement runs before plugin
+code. Plugins may contribute exact origins but cannot bypass a failed check or
+remove mandatory no-store/security headers. Plugin descriptors are copied
+during `New`; callbacks must be concurrency-safe and must not retain
+request-scoped `HookContext` values. Plugin cookies can be appended with
+`PluginResponse.SetCookie`, which enforces Secure, HttpOnly, SameSite,
+host-only `__Host-` cookies. Cookie-authenticated mutation endpoints should use
+both `SessionMiddleware` and `CSRFMiddleware`; origin enforcement remains
+mandatory independently.
+The default background runner waits inline; inject `Config.BackgroundTasks`
+when work should be handed to a durable asynchronous queue.
+
+See [ADR 0002](./docs/adr/0002-plugin-kernel.md) and the
+[plugin compatibility checklist](./docs/compatibility/plugin-kernel.md). The
+[feature gap register](./docs/compatibility/missing-features.md) separately
+tracks endpoint-contract deltas and every built-in plugin family so kernel
+support is never reported as feature parity.
+
 ## Database adapters
 
 The `DatabaseAdapter` API maps Better Auth's adapter operations:
@@ -198,11 +248,12 @@ before deploying. Important operational requirements:
 - [Better Auth v1.6 compatibility matrix](./docs/compatibility/better-auth-v1.6.md)
 - [Implementation plan](./IMPLEMENTATION_PLAN.md)
 - [Architecture decision record](./docs/adr/0001-auth-server-architecture.md)
+- [Plugin-kernel decision record](./docs/adr/0002-plugin-kernel.md)
 - [Changelog](./CHANGELOG.md)
 
-Feature-plugin parity beyond the initial server scope—passkeys, two-factor,
-organizations, username, magic links, SSO, SCIM, API keys, and others—will build
-on the schema/route/hook plugin contracts in subsequent compatibility milestones.
+The server plugin kernel is implemented. Individual feature plugins—passkeys,
+two-factor, organizations, username, magic links, SSO, SCIM, API keys, and
+others—remain separate compatibility milestones with their own threat models.
 
 ## License
 

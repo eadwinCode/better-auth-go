@@ -2,6 +2,7 @@ package betterauth
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"path"
@@ -42,6 +43,10 @@ type Config struct {
 	MinPasswordBytes        int
 	MaxPasswordBytes        int
 	TrustProxyHeaders       bool
+	Plugins                 []Plugin
+	Hooks                   ServerHooks
+	BackgroundTasks         BackgroundTaskRunner
+	MaxResponseBytes        int64
 }
 
 type systemClock struct{}
@@ -49,25 +54,44 @@ type systemClock struct{}
 func (systemClock) Now() time.Time { return time.Now().UTC() }
 
 func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}, error) {
+	plugins, err := compilePlugins(cfg.Plugins)
+	if err != nil {
+		return cfg, nil, nil, err
+	}
+	cfg.Plugins = plugins
 	if cfg.Database == nil {
 		return cfg, nil, nil, fmt.Errorf("betterauth: database adapter is required")
 	}
 	if !cfg.Database.Capabilities().Transactions {
 		return cfg, nil, nil, fmt.Errorf("betterauth: enabled core flows require database transactions")
 	}
-	var err error
-	if cfg.Schema == nil {
-		cfg.Schema = CoreSchema()
-	} else {
-		cfg.Schema, err = MergeSchema(CoreSchema(), cfg.Schema)
-		if err != nil {
-			return cfg, nil, nil, err
-		}
+	if cfg.BasePath == "" {
+		cfg.BasePath = "/api/auth"
+	}
+	cfg.BasePath = cleanAbsolutePath(cfg.BasePath)
+	if cfg.BasePath == "/" {
+		return cfg, nil, nil, fmt.Errorf("betterauth: base path may not be root")
+	}
+	if cfg.PublicURL == "" {
+		return cfg, nil, nil, fmt.Errorf("betterauth: public URL is required")
+	}
+	publicURL, err := validateHTTPSURL(cfg.PublicURL, false)
+	if err != nil {
+		return cfg, nil, nil, fmt.Errorf("betterauth: public URL: %w", err)
+	}
+	cfg.PublicURL = strings.TrimSuffix(publicURL.String(), "/")
+	cfg.Schema, cfg.TrustedOrigins, err = initializePlugins(cfg, cfg.Plugins)
+	if err != nil {
+		return cfg, nil, nil, err
 	}
 	if err := validateSchema(cfg.Schema); err != nil {
 		return cfg, nil, nil, err
 	}
 	cfg.Database, err = WrapDatabaseAdapter(cfg.Database, cfg.Schema)
+	if err != nil {
+		return cfg, nil, nil, err
+	}
+	cfg.Database, err = wrapDatabaseHooks(cfg.Database, cfg.Plugins)
 	if err != nil {
 		return cfg, nil, nil, err
 	}
@@ -86,22 +110,9 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 	if cfg.Tokens == nil {
 		cfg.Tokens = CryptoTokenSource{}
 	}
-	if cfg.BasePath == "" {
-		cfg.BasePath = "/api/auth"
+	if cfg.BackgroundTasks == nil {
+		cfg.BackgroundTasks = InlineBackgroundTasks{}
 	}
-	cfg.BasePath = cleanAbsolutePath(cfg.BasePath)
-	if cfg.BasePath == "/" {
-		return cfg, nil, nil, fmt.Errorf("betterauth: base path may not be root")
-	}
-	if cfg.PublicURL == "" {
-		return cfg, nil, nil, fmt.Errorf("betterauth: public URL is required")
-	}
-	publicURL, err := validateHTTPSURL(cfg.PublicURL, false)
-	if err != nil {
-		return cfg, nil, nil, fmt.Errorf("betterauth: public URL: %w", err)
-	}
-	cfg.PublicURL = strings.TrimSuffix(publicURL.String(), "/")
-
 	if len(cfg.TrustedOrigins) == 0 {
 		return cfg, nil, nil, fmt.Errorf("betterauth: at least one trusted origin is required")
 	}
@@ -181,6 +192,12 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 	if cfg.MaxRequestBytes < 1024 || cfg.MaxRequestBytes > 1<<20 {
 		return cfg, nil, nil, fmt.Errorf("betterauth: max request bytes is out of bounds")
 	}
+	if cfg.MaxResponseBytes == 0 {
+		cfg.MaxResponseBytes = 1 << 20
+	}
+	if cfg.MaxResponseBytes < 1024 || cfg.MaxResponseBytes > 16<<20 {
+		return cfg, nil, nil, fmt.Errorf("betterauth: max response bytes is out of bounds")
+	}
 	if cfg.MinPasswordBytes == 0 {
 		cfg.MinPasswordBytes = 12
 	}
@@ -221,6 +238,7 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 			return cfg, nil, nil, fmt.Errorf("betterauth: invalid social provider %q", providerID)
 		}
 	}
+	cfg.SocialProviders = maps.Clone(cfg.SocialProviders)
 	return cfg, origins, returnTo, nil
 }
 
