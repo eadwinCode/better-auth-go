@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { betterAuth } from "better-auth";
+import { admin, genericOAuth } from "better-auth/plugins";
 import { referenceConfig } from "./config.ts";
 
 export type CapturedMail = {
@@ -45,6 +46,33 @@ export const auth = betterAuth({
       });
     },
   },
+  user: {
+    changeEmail: {
+      enabled: true,
+    },
+    deleteUser: {
+      enabled: true,
+    },
+  },
+  account: {
+    accountLinking: {
+      allowDifferentEmails: true,
+    },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        async before(user) {
+          return {
+            data: {
+              ...user,
+              role: user.name === "Admin" ? "admin" : "user",
+            },
+          };
+        },
+      },
+    },
+  },
   session: {
     additionalFields: {
       label: {
@@ -57,4 +85,31 @@ export const auth = betterAuth({
   advanced: {
     useSecureCookies: referenceConfig.secureCookies,
   },
+  plugins: [
+    admin({
+      impersonationSessionDuration: 60 * 60,
+    }),
+    genericOAuth({
+      config: [
+        {
+          providerId: "test",
+          clientId: "test-client",
+          clientSecret: "test-secret",
+          authorizationUrl:
+            referenceConfig.baseURL + "/__better_auth_test/oauth/authorize",
+          tokenUrl: referenceConfig.baseURL + "/__better_auth_test/oauth/token",
+          authentication: "post",
+          scopes: ["openid", "profile"],
+          async getUserInfo() {
+            return {
+              id: "test-provider-user",
+              email: "provider-fixture@example.com",
+              emailVerified: true,
+              name: "Provider Fixture",
+            };
+          },
+        },
+      ],
+    }),
+  ],
 });

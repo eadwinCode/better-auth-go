@@ -181,14 +181,19 @@ func (s *Server) handleChangeEmail(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if email == user.Email {
-		writeJSON(w, http.StatusOK, map[string]bool{"status": true})
-		return nil
+		return publicError(CodeBadRequest, "Email is the same", http.StatusBadRequest, nil)
 	}
 	if err := s.rateLimit(r.Context(), r, "change-email", HashToken(user.ID)); err != nil {
 		return err
 	}
 	if existing, findErr := s.store.FindUserByEmail(r.Context(), email); findErr == nil && existing.ID != user.ID {
-		return publicError(CodeConflict, "Email could not be changed.", http.StatusConflict, nil)
+		// Match the work factor of the successful path without storing a token
+		// or sending mail. The response must not reveal that the email exists.
+		if _, tokenErr := s.cfg.Tokens.Token(32); tokenErr != nil {
+			return tokenErr
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"status": true})
+		return nil
 	} else if findErr != nil && !errors.Is(findErr, ErrNotFound) {
 		return publicError(CodeInternal, "Email could not be changed.", http.StatusInternalServerError, findErr)
 	}
@@ -245,19 +250,24 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	credential, credentialErr := s.store.PasswordCredential(r.Context(), user.ID)
-	if credentialErr == nil {
-		if len(input.Password) == 0 || len(input.Password) > s.cfg.MaxPasswordBytes {
-			return invalidCredentials(nil)
+	if credentialErr != nil && !errors.Is(credentialErr, ErrNotFound) {
+		return publicError(CodeInternal, "User could not be deleted.", http.StatusInternalServerError, credentialErr)
+	}
+	if input.Password != "" && credentialErr == nil {
+		if len(input.Password) > s.cfg.MaxPasswordBytes {
+			return publicError(CodeInvalidPassword, "Invalid password", http.StatusBadRequest, nil)
 		}
 		verification, err := s.cfg.Passwords.Verify(r.Context(), credential.PasswordHash, input.Password)
 		if err != nil {
 			return publicError(CodeInternal, "User could not be deleted.", http.StatusInternalServerError, err)
 		}
 		if !verification.Valid {
-			return invalidCredentials(nil)
+			return publicError(CodeInvalidPassword, "Invalid password", http.StatusBadRequest, nil)
 		}
-	} else if !errors.Is(credentialErr, ErrNotFound) {
-		return publicError(CodeInternal, "User could not be deleted.", http.StatusInternalServerError, credentialErr)
+	} else if input.Password != "" && errors.Is(credentialErr, ErrNotFound) {
+		return publicError(
+			CodeCredentialNotFound, "Credential account not found", http.StatusBadRequest, credentialErr,
+		)
 	}
 	if err := s.rateLimit(r.Context(), r, "delete-user", HashToken(user.ID)); err != nil {
 		return err
@@ -266,7 +276,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 		return publicError(CodeInternal, "User could not be deleted.", http.StatusInternalServerError, err)
 	}
 	s.clearSessionCookie(w)
-	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "User deleted"})
 	return nil
 }
 
@@ -312,15 +322,17 @@ func (s *Server) handleUnlinkAccount(w http.ResponseWriter, r *http.Request) err
 		r.Context(), user.ID, input.ProviderID, input.AccountID, s.cfg.Account.AllowUnlinkingAll,
 	)
 	if errors.Is(err, ErrNotFound) {
-		return publicError(CodeNotFound, "Account not found.", http.StatusNotFound, err)
+		return publicError(CodeAccountNotFound, "Account not found", http.StatusBadRequest, err)
 	}
 	if errors.Is(err, ErrConflict) {
-		return publicError(CodeConflict, "The final sign-in method cannot be removed.", http.StatusConflict, err)
+		return publicError(
+			CodeUnlinkLastAccount, "You can't unlink your last account", http.StatusBadRequest, err,
+		)
 	}
 	if err != nil {
 		return publicError(CodeInternal, "Account could not be unlinked.", http.StatusInternalServerError, err)
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+	writeJSON(w, http.StatusOK, map[string]bool{"status": true})
 	return nil
 }
 

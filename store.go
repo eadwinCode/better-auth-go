@@ -218,6 +218,18 @@ func (s *databaseStore) UnlinkAccount(
 	allowLast bool,
 ) error {
 	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
+		if !allowLast {
+			count, err := tx.Count(ctx, CountQuery{
+				Model: ModelAccount,
+				Where: []Where{Eq("userId", userID)},
+			})
+			if err != nil {
+				return err
+			}
+			if count <= 1 {
+				return ErrConflict
+			}
+		}
 		where := []Where{Eq("userId", userID), Eq("providerId", providerID)}
 		if accountID != "" {
 			where = append(where, Eq("accountId", accountID))
@@ -228,15 +240,6 @@ func (s *databaseStore) UnlinkAccount(
 		}
 		if account == nil {
 			return ErrNotFound
-		}
-		if !allowLast {
-			count, err := tx.Count(ctx, CountQuery{Model: ModelAccount, Where: []Where{Eq("userId", userID)}})
-			if err != nil {
-				return err
-			}
-			if count <= 1 {
-				return ErrConflict
-			}
 		}
 		id, err := recordString(account, "id")
 		if err != nil {

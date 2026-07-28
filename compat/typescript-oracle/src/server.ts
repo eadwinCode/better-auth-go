@@ -8,7 +8,49 @@ function authorizedTestControl(request: Request): boolean {
   );
 }
 
-function testControl(request: Request, url: URL): Response | undefined {
+async function oauthTokenFixture(
+  request: Request,
+  url: URL,
+): Promise<Response | undefined> {
+  if (
+    request.method !== "POST" ||
+    url.pathname !== "/__better_auth_test/oauth/token"
+  ) {
+    return undefined;
+  }
+  const body = await request.formData();
+  if (
+    body.get("client_id") !== "test-client" ||
+    body.get("client_secret") !== "test-secret"
+  ) {
+    return Response.json(
+      { error: "invalid_client", error_description: "Invalid client" },
+      { status: 401 },
+    );
+  }
+  if (
+    body.get("grant_type") === "refresh_token" &&
+    body.get("refresh_token") !== "fixture-refresh-token"
+  ) {
+    return Response.json(
+      { error: "invalid_grant", error_description: "Invalid refresh token" },
+      { status: 400 },
+    );
+  }
+  return Response.json({
+    access_token: "fixture-refreshed-access-token",
+    refresh_token: "fixture-refresh-token",
+    id_token: "fixture-refreshed-id-token",
+    token_type: "Bearer",
+    scope: "openid profile",
+    expires_in: 3600,
+  });
+}
+
+async function testControl(
+  request: Request,
+  url: URL,
+): Promise<Response | undefined> {
   if (!url.pathname.startsWith("/__better_auth_test/")) return undefined;
   if (!authorizedTestControl(request)) {
     return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
@@ -54,7 +96,9 @@ const server = Bun.serve({
         basePath: referenceConfig.basePath,
       });
     }
-    const controlled = testControl(request, url);
+    const oauthToken = await oauthTokenFixture(request, url);
+    if (oauthToken) return oauthToken;
+    const controlled = await testControl(request, url);
     if (controlled) return controlled;
     return auth.handler(request);
   },

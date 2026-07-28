@@ -146,6 +146,33 @@ func (oracle *typescriptOracle) latestMail(
 	return mail
 }
 
+func (oracle *typescriptOracle) mailExists(t *testing.T, kind string, email string) bool {
+	t.Helper()
+	query := url.Values{"kind": {kind}, "email": {email}}
+	request, err := http.NewRequest(
+		http.MethodGet,
+		oracle.baseURL.String()+"/__better_auth_test/mail/latest?"+query.Encode(),
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("X-Better-Auth-Test-Secret", oracle.controlSecret)
+	response, err := oracle.client.Do(request)
+	if err != nil {
+		t.Fatalf("check TypeScript oracle mail: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		return false
+	}
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		t.Fatalf("check TypeScript oracle mail: status=%d body=%s", response.StatusCode, body)
+	}
+	return true
+}
+
 func (oracle *typescriptOracle) request(
 	t *testing.T,
 	method string,

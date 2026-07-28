@@ -49,6 +49,12 @@ func (mailer *captureMailer) last() betterauth.Mail {
 	return mailer.mails[len(mailer.mails)-1]
 }
 
+func (mailer *captureMailer) count() int {
+	mailer.mu.Lock()
+	defer mailer.mu.Unlock()
+	return len(mailer.mails)
+}
+
 type allowImpersonation struct{}
 
 func (allowImpersonation) CanImpersonate(context.Context, betterauth.User, betterauth.User) error {
