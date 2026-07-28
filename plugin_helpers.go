@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // SessionMiddleware rejects requests without an active session. It can be used
@@ -12,6 +13,23 @@ func SessionMiddleware(context *HookContext) (*PluginResponse, error) {
 	if context.Session == nil || context.User == nil {
 		return nil, publicError(
 			CodeUnauthorized, "Authentication required.", http.StatusUnauthorized, nil,
+		)
+	}
+	return nil, nil
+}
+
+// FreshSessionMiddleware requires a session created within the server's
+// configured SessionFreshAge. Plugins should use it for credential enrollment
+// and other sensitive account mutations.
+func FreshSessionMiddleware(context *HookContext) (*PluginResponse, error) {
+	if _, err := SessionMiddleware(context); err != nil {
+		return nil, err
+	}
+	if context.Clock == nil || context.SessionFreshAge <= 0 ||
+		context.Session.CreatedAt.After(context.Clock.Now().UTC().Add(time.Minute)) ||
+		context.Clock.Now().UTC().Sub(context.Session.CreatedAt) > context.SessionFreshAge {
+		return nil, publicError(
+			CodeUnauthorized, "A fresh session is required.", http.StatusUnauthorized, nil,
 		)
 	}
 	return nil, nil

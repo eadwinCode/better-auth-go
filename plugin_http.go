@@ -239,9 +239,11 @@ func (s *Server) newHookContext(
 		Context: r.Context(), Request: r, Path: path, Params: maps.Clone(params),
 		Headers: r.Header.Clone(), Query: cloneValues(r.URL.Query()),
 		Database: s.cfg.Database, Clock: s.cfg.Clock, GenerateID: s.newID,
-		BaseURL: s.cfg.PublicURL + s.cfg.BasePath, Schema: cloneSchema(s.cfg.Schema),
+		GenerateToken: s.cfg.Tokens.Token,
+		BaseURL:       s.cfg.PublicURL + s.cfg.BasePath, Schema: cloneSchema(s.cfg.Schema),
 		Cookies: s.cfg.Cookie, Passwords: s.cfg.Passwords,
 		TrustedOrigins:  slices.Clone(s.cfg.TrustedOrigins),
+		SessionFreshAge: s.cfg.SessionFreshAge,
 		BackgroundTasks: s.cfg.BackgroundTasks,
 		IsTrustedOrigin: func(raw string) bool {
 			origin, err := normalizeOrigin(raw)
@@ -253,6 +255,9 @@ func (s *Server) newHookContext(
 		},
 		ValidateCSRF: func() error {
 			return s.requireCSRF(r)
+		},
+		IssueSession: func(userID string) (*IssuedSession, error) {
+			return s.issuePluginSession(r, userID)
 		},
 	}
 	if session, user, _, err := s.sessionFromRequest(r.Context(), r); err == nil {

@@ -210,6 +210,54 @@ func (s *Server) newSession(userID string, duration time.Duration) (Session, str
 	}, raw, nil
 }
 
+func (s *Server) issuePluginSession(r *http.Request, userID string) (*IssuedSession, error) {
+	if userID == "" {
+		return nil, publicError(CodeUnauthorized, "Authentication required.", http.StatusUnauthorized, nil)
+	}
+	user, err := s.store.FindUserByID(r.Context(), userID)
+	if err != nil || user.DisabledAt != nil {
+		return nil, publicError(CodeUnauthorized, "Authentication required.", http.StatusUnauthorized, err)
+	}
+	replacement, raw, err := s.newSession(user.ID, s.cfg.SessionDuration)
+	if err != nil {
+		return nil, err
+	}
+	csrf, err := s.cfg.Tokens.Token(32)
+	if err != nil {
+		return nil, err
+	}
+	if _, _, currentRaw, currentErr := s.sessionFromRequest(r.Context(), r); currentErr == nil {
+		replacement, err = s.store.RotateSession(r.Context(), HashToken(currentRaw), replacement)
+	} else {
+		replacement, err = s.store.CreateSession(r.Context(), replacement)
+	}
+	if err != nil {
+		return nil, publicError(
+			CodeUnauthorized, "Authentication required.", http.StatusUnauthorized, err,
+		)
+	}
+	now := s.cfg.Clock.Now().UTC()
+	return &IssuedSession{
+		Session: replacement,
+		User:    user,
+		csrf:    csrf,
+		cookies: []*http.Cookie{
+			{
+				Name: s.cfg.Cookie.Name, Value: raw, Path: "/",
+				Expires: replacement.ExpiresAt,
+				MaxAge:  int(replacement.ExpiresAt.Sub(now).Seconds()),
+				Secure:  true, HttpOnly: true, SameSite: s.cfg.Cookie.SameSite,
+			},
+			{
+				Name: s.cfg.Cookie.CSRFName, Value: csrf, Path: "/",
+				Expires: replacement.ExpiresAt,
+				MaxAge:  int(replacement.ExpiresAt.Sub(now).Seconds()),
+				Secure:  true, HttpOnly: false, SameSite: s.cfg.Cookie.SameSite,
+			},
+		},
+	}, nil
+}
+
 func (s *Server) sessionFromRequest(ctx context.Context, r *http.Request) (Session, User, string, error) {
 	cookie, err := r.Cookie(s.cfg.Cookie.Name)
 	if err != nil || cookie.Value == "" || len(cookie.Value) > 2048 {

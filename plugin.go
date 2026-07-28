@@ -162,13 +162,16 @@ type HookContext struct {
 	Cookies         CookieConfig
 	Passwords       PasswordVerifier
 	TrustedOrigins  []string
+	SessionFreshAge time.Duration
 	Session         *Session
 	User            *User
 	Response        *PluginResponse
 	Failure         error
 	GenerateID      func() (string, error)
+	GenerateToken   func(int) (string, error)
 	IsTrustedOrigin func(string) bool
 	ValidateCSRF    func() error
+	IssueSession    func(string) (*IssuedSession, error)
 	BackgroundTasks BackgroundTaskRunner
 	bodyDecodeError error
 }
@@ -184,6 +187,50 @@ type PluginResponse struct {
 	Status  int
 	Headers http.Header
 	Body    []byte
+}
+
+// IssuedSession is the result of a plugin authentication transition. Bearer
+// values remain private and can only be attached to a response through Apply.
+type IssuedSession struct {
+	Session Session `json:"session"`
+	User    User    `json:"user"`
+	cookies []*http.Cookie
+	csrf    string
+}
+
+// Apply attaches the secure session transition to a plugin response. It may be
+// called once; a second call fails instead of duplicating bearer cookies.
+func (issued *IssuedSession) Apply(response *PluginResponse) error {
+	if issued == nil {
+		return errors.New("betterauth: issued session is nil")
+	}
+	if response == nil {
+		return errors.New("betterauth: plugin response is nil")
+	}
+	if len(issued.cookies) == 0 {
+		return errors.New("betterauth: issued session was already applied")
+	}
+	if response.Headers == nil {
+		response.Headers = make(http.Header)
+	}
+	for _, cookie := range issued.cookies {
+		if cookie == nil || !strings.HasPrefix(cookie.Name, "__Host-") ||
+			!cookie.Secure || cookie.Domain != "" || cookie.Path != "/" ||
+			(cookie.SameSite != http.SameSiteLaxMode &&
+				cookie.SameSite != http.SameSiteStrictMode) {
+			return errors.New("betterauth: invalid issued session cookie")
+		}
+		if err := cookie.Valid(); err != nil {
+			return fmt.Errorf("betterauth: invalid issued session cookie: %w", err)
+		}
+		response.Headers.Add("Set-Cookie", cookie.String())
+	}
+	if issued.csrf != "" {
+		response.Headers.Set("X-CSRF-Token", issued.csrf)
+	}
+	issued.cookies = nil
+	issued.csrf = ""
+	return nil
 }
 
 // SetCookie appends a secure, host-only cookie to a plugin response. Plugin
