@@ -57,8 +57,8 @@ Do not convert a pending or skipped integration test into a pass.
 ## Compatibility baseline
 
 - Better Auth package: `better-auth@1.6.25`
-- TypeScript HTTP oracle:
-  `/Users/eadwin/Documents/sass_builder_helpers/better-auth-ts`
+- TypeScript HTTP oracle: sibling checkout `../better-auth-ts`; override with
+  `BETTER_AUTH_TS_DIR` for another local layout
 - Go module: `github.com/eadwinCode/better-auth-go`
 - Default route prefix: `/api/auth`
 - Provider catalog: **35** built-in provider IDs plus the generic OAuth/OIDC
