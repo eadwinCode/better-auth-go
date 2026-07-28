@@ -456,17 +456,15 @@ before deploying. Important operational requirements:
 - [Organizations decision record](./docs/adr/0006-organizations.md)
 - [Organizations integration guide](./docs/organizations.md)
 - [Enterprise SSO decision record](./docs/adr/0007-enterprise-sso.md)
-- [Enterprise SSO runtime decision record](./docs/adr/0015-enterprise-sso-runtime.md)
 - [Enterprise SSO integration status](./docs/sso.md)
 - [SCIM provisioning decision record](./docs/adr/0008-scim-provisioning.md)
 - [SCIM integration status](./docs/scim.md)
 - [Changelog](./CHANGELOG.md)
 
 The server plugin kernel, passkeys, two-factor authentication, organizations,
-and enterprise SSO are implemented. SCIM has an isolated security/schema
-foundation under active development. Username, magic links, API keys, and other
-feature plugins remain separate compatibility milestones with their own threat
-models.
+enterprise SSO, and SCIM are implemented. Username, magic links, API keys, and
+other feature plugins remain separate compatibility milestones with their own
+threat models.
 
 ## License
 
