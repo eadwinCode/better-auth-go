@@ -55,8 +55,7 @@ layer rather than a plugin.
   flow;
 - organizations, members, invitations, teams, roles, and permissions —
   implemented in the dedicated ADR 0006 runtime PR;
-- SSO with OIDC and SAML (ADR/schema/configuration/discovery foundation in
-  progress);
+- SSO with OIDC and SAML — implemented in ADRs 0007 and 0015;
 - SCIM provisioning (ADR/schema/token/filter/metadata foundation in progress).
 
 ### API and tokens

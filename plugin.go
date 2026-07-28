@@ -179,8 +179,12 @@ type HookContext struct {
 	IsTrustedOrigin func(string) bool
 	ValidateCSRF    func() error
 	IssueSession    func(string) (*IssuedSession, error)
-	BackgroundTasks BackgroundTaskRunner
-	bodyDecodeError error
+	// AuthenticateOAuth completes a plugin-owned, externally verified identity
+	// transition through the core account/session store. Plugins must validate
+	// issuer, audience, nonce, signature, and verified email before calling it.
+	AuthenticateOAuth func(OAuthProfile, ProviderTokens) (*IssuedSession, bool, error)
+	BackgroundTasks   BackgroundTaskRunner
+	bodyDecodeError   error
 }
 
 func (ctx *HookContext) RunInBackground(task BackgroundTask) error {

@@ -219,10 +219,11 @@ Organizations are specified in ADR 0006. Their organization/member/invitation/
 team/role HTTP runtime, server-only member manager, session rotation, hooks,
 audits, validators, and adapter-independent storage are implemented.
 
-Enterprise SSO is specified in ADR 0007. Its provider schema, configuration
-boundary, organization ports, and hardened OIDC discovery are implemented as a
-separate foundation; SSO HTTP ceremonies remain release-gated until the
-black-box protocol matrix passes.
+Enterprise SSO is specified in ADRs 0007 and 0015. Provider management,
+OIDC/PKCE/JWKS and verified-domain identity completion, SAML metadata/ACS,
+signed assertion correlation and replay protection, domain verification,
+provisioning hooks, and bounded SAML logout are implemented. Deterministic OIDC
+and locally signed SAML black-box protocol fixtures pass.
 
 SCIM is specified in ADR 0008. Its provider schema, hash-only bearer boundary,
 bounded filter parser, standard metadata resources, and required plugin HTTP

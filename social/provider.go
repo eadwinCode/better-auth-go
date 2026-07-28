@@ -28,6 +28,11 @@ const (
 
 type ProfileMapper func(map[string]any) (betterauth.OAuthProfile, error)
 
+// EndpointValidator is called for OIDC discovery and every discovered
+// endpoint before a provider is constructed. It lets embedders apply an SSRF
+// policy that is stricter than the generic public-address checks.
+type EndpointValidator func(context.Context, *url.URL) error
+
 // Options configures a built-in preset. Endpoint overrides are intended for
 // self-hosted GitLab, Cognito, Microsoft tenants, Salesforce, and compatible
 // private OAuth deployments.
@@ -53,6 +58,11 @@ type Options struct {
 	// Clock controls token-expiry and OIDC verification time in deterministic
 	// tests. Nil uses the system UTC clock.
 	Clock betterauth.Clock
+	// DiscoveryURL overrides the standard issuer well-known location.
+	DiscoveryURL string
+	// ValidateEndpoint validates discovery, authorization, token, user-info,
+	// and JWKS URLs before any runtime request can use them.
+	ValidateEndpoint EndpointValidator
 
 	oidcDiscovery bool
 }
@@ -265,9 +275,14 @@ func NewOIDC(ctx context.Context, providerID string, options Options) (*Provider
 		IDTokenSigningAlgorithmsSupported []string `json:"id_token_signing_alg_values_supported"`
 		TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
 	}
-	request, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, issuer+"/.well-known/openid-configuration", nil,
-	)
+	discoveryURL := issuer + "/.well-known/openid-configuration"
+	if options.DiscoveryURL != "" {
+		discoveryURL = options.DiscoveryURL
+	}
+	if err := validateOIDCEndpoint(ctx, discoveryURL, issuer, options.ValidateEndpoint); err != nil {
+		return nil, fmt.Errorf("social: OIDC discovery endpoint: %w", err)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -292,12 +307,14 @@ func NewOIDC(ctx context.Context, providerID string, options Options) (*Provider
 		"token":         discovery.TokenEndpoint,
 		"JWKS":          discovery.JWKSURI,
 	} {
-		if err := validateDiscoveredEndpoint(endpoint, issuer); err != nil {
+		if err := validateOIDCEndpoint(ctx, endpoint, issuer, options.ValidateEndpoint); err != nil {
 			return nil, fmt.Errorf("social: OIDC %s endpoint: %w", name, err)
 		}
 	}
 	if discovery.UserInfoEndpoint != "" {
-		if err := validateDiscoveredEndpoint(discovery.UserInfoEndpoint, issuer); err != nil {
+		if err := validateOIDCEndpoint(
+			ctx, discovery.UserInfoEndpoint, issuer, options.ValidateEndpoint,
+		); err != nil {
 			return nil, fmt.Errorf("social: OIDC user-info endpoint: %w", err)
 		}
 	}
@@ -325,6 +342,21 @@ func NewOIDC(ctx context.Context, providerID string, options Options) (*Provider
 	}
 	if !options.DisableDefaultScope {
 		options.Scopes = append([]string{"openid", "profile", "email"}, options.Scopes...)
+	}
+	for name, endpoint := range map[string]string{
+		"authorization": options.AuthorizationURL,
+		"token":         options.TokenURL,
+		"JWKS":          options.JWKSURL,
+		"user-info":     options.UserInfoURL,
+	} {
+		if endpoint == "" {
+			continue
+		}
+		if err := validateOIDCEndpoint(
+			ctx, endpoint, issuer, options.ValidateEndpoint,
+		); err != nil {
+			return nil, fmt.Errorf("social: OIDC %s override: %w", name, err)
+		}
 	}
 	options.Issuer = issuer
 	options.HTTPClient = &client
@@ -891,6 +923,25 @@ func validateDiscoveredEndpoint(raw, issuer string) error {
 		(endpointIP.IsLoopback() || endpointIP.IsPrivate() || endpointIP.IsLinkLocalUnicast() ||
 			endpointIP.IsLinkLocalMulticast() || endpointIP.IsUnspecified()) {
 		return errors.New("private network addresses are not allowed")
+	}
+	return nil
+}
+
+func validateOIDCEndpoint(
+	ctx context.Context,
+	raw string,
+	issuer string,
+	validator EndpointValidator,
+) error {
+	if err := validateDiscoveredEndpoint(raw, issuer); err != nil {
+		return err
+	}
+	if validator == nil {
+		return nil
+	}
+	parsed, _ := url.Parse(raw)
+	if err := validator(ctx, parsed); err != nil {
+		return err
 	}
 	return nil
 }

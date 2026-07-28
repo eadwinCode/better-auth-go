@@ -73,6 +73,7 @@ type SAMLMapping struct {
 type SAMLConfig struct {
 	Issuer                  string            `json:"issuer"`
 	EntryPoint              string            `json:"entryPoint"`
+	LogoutEndpoint          string            `json:"logoutEndpoint,omitempty"`
 	Certificate             string            `json:"cert"`
 	Audience                string            `json:"audience,omitempty"`
 	SPEntityID              string            `json:"spEntityId"`
@@ -89,12 +90,12 @@ type SAMLConfig struct {
 // ProviderRegistration is accepted by configured default providers and the
 // management layer. Exactly one protocol config must be present.
 type ProviderRegistration struct {
-	Issuer         string
-	Domain         string
-	ProviderID     string
-	OrganizationID string
-	OIDC           *OIDCConfig
-	SAML           *SAMLConfig
+	Issuer         string      `json:"issuer"`
+	Domain         string      `json:"domain"`
+	ProviderID     string      `json:"providerId"`
+	OrganizationID string      `json:"organizationId,omitempty"`
+	OIDC           *OIDCConfig `json:"oidcConfig,omitempty"`
+	SAML           *SAMLConfig `json:"samlConfig,omitempty"`
 }
 
 // Provider is the non-secret public provider representation.

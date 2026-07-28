@@ -31,6 +31,10 @@ All notable changes are documented here. Releases follow Semantic Versioning.
   adapter-independent provider schema, encrypted configuration boundary,
   fail-closed provider/domain/redirect policy, organization authorization
   ports, and hardened OIDC discovery.
+- Enterprise SSO runtime with encrypted provider management, OIDC PKCE/state/
+  nonce/JWKS ceremonies, verified-domain identity completion, DNS verification,
+  signed SAML metadata/ACS correlation and replay protection, provisioning
+  hooks, and bounded single logout.
 - SCIM 2.0 security and construction foundation with a hash-only provider
   schema, bounded bearer/filter parsing, organization authorization ports,
   standard metadata endpoints, and unsafe-method plugin routing.

@@ -26,9 +26,9 @@ this release.
 
 The current core is suitable for controlled evaluation, and the repository's
 ordinary test suite is green. Production parity remains blocked by the
-complete cross-runtime HTTP matrix, provider certification, release-to-release
-database upgrade tests, incomplete SSO and SCIM ceremonies, and the remaining
-1.6.25 plugin backlog.
+complete cross-runtime HTTP matrix, incomplete SCIM ceremonies,
+release-candidate interoperability evidence, and the remaining 1.6.25 plugin
+backlog.
 
 ## Evidence snapshot
 
@@ -120,7 +120,7 @@ They must never log provider credentials or returned tokens.
 | Passkey/WebAuthn | Full Go ceremony and adapter tests present | Partial pending TypeScript/browser differential certification |
 | Two-factor authentication | TOTP, delivered OTP, backup codes and trusted devices present | Partial pending TypeScript differential certification |
 | Organizations | Runtime, membership, invitations, teams, roles and tests present | Partial pending TypeScript differential certification |
-| SSO | Schema, configuration and hardened OIDC discovery foundation only | Partial; OIDC/SAML HTTP ceremonies are release blockers |
+| SSO | Provider management, OIDC/PKCE/JWKS, domain verification, signed SAML ACS/metadata/replay protection and SLO are implemented | Runtime complete; deterministic OIDC and signed SAML black-box fixtures pass |
 | SCIM | Schema, token, filter and metadata foundation only | Partial; RFC 7644 connection and provisioning routes are release blockers |
 
 ### Exact pinned v1.6.25 plugin inventory
@@ -213,14 +213,14 @@ entry in this table and a compatibility decision.
 4. All 35 social-provider fixtures and generic OAuth/OIDC fixtures (present).
 5. Selected live provider sandbox tests.
 6. Passkey tests in supported browsers.
-7. SSO OIDC/SAML protocol fixtures and SCIM RFC 7644 fixtures.
+7. SSO OIDC/SAML protocol fixtures (present) and SCIM RFC 7644 fixtures.
 8. Dependency vulnerability scan and review of any accepted finding.
 9. Install-from-tag test in a separate example module.
 10. Upgrade test from the previous release database schema.
 
 ## Recommended work order
 
-1. Complete SSO and SCIM.
+1. Complete SCIM.
 2. Implement and certify the remaining exports from the pinned 1.6.25 plugin
    inventory in small, security-reviewed pull requests.
 3. Run `v1.0.0-rc.1`; publish `v1.0.0` only after every release gate above is
