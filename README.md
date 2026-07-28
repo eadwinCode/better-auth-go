@@ -147,6 +147,33 @@ and verification tokens default to a one-hour lifetime. Applications can
 override the existing `MinPasswordBytes`, `MaxPasswordBytes`,
 `PasswordResetTTL`, and `EmailVerificationTTL` fields.
 
+The remaining Better Auth 1.6 lifecycle callbacks and delivery modes are
+available through `Config.EmailVerification`, `Config.EmailPassword`, and
+`Config.User`:
+
+```go
+sendOnSignUp := true
+config.EmailVerification = betterauth.EmailVerificationConfig{
+	SendOnSignUp:                &sendOnSignUp,
+	SendOnSignIn:                true,
+	AutoSignInAfterVerification: true,
+	BeforeVerification:          beforeVerification,
+	AfterVerification:           afterVerification,
+}
+config.EmailPassword.OnPasswordReset = onPasswordReset
+config.EmailPassword.OnExistingUserSignUp = onExistingUserSignUp
+config.EmailPassword.CustomSyntheticUser = syntheticUserFactory
+config.User.SendChangeEmailConfirmation = true
+config.User.UpdateEmailWithoutVerification = false
+```
+
+`SendOnSignUp` is tri-state: when omitted, it follows
+`RequireEmailVerification`. Existing-user signup callbacks run through the
+configured background-task runner and never alter the synthetic,
+enumeration-resistant response. Change-email confirmation sends first to the
+verified old inbox and only then sends the single-use verification link to the
+new inbox.
+
 ## Social providers
 
 Construct providers with `social.New` and register them by Better Auth provider
@@ -180,6 +207,21 @@ OAuth2 providers use the same constructor with explicit authorization, token,
 and user-info URLs. Provider endpoints must be HTTPS, provider HTTP clients are
 bounded and refuse redirects, OIDC ID tokens validate signature/issuer/audience/
 expiry/nonce, and provider credentials are encrypted before persistence.
+
+Generic OIDC providers use discovery:
+
+```go
+enterprise, err := social.NewOIDC(ctx, "enterprise-oidc", social.Options{
+	ClientID:     os.Getenv("OIDC_CLIENT_ID"),
+	ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
+	Issuer:       "https://identity.example.com",
+})
+```
+
+Discovery pins the returned issuer, validates authorization/token/user-info/
+JWKS endpoints, requires authorization-code and RS256 support when advertised,
+rejects redirects and private literal endpoints, and applies the same timeout
+and response-size limits as preset providers.
 
 Some providers do not assert a verified email. They can authenticate a stable
 provider account, but automatic email linking remains blocked until the

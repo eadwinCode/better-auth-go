@@ -79,9 +79,12 @@ session-management differential certification.
 
 ## Email/password option contract
 
-`Config.EmailPassword` implements the production-critical v1.6.25 behavior for
-`disableSignUp`, `autoSignIn`, `requireEmailVerification`, and
-`revokeSessionsOnPasswordReset`.
+`Config.EmailPassword` and `Config.EmailVerification` implement the pinned
+v1.6.25 behavior for `disableSignUp`, `autoSignIn`,
+`requireEmailVerification`, `revokeSessionsOnPasswordReset`, `sendOnSignUp`,
+`sendOnSignIn`, `autoSignInAfterVerification`, `onPasswordReset`,
+`onExistingUserSignUp`, `customSyntheticUser`, and the before/after
+verification callbacks.
 
 - `autoSignIn` defaults to `true`; `rememberMe:false` uses a 24-hour signup
   session.
@@ -102,6 +105,9 @@ session-management differential certification.
 - Optional account-deletion verification defaults to a 24-hour single-use
   token, supports the callback and token-in-POST forms, and runs configured
   before/after deletion hooks. Go stores the token only as a hash.
+- Change-email supports old-inbox confirmation and immediate unverified-email
+  replacement. Both modes retain callback allowlisting, hash-at-rest
+  single-use tokens, and enumeration-resistant destination checks.
 
 The Go password policy measures bytes to place a deterministic upper bound on
 password-hashing work. Better Auth uses JavaScript UTF-16 string length, so
@@ -168,9 +174,15 @@ The following provider IDs are release-gated:
 - zoom
 
 The generic OAuth/OIDC provider API is also release-gated, so providers outside
-this list do not require a library release.
+this list do not require a library release. Explicit OAuth endpoints use
+`social.New`; issuer discovery uses `social.NewOIDC`.
 
-All 35 IDs above have built-in presets and catalog contract tests. Live
+All 35 IDs above have deterministic authorization, scope, PKCE, token-auth, and
+representative profile-mapping fixtures pinned to 1.6.25. Generic OAuth covers
+client-secret body/basic and public clients, refresh, custom mapping, error
+redaction, redirect rejection, and response bounds. Generic OIDC additionally
+certifies discovery, issuer/audience/nonce/expiry/algorithm checks, JWKS
+rotation, deterministic clocks, and private-literal endpoint rejection. Live
 credential interoperability remains an integration responsibility for each
 release because provider payloads and policies can change independently.
 

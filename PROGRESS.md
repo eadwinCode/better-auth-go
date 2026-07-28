@@ -79,12 +79,12 @@ contract differences must be listed below.
 
 | Capability | Implementation | Cross-runtime HTTP evidence | Status |
 | --- | --- | --- | --- |
-| Email/password sign-up and sign-in | Present, including production-critical v1.6 options | Default lifecycle, bounds and duplicate errors differential; option/security matrix in Go | Partial pending cross-runtime option matrix |
+| Email/password sign-up and sign-in | Present, including v1.6 lifecycle options and callbacks | Default lifecycle, bounds and duplicate errors differential; send-on-signup/signin, existing-user callback and option/security matrix in Go | Certified for the pinned core option contract |
 | Sign-out and session retrieval | Present | Lifecycle characterization added | Partial |
 | Session refresh and revocation | Present | Session list/update and single/other/all revocation differential; refresh is Go-only rotation | Partial |
-| User update, email change, deletion | Present | User update, enumeration-resistant email change, verification, direct password deletion, emailed deletion callback, token replay/ownership and resulting state differential pass | Partial pending change-email modes and remaining lifecycle options |
-| Password change and recovery | Present | Change-password plus request/reset/callback/invalid/replay differential; option, concurrency and revocation Go tests | Partial pending remaining option matrix |
-| Email verification | Present | Send/verify/resend/state differential plus required-verification Go lifecycle | Partial pending callback and option matrix |
+| User update, email change, deletion | Present | User update, both change-email modes, enumeration resistance, direct password deletion, emailed deletion callback, replay/ownership and resulting state tests pass | Certified for the pinned core option contract |
+| Password change and recovery | Present | Change-password plus request/reset/callback/invalid/replay differential; callback ordering, concurrency and revocation Go tests | Certified for the pinned core option contract |
+| Email verification | Present | Send/verify/resend/state differential plus send modes, before/after callbacks and auto-sign-in lifecycle tests | Certified for the pinned core option contract |
 | Account list/link/unlink | Present | Public link flow, listing, unlink success/missing/final-account errors differential pass | Partial pending remaining linking options/collisions |
 | Provider access/refresh tokens | Present | Safe read/refresh fields, local provider refresh, persistence and refresh-token redaction differential pass | Partial pending provider-specific fixtures |
 | Admin impersonation | Bounded implementation present | Authorization, one-hour session, active identity and stop/restore differential; durable Go audit tests pass | Partial pending remaining admin-plugin options |
@@ -102,12 +102,12 @@ failure behavior.
 
 | Capability | Status | Remaining evidence |
 | --- | --- | --- |
-| 35 provider presets | Partial | Provider-specific request/profile fixtures and catalog documentation correction |
+| 35 provider presets | Certified deterministic matrix | Live credential runs remain release-operator evidence |
 | Authorization code, state and PKCE | Partial | Differential callback/error/replay matrix |
-| OIDC nonce and ID-token verification | Partial | Issuer, audience, JWKS rotation, clock and algorithm fixtures |
+| OIDC nonce and ID-token verification | Certified | Issuer, audience, nonce, expiry, RS256, deterministic clock and JWKS rotation fixtures pass |
 | Verified-email linking | Partial | Cross-runtime linking and collision matrix |
-| Refresh and revocation | Partial | Provider-specific fixtures |
-| Generic OAuth/OIDC consumer API | Partial | Discovery, mapping, token-auth, redirect and SSRF certification |
+| Refresh and revocation | Partial | Generic refresh is certified; provider-specific revocation remains provider-dependent |
+| Generic OAuth/OIDC consumer API | Certified | Discovery, custom mapping, all client-auth modes, refresh, redirect, response-bound, error-redaction and SSRF fixtures pass |
 | Live provider interoperability | Missing release evidence | Selected sandbox-provider runs with secrets supplied by CI or release operator |
 
 Live provider tests are release certification, not ordinary pull-request tests.
@@ -161,9 +161,9 @@ must not enter the v1.6.25 release scope.
 | Adapter | Unit/conformance | Real database | Migration/concurrency | Status |
 | --- | --- | --- | --- | --- |
 | Memory | Pass | In-process | Pass | Complete for testing only |
-| SQLite | Pass | Real SQLite | Present | Partial pending upgrade/rollback matrix |
-| MongoDB | Pass | Pass on MongoDB 8 replica set | Transaction rollback and index tests pass | Partial pending upgrade matrix |
-| PostgreSQL | Pass | Pass on PostgreSQL 17 | Atomicity, rollback and additive mapped migration pass | Partial pending release-to-release upgrade matrix |
+| SQLite | Pass | Real SQLite | Frozen `ecf48ac` upgrade, idempotency, preservation, indexes and rollback pass | Certified |
+| MongoDB | Pass | Pass on MongoDB 8 replica set | Frozen `ecf48ac` upgrade, idempotent indexes, preservation and rollback pass | Certified |
+| PostgreSQL | Pass | Pass on PostgreSQL 17 | Frozen `ecf48ac` upgrade, idempotency, preservation, indexes and rollback pass | Certified |
 
 Adapter independence is a public contract. New database adapters must pass the
 shared `adaptertest` suite and may not require changes to authentication or
@@ -210,7 +210,7 @@ entry in this table and a compatibility decision.
 2. Real MongoDB and PostgreSQL conformance, migrations and concurrent mutation
    tests.
 3. Complete TypeScript 1.6.25 differential endpoint and option matrix.
-4. All 35 social-provider fixtures and generic OAuth/OIDC fixtures.
+4. All 35 social-provider fixtures and generic OAuth/OIDC fixtures (present).
 5. Selected live provider sandbox tests.
 6. Passkey tests in supported browsers.
 7. SSO OIDC/SAML protocol fixtures and SCIM RFC 7644 fixtures.
@@ -220,15 +220,10 @@ entry in this table and a compatibility decision.
 
 ## Recommended work order
 
-1. Finish change-email modes and the remaining email/password and
-   email-verification lifecycle callbacks/options.
-2. Extend MongoDB, PostgreSQL and SQLite coverage with release-to-release
-   migration fixtures.
-3. Certify all 35 social-provider presets and generic OAuth/OIDC.
-4. Complete SSO and SCIM.
-5. Implement and certify the remaining exports from the pinned 1.6.25 plugin
+1. Complete SSO and SCIM.
+2. Implement and certify the remaining exports from the pinned 1.6.25 plugin
    inventory in small, security-reviewed pull requests.
-6. Run `v1.0.0-rc.1`; publish `v1.0.0` only after every release gate above is
+3. Run `v1.0.0-rc.1`; publish `v1.0.0` only after every release gate above is
    green or explicitly marked as an approved deliberate difference.
 
 ## Maintenance rule
