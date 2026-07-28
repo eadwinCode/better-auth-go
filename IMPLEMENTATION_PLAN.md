@@ -229,3 +229,32 @@ Exit criteria:
 - zero-only authenticators work while non-zero counter regressions fail closed;
 - all unit, black-box, race, vet, and applicable static/security checks pass;
 - 2FA, organizations, SSO, and SCIM remain in later PRs.
+
+## Phase 13: Organizations and tenant authorization
+
+1. Add ADR 0006 and freeze the Better Auth v1.6 organization, membership,
+   invitation, team, permission, dynamic-role, and active-context contracts.
+2. Add adapter-independent organization models plus session active organization
+   and team fields, including explicit compound indexes for SQL and MongoDB.
+3. Implement immutable static access control and bounded organization-scoped
+   dynamic roles.
+4. Implement organization CRUD, active context, member management, invitation
+   delivery/transitions, teams, permission checks, and server-only direct
+   membership.
+5. Enforce target-scoped authorization, verified-email invitation binding,
+   transactional last-owner rules, limits, lifecycle hooks, session cleanup,
+   CSRF/freshness, and durable audits.
+6. Add cross-tenant black-box tests, concurrency invariants, adapter migration
+   tests, fuzzing, documentation, examples, and complete release gates.
+
+Exit criteria:
+
+- no target identifier can move authorization across organizations;
+- the final owner cannot leave, be removed, or lose ownership;
+- invitation acceptance is authenticated, email-bound, expiring, and
+  one-winner;
+- team membership is subordinate to organization membership;
+- active session metadata never replaces a durable membership check;
+- dynamic roles cannot grant permissions the actor does not possess;
+- compound uniqueness holds in MongoDB, PostgreSQL, and SQLite;
+- SSO and SCIM remain separate later PRs.
