@@ -39,6 +39,10 @@ credit.
 - Security-critical multi-record operations require database transactions.
 - Adapter atomic consume and guarded increment operations have one-winner
   concurrency semantics.
+- WebAuthn responses are bound to configured exact origins and RP IDs;
+  challenge handles are hashed, ceremony-bound, expiring, and single-use.
+- Passkey discoverable user handles are opaque and never returned by the HTTP
+  API; non-zero signature counter regressions fail closed.
 
 ## Deployment checklist
 
@@ -47,11 +51,11 @@ credit.
 3. Store MongoDB and OAuth credentials in a secret manager.
 4. Use a 32-byte random provider-token encryption key or an application key-ring
    implementing `TokenCipher`.
-5. Run MongoDB with transaction support and create all core indexes.
+5. Run MongoDB with transaction support and call `EnsureIndexes` with the
+   server's fully merged schema.
 6. Configure a real rate limiter for sign-in, sign-up, recovery, verification,
    OAuth, and impersonation actions.
 7. Keep application authorization independent of client-provided roles/claims.
 8. Redact request bodies, cookies, authorization headers, query tokens, and mail
    objects from logs and traces.
 9. Run `go test -race ./...` and `govulncheck ./...` for every release.
-

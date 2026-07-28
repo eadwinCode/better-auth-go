@@ -155,5 +155,25 @@ SCIM, and API keys—use the server kernel tracked in
 implementations are tracked in the [feature gap register](./missing-features.md)
 as separate parity milestones.
 
-Passkeys/WebAuthn are specified in ADR 0004 and are being implemented as the
-first dedicated high-risk plugin PR.
+Passkeys/WebAuthn are specified in ADR 0004 and implemented as the first
+dedicated high-risk plugin PR.
+
+## Passkey plugin endpoint map
+
+| Better Auth endpoint | better-auth-go | Status |
+| --- | --- | --- |
+| `GET /passkey/generate-register-options` | same | implemented |
+| `POST /passkey/verify-registration` | same | implemented |
+| `GET /passkey/generate-authenticate-options` | same | implemented |
+| `POST /passkey/verify-authentication` | same | implemented |
+| `GET /passkey/list-user-passkeys` | same | implemented |
+| `POST /passkey/update-passkey` | same | implemented |
+| `POST /passkey/delete-passkey` | same | implemented |
+
+The Go model preserves Better Auth's public passkey fields and adds a private
+opaque user handle, full verifier record, and update timestamp. The challenge
+cookie uses a host-only `__Host-` name and persistence contains only its hash.
+User verification defaults to `required`; Better Auth's `preferred` behavior is
+an explicit compatibility option. Registration user resolution, optional
+sessionless enrollment, authenticator selection, extensions, schema mapping,
+and post-verification hooks have Go request-scoped equivalents.

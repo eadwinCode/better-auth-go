@@ -223,8 +223,9 @@ Exit criteria:
 - credential IDs and discoverable user handles are ownership-bound;
 - successful sign-in rotates an existing session or creates a new hashed-token
   session;
-- passkey list/update/delete never expose public keys, full credential records,
-  or another user's credential;
+- passkey list/update/delete expose Better Auth's public credential fields but
+  never opaque user handles, full verifier records, or another user's
+  credential;
 - zero-only authenticators work while non-zero counter regressions fail closed;
 - all unit, black-box, race, vet, and applicable static/security checks pass;
 - 2FA, organizations, SSO, and SCIM remain in later PRs.

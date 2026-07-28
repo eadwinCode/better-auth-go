@@ -26,11 +26,11 @@ Better Auth-shaped routes:
 
 | Method | Route | Contract |
 | --- | --- | --- |
-| GET | `/passkey/generate-register-options` | Requires a fresh session and creates registration options. |
-| POST | `/passkey/verify-registration` | Requires the same fresh user session and atomically consumes the registration challenge. |
+| GET | `/passkey/generate-register-options` | Requires a fresh session by default and creates registration options. |
+| POST | `/passkey/verify-registration` | Requires the same fresh user session by default and atomically consumes the registration challenge. |
 | GET | `/passkey/generate-authenticate-options` | Creates user-bound options when signed in, or discoverable options otherwise. |
 | POST | `/passkey/verify-authentication` | Atomically consumes the authentication challenge, verifies the assertion, guards the signature counter, and issues a rotated core session. |
-| GET | `/passkey/list-user-passkeys` | Lists redacted credential metadata for the current user. |
+| GET | `/passkey/list-user-passkeys` | Lists Better Auth-compatible public credential metadata for the current user. |
 | POST | `/passkey/update-passkey` | Renames an owned credential. |
 | POST | `/passkey/delete-passkey` | Deletes an owned credential. |
 
@@ -38,6 +38,13 @@ Registration and credential-management mutations use session, freshness where
 appropriate, trusted-origin, and CSRF enforcement. Authentication relies on the
 single-use server challenge plus WebAuthn origin/RP verification because no
 pre-existing authenticated CSRF secret is required.
+
+Better Auth's passkey-first registration mode is available only through an
+explicit `AllowWithoutSession` option with a required application user resolver.
+If a browser session is present, freshness and CSRF are still enforced.
+Registration/authentication extension resolvers and post-verification callbacks
+are request-scoped ports. A callback cannot rebind an authenticated
+registration to a different account.
 
 ### Relying-party and verification policy
 

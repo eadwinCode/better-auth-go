@@ -23,6 +23,8 @@ using native Go security defaults:
   mappings, transactions, atomic consume, and guarded increments;
 - MongoDB, PostgreSQL, SQLite, a public adapter conformance suite, and an
   in-memory development adapter.
+- an opt-in Better Auth-shaped passkey/WebAuthn plugin with hash-at-rest,
+  single-use challenges and fixation-safe core session rotation.
 
 The project is pre-1.0. Review the compatibility matrix and changelog before
 upgrading.
@@ -73,9 +75,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := database.EnsureCoreIndexes(ctx); err != nil {
-		log.Fatal(err)
-	}
 	auth, err := betterauth.New(betterauth.Config{
 		PublicURL:               "https://auth.example.com",
 		TrustedOrigins:          []string{"https://app.example.com"},
@@ -84,6 +83,9 @@ func main() {
 		ImpersonationAuthorizer: adminPolicy{},
 	})
 	if err != nil {
+		log.Fatal(err)
+	}
+	if err := database.EnsureIndexes(ctx, auth.Schema()); err != nil {
 		log.Fatal(err)
 	}
 	log.Fatal(http.ListenAndServe(":8080", auth.Handler()))
@@ -143,6 +145,35 @@ Some providers do not assert a verified email. They can authenticate a stable
 provider account, but automatic email linking remains blocked until the
 application supplies a trustworthy verification/collection policy through a
 custom profile mapper. This is a deliberate account-takeover defense.
+
+## Passkeys
+
+Passkeys are opt-in and remain a normal server plugin:
+
+```go
+import "github.com/eadwinCode/better-auth-go/plugin/passkey"
+
+passkeys, err := passkey.New(passkey.Config{
+	RPID:          "example.com",
+	RPDisplayName: "Example",
+	Origins:       []string{"https://app.example.com"},
+})
+if err != nil {
+	return err
+}
+config.Plugins = append(config.Plugins, passkeys)
+```
+
+The default requires authenticator user verification. Set
+`UserVerification: passkey.VerificationPreferred` only when compatibility with
+authenticators that cannot assert UV is an explicit product decision. RP ID and
+origins are exact construction-time policy; request headers cannot expand them.
+
+The HTTP flow matches Better Auth's generate/verify registration and
+authentication routes, plus list, rename, and delete. WebAuthn challenges are
+represented in the browser by a secure `__Host-` cookie, stored only as a hash,
+and atomically consumed. See the [passkey guide](./docs/passkeys.md) and
+[ADR 0004](./docs/adr/0004-passkeys-webauthn.md).
 
 ## Server plugins and hooks
 
@@ -294,11 +325,13 @@ before deploying. Important operational requirements:
 - [Architecture decision record](./docs/adr/0001-auth-server-architecture.md)
 - [Plugin-kernel decision record](./docs/adr/0002-plugin-kernel.md)
 - [Management, validation, and SQL decision record](./docs/adr/0003-core-management-validation-and-sql.md)
+- [Passkey/WebAuthn decision record](./docs/adr/0004-passkeys-webauthn.md)
 - [Changelog](./CHANGELOG.md)
 
-The server plugin kernel is implemented. Individual feature plugins—passkeys,
-two-factor, organizations, username, magic links, SSO, SCIM, API keys, and
-others—remain separate compatibility milestones with their own threat models.
+The server plugin kernel and passkeys are implemented. Individual feature
+plugins—two-factor, organizations, username, magic links, SSO, SCIM, API keys,
+and others—remain separate compatibility milestones with their own threat
+models.
 
 ## License
 
