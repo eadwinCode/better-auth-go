@@ -37,13 +37,13 @@ type PasswordCredential struct {
 
 // OAuthAccount binds a provider identity to a user.
 type OAuthAccount struct {
-	ID                string
-	UserID            string
-	Provider          string
-	ProviderAccountID string
-	Email             string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID                string    `json:"id"`
+	UserID            string    `json:"userId"`
+	Provider          string    `json:"providerId"`
+	ProviderAccountID string    `json:"accountId"`
+	Scope             string    `json:"scope,omitempty"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 // OAuthProfile is the provider-neutral verified profile used for account
@@ -107,6 +107,7 @@ type OneTimePurpose string
 const (
 	PurposePasswordReset    OneTimePurpose = "password_reset"
 	PurposeEmailVerify      OneTimePurpose = "email_verify"
+	PurposeEmailChange      OneTimePurpose = "email_change"
 	PurposeOAuthState       OneTimePurpose = "oauth_state"
 	ProviderGoogle                         = "google"
 	EventUserCreated                       = "user.created"
@@ -133,6 +134,7 @@ type OAuthState struct {
 	Nonce        string
 	RedirectURI  string
 	ReturnTo     string
+	LinkUserID   string
 	ExpiresAt    time.Time
 	CreatedAt    time.Time
 }

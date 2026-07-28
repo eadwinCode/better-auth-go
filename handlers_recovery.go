@@ -114,7 +114,19 @@ func (s *Server) handleConfirmVerification(w http.ResponseWriter, r *http.Reques
 	}
 	user, err := s.store.ConsumeEmailVerification(r.Context(), HashToken(token), s.cfg.Clock.Now().UTC())
 	if err != nil {
-		return publicError(CodeInvalidToken, "The token is invalid or expired.", http.StatusBadRequest, err)
+		if !errors.Is(err, ErrReplay) && !errors.Is(err, ErrNotFound) {
+			return publicError(CodeInvalidToken, "The token is invalid or expired.", http.StatusBadRequest, err)
+		}
+		var returnTo string
+		user, returnTo, err = s.store.ConsumeEmailChange(r.Context(), HashToken(token), s.cfg.Clock.Now().UTC())
+		if err != nil {
+			return publicError(CodeInvalidToken, "The token is invalid or expired.", http.StatusBadRequest, err)
+		}
+		if returnTo != "" {
+			w.Header().Set("Location", returnTo)
+			w.WriteHeader(http.StatusFound)
+			return nil
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": true, "user": user})
 	return nil

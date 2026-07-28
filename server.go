@@ -46,6 +46,10 @@ func New(cfg Config) (*Server, error) {
 // Handler returns an immutable, concurrency-safe standard library handler.
 func (s *Server) Handler() http.Handler { return s.handler }
 
+// Schema returns an independent copy of the fully merged core, application,
+// and plugin schema. Schema-aware adapters use it for explicit migrations.
+func (s *Server) Schema() Schema { return cloneSchema(s.cfg.Schema) }
+
 func (s *Server) serveCoreHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -71,10 +75,36 @@ func (s *Server) serveCoreHTTP(w http.ResponseWriter, r *http.Request) {
 		handler = s.postOnly(s.handleSignOut)
 	case "/get-session":
 		handler = s.getOnly(s.handleSession)
+	case "/list-sessions":
+		handler = s.getOnly(s.handleListSessions)
 	case "/refresh-session":
 		handler = s.postOnly(s.handleRefreshSession)
 	case "/revoke-session":
 		handler = s.postOnly(s.handleRevokeSession)
+	case "/revoke-other-sessions":
+		handler = s.postOnly(s.handleRevokeOtherSessions)
+	case "/revoke-sessions":
+		handler = s.postOnly(s.handleRevokeSessions)
+	case "/update-session":
+		handler = s.postOnly(s.handleUpdateSession)
+	case "/update-user":
+		handler = s.postOnly(s.handleUpdateUser)
+	case "/change-email":
+		handler = s.postOnly(s.handleChangeEmail)
+	case "/delete-user":
+		handler = s.postOnly(s.handleDeleteUser)
+	case "/change-password":
+		handler = s.postOnly(s.handleChangePassword)
+	case "/list-accounts":
+		handler = s.getOnly(s.handleListAccounts)
+	case "/link-social":
+		handler = s.postOnly(s.handleLinkSocial)
+	case "/unlink-account":
+		handler = s.postOnly(s.handleUnlinkAccount)
+	case "/get-access-token":
+		handler = s.postOnly(s.handleGetAccessToken)
+	case "/refresh-token":
+		handler = s.postOnly(s.handleRefreshProviderToken)
 	case "/sign-in/social":
 		handler = s.postOnly(s.handleSocialAuthorize)
 	case "/forget-password":

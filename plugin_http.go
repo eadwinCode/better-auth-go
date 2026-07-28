@@ -153,6 +153,11 @@ func (s *Server) executePluginPipeline(
 	if err := s.runPluginRateLimits(hookContext); err != nil {
 		return hookContext, nil, false, err
 	}
+	if !core {
+		if err := validatePluginEndpointInput(pluginEndpoint.endpoint, hookContext); err != nil {
+			return hookContext, nil, false, err
+		}
+	}
 	if response, err := s.runRequestHooks(s.plugins.middlewares, hookContext); response != nil || err != nil {
 		return hookContext, response, false, err
 	}
@@ -213,7 +218,8 @@ func (s *Server) resolvePluginRoute(
 	}
 	if isCoreRoute(path) {
 		expected := http.MethodPost
-		if path == "/get-session" || path == "/verify-email" {
+		if path == "/get-session" || path == "/list-sessions" ||
+			path == "/list-accounts" || path == "/verify-email" {
 			expected = http.MethodGet
 		}
 		return compiledEndpoint{}, nil, true, []string{expected}, true, false
@@ -272,6 +278,11 @@ func (s *Server) newHookContext(
 	decoder.UseNumber()
 	if err := decoder.Decode(&context.Body); err != nil {
 		// Core endpoints retain ownership of their exact JSON error contract.
+		context.bodyDecodeError = err
+		return context, false, nil
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		context.bodyDecodeError = errors.New("betterauth: request body must contain one JSON value")
 		return context, false, nil
 	}
 	return context, true, nil

@@ -24,6 +24,33 @@ func (s *Server) handleSocialAuthorize(w http.ResponseWriter, r *http.Request) e
 	if err := s.decodeJSON(w, r, &input); err != nil {
 		return err
 	}
+	return s.beginSocialAuthorize(w, r, input, "")
+}
+
+func (s *Server) handleLinkSocial(w http.ResponseWriter, r *http.Request) error {
+	if err := s.requireCSRF(r); err != nil {
+		return err
+	}
+	session, user, _, err := s.sessionFromRequest(r.Context(), r)
+	if err != nil {
+		return err
+	}
+	if err := s.requireFreshSession(session); err != nil {
+		return err
+	}
+	var input socialSignInRequest
+	if err := s.decodeJSON(w, r, &input); err != nil {
+		return err
+	}
+	return s.beginSocialAuthorize(w, r, input, user.ID)
+}
+
+func (s *Server) beginSocialAuthorize(
+	w http.ResponseWriter,
+	r *http.Request,
+	input socialSignInRequest,
+	linkUserID string,
+) error {
 	providerID := strings.ToLower(strings.TrimSpace(input.Provider))
 	provider, ok := s.cfg.SocialProviders[providerID]
 	if !ok {
@@ -33,7 +60,13 @@ func (s *Server) handleSocialAuthorize(w http.ResponseWriter, r *http.Request) e
 	if err != nil {
 		return err
 	}
-	if err := s.rateLimit(r.Context(), r, "sign-in/social:"+providerID, ""); err != nil {
+	action := "sign-in/social:" + providerID
+	accountKey := ""
+	if linkUserID != "" {
+		action = "link-social:" + providerID
+		accountKey = HashToken(linkUserID)
+	}
+	if err := s.rateLimit(r.Context(), r, action, accountKey); err != nil {
 		return err
 	}
 	stateRaw, err := s.cfg.Tokens.Token(32)
@@ -57,7 +90,7 @@ func (s *Server) handleSocialAuthorize(w http.ResponseWriter, r *http.Request) e
 	state := OAuthState{
 		ID: stateID, Hash: HashToken(stateRaw), PKCEVerifier: verifier, Nonce: nonce,
 		RedirectURI: redirectURI, ReturnTo: returnTo,
-		ExpiresAt: now.Add(s.cfg.OAuthStateTTL), CreatedAt: now,
+		LinkUserID: linkUserID, ExpiresAt: now.Add(s.cfg.OAuthStateTTL), CreatedAt: now,
 	}
 	if err := s.store.PutOAuthState(r.Context(), state); err != nil {
 		return publicError(CodeInternal, "Social sign in could not be started.", http.StatusInternalServerError, err)
@@ -119,6 +152,38 @@ func (s *Server) handleSocialCallback(providerID string) func(http.ResponseWrite
 		if err != nil || profile.ProviderAccountID == "" || len(profile.ProviderAccountID) > 512 || !profile.EmailVerified {
 			return publicError(CodeProviderFailure, "The provider did not return a verified identity.", http.StatusBadGateway, err)
 		}
+		encryptedTokens, err := s.encryptProviderTokens(r.Context(), result.Tokens)
+		if err != nil {
+			return publicError(CodeInternal, "Social sign in could not be completed.", http.StatusInternalServerError, err)
+		}
+		if state.LinkUserID != "" {
+			_, linkingUser, _, sessionErr := s.sessionFromRequest(r.Context(), r)
+			if sessionErr != nil || linkingUser.ID != state.LinkUserID {
+				return publicError(CodeUnauthorized, "Authentication required.", http.StatusUnauthorized, sessionErr)
+			}
+			if !s.cfg.Account.AllowLinkingDifferentEmails && profile.Email != linkingUser.Email {
+				return publicError(CodeConflict, "The social account could not be linked.", http.StatusConflict, nil)
+			}
+			accountID, err := s.newID()
+			if err != nil {
+				return err
+			}
+			if err := s.store.LinkOAuthAccount(
+				r.Context(), accountID, linkingUser.ID, profile, encryptedTokens, s.cfg.Clock.Now().UTC(),
+			); err != nil {
+				if errors.Is(err, ErrConflict) {
+					return publicError(CodeConflict, "The social account could not be linked.", http.StatusConflict, err)
+				}
+				return publicError(CodeInternal, "The social account could not be linked.", http.StatusInternalServerError, err)
+			}
+			if state.ReturnTo != "" {
+				w.Header().Set("Location", state.ReturnTo)
+				w.WriteHeader(http.StatusFound)
+				return nil
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"redirect": false, "user": linkingUser})
+			return nil
+		}
 		userID, err := s.newID()
 		if err != nil {
 			return err
@@ -136,10 +201,6 @@ func (s *Server) handleSocialCallback(providerID string) func(http.ResponseWrite
 			OccurredAt: session.CreatedAt, Payload: map[string]string{
 				"userId": userID, "email": profile.Email, "provider": providerID,
 			},
-		}
-		encryptedTokens, err := s.encryptProviderTokens(r.Context(), result.Tokens)
-		if err != nil {
-			return publicError(CodeInternal, "Social sign in could not be completed.", http.StatusInternalServerError, err)
 		}
 		user, createdSession, isNew, err := s.store.UpsertOAuthUser(r.Context(), profile, encryptedTokens, session, event)
 		if err != nil {

@@ -172,6 +172,81 @@ func TestOriginFailsBeforePluginCode(t *testing.T) {
 	}
 }
 
+func TestPluginEndpointValidatorsRunBeforeMiddlewareAndHandler(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int64
+	plugin := betterauth.Plugin{
+		ID: "validated",
+		Endpoints: []betterauth.PluginEndpoint{{
+			Path: "/validated", Method: http.MethodPost,
+			BodyValidator: betterauth.ObjectValidator{Fields: map[string]betterauth.FieldValidation{
+				"name": {
+					Kind: betterauth.ValidationString, Required: true, MinLength: 2, MaxLength: 32,
+				},
+			}},
+			QueryValidator: betterauth.ObjectValidator{Fields: map[string]betterauth.FieldValidation{
+				"mode": {
+					Kind: betterauth.ValidationString, Required: true, Enum: []string{"safe"},
+				},
+			}},
+			Use: []betterauth.RequestHook{func(*betterauth.HookContext) (*betterauth.PluginResponse, error) {
+				calls.Add(1)
+				return nil, nil
+			}},
+			Handler: func(*betterauth.HookContext) (*betterauth.PluginResponse, error) {
+				calls.Add(1)
+				return betterauth.JSONResponse(http.StatusOK, map[string]bool{"ok": true})
+			},
+		}},
+	}
+	handler := newPluginServer(t, nil, nil, plugin)
+	invalid := pluginRequest(
+		t, handler, http.MethodPost, "/validated?mode=safe", "https://app.example.com", `{"name":"x"}`,
+	)
+	if invalid.Code != http.StatusBadRequest || calls.Load() != 0 ||
+		bytes.Contains(invalid.Body.Bytes(), []byte("invalid length")) {
+		t.Fatalf("validator did not fail safely before endpoint code: %d %s calls=%d",
+			invalid.Code, invalid.Body.String(), calls.Load())
+	}
+	trailing := pluginRequest(
+		t, handler, http.MethodPost, "/validated?mode=safe", "https://app.example.com",
+		`{"name":"Ada"} {"name":"Grace"}`,
+	)
+	if trailing.Code != http.StatusBadRequest || calls.Load() != 0 {
+		t.Fatalf("trailing JSON reached endpoint code: %d %s calls=%d",
+			trailing.Code, trailing.Body.String(), calls.Load())
+	}
+	valid := pluginRequest(
+		t, handler, http.MethodPost, "/validated?mode=safe", "https://app.example.com", `{"name":"Ada"}`,
+	)
+	if valid.Code != http.StatusOK || calls.Load() != 2 {
+		t.Fatalf("valid request was rejected: %d %s calls=%d", valid.Code, valid.Body.String(), calls.Load())
+	}
+}
+
+func TestInvalidDeclarativeValidatorFailsServerConstruction(t *testing.T) {
+	t.Parallel()
+	_, err := betterauth.New(betterauth.Config{
+		PublicURL: "https://auth.example.com", TrustedOrigins: []string{"https://app.example.com"},
+		Database: memory.New(), Mailer: discardMailer{}, ImpersonationAuthorizer: denyImpersonation{},
+		Plugins: []betterauth.Plugin{{
+			ID: "invalid-validator",
+			Endpoints: []betterauth.PluginEndpoint{{
+				Path: "/invalid-validator", Method: http.MethodPost,
+				BodyValidator: betterauth.ObjectValidator{Fields: map[string]betterauth.FieldValidation{
+					"value": {Kind: betterauth.ValidationString, MinLength: 4, MaxLength: 2},
+				}},
+				Handler: func(*betterauth.HookContext) (*betterauth.PluginResponse, error) {
+					return betterauth.JSONResponse(http.StatusOK, nil)
+				},
+			}},
+		}},
+	})
+	if err == nil {
+		t.Fatal("invalid endpoint validator was accepted")
+	}
+}
+
 func TestPluginCanModifyCoreRequestAndResponse(t *testing.T) {
 	t.Parallel()
 	plugin := betterauth.Plugin{

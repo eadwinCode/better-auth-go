@@ -27,14 +27,33 @@ type ResponseHook func(*HookContext, *PluginResponse) error
 // PluginEndpointHandler serves one plugin endpoint.
 type PluginEndpointHandler func(*HookContext) (*PluginResponse, error)
 
+// EndpointValidator validates a decoded endpoint input. Body validators
+// receive JSON-compatible values; query validators receive url.Values.
+// Implementations must be concurrency-safe.
+type EndpointValidator interface {
+	Validate(any) error
+}
+
+// EndpointValidatorFunc adapts a function to EndpointValidator.
+type EndpointValidatorFunc func(any) error
+
+func (validator EndpointValidatorFunc) Validate(value any) error {
+	if validator == nil {
+		return errors.New("betterauth: endpoint validator is nil")
+	}
+	return validator(value)
+}
+
 // PluginEndpoint declares a collision-checked GET or POST route relative to the
 // configured authentication base path.
 type PluginEndpoint struct {
-	Name    string
-	Path    string
-	Method  string
-	Use     []RequestHook
-	Handler PluginEndpointHandler
+	Name           string
+	Path           string
+	Method         string
+	Use            []RequestHook
+	BodyValidator  EndpointValidator
+	QueryValidator EndpointValidator
+	Handler        PluginEndpointHandler
 }
 
 // PluginMiddleware runs before endpoint-specific middleware and before hooks.
@@ -151,6 +170,7 @@ type HookContext struct {
 	IsTrustedOrigin func(string) bool
 	ValidateCSRF    func() error
 	BackgroundTasks BackgroundTaskRunner
+	bodyDecodeError error
 }
 
 func (ctx *HookContext) RunInBackground(task BackgroundTask) error {
@@ -333,6 +353,8 @@ func clonePluginDescriptor(plugin Plugin) Plugin {
 	plugin.Endpoints = slices.Clone(plugin.Endpoints)
 	for index := range plugin.Endpoints {
 		plugin.Endpoints[index].Use = slices.Clone(plugin.Endpoints[index].Use)
+		plugin.Endpoints[index].BodyValidator = cloneEndpointValidator(plugin.Endpoints[index].BodyValidator)
+		plugin.Endpoints[index].QueryValidator = cloneEndpointValidator(plugin.Endpoints[index].QueryValidator)
 	}
 	plugin.Middlewares = slices.Clone(plugin.Middlewares)
 	plugin.Before = slices.Clone(plugin.Before)
@@ -393,6 +415,15 @@ func newPluginRuntime(plugins []Plugin, application ServerHooks) (pluginRuntime,
 			for _, middleware := range endpoint.Use {
 				if middleware == nil {
 					return pluginRuntime{}, fmt.Errorf("betterauth: plugin %q endpoint has nil middleware", plugin.ID)
+				}
+			}
+			for _, validator := range []EndpointValidator{endpoint.BodyValidator, endpoint.QueryValidator} {
+				if configurable, ok := validator.(interface{ ValidateConfiguration() error }); ok {
+					if err := configurable.ValidateConfiguration(); err != nil {
+						return pluginRuntime{}, fmt.Errorf(
+							"betterauth: plugin %q endpoint validator: %w", plugin.ID, err,
+						)
+					}
 				}
 			}
 			shape, dynamic, err := pluginPathShape(endpoint.Path)
@@ -491,7 +522,12 @@ func validPluginID(value string) bool {
 func isCoreRoute(path string) bool {
 	switch path {
 	case "/sign-up/email", "/sign-in/email", "/sign-out", "/get-session",
-		"/refresh-session", "/revoke-session", "/sign-in/social",
+		"/list-sessions", "/refresh-session", "/revoke-session",
+		"/revoke-other-sessions", "/revoke-sessions", "/update-session",
+		"/update-user", "/change-email", "/delete-user", "/change-password",
+		"/list-accounts", "/link-social", "/unlink-account",
+		"/get-access-token", "/refresh-token",
+		"/sign-in/social",
 		"/forget-password", "/reset-password", "/send-verification-email",
 		"/verify-email", "/admin/impersonate-user", "/admin/stop-impersonating":
 		return true
@@ -503,7 +539,12 @@ func isCoreRoute(path string) bool {
 func coreRoutePaths() []string {
 	return []string{
 		"/sign-up/email", "/sign-in/email", "/sign-out", "/get-session",
-		"/refresh-session", "/revoke-session", "/sign-in/social",
+		"/list-sessions", "/refresh-session", "/revoke-session",
+		"/revoke-other-sessions", "/revoke-sessions", "/update-session",
+		"/update-user", "/change-email", "/delete-user", "/change-password",
+		"/list-accounts", "/link-social", "/unlink-account",
+		"/get-access-token", "/refresh-token",
+		"/sign-in/social",
 		"/forget-password", "/reset-password", "/send-verification-email",
 		"/verify-email", "/admin/impersonate-user", "/admin/stop-impersonating",
 	}

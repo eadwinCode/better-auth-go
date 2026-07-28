@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 )
 
@@ -87,6 +88,322 @@ func (s *databaseStore) ReplacePasswordHash(ctx context.Context, userID, previou
 	return err
 }
 
+func (s *databaseStore) SetPasswordHash(ctx context.Context, userID, passwordHash string, now time.Time) error {
+	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
+		account, err := tx.FindOne(ctx, FindOneQuery{Model: ModelAccount, Where: []Where{
+			Eq("providerId", credentialProvider), Eq("accountId", userID), Eq("userId", userID),
+		}})
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		if account != nil {
+			updated, err := tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
+				Eq("providerId", credentialProvider), Eq("accountId", userID), Eq("userId", userID),
+			}, Update: Record{"password": passwordHash, "updatedAt": now.UTC()}})
+			if err != nil {
+				return err
+			}
+			if updated == nil {
+				return ErrReplay
+			}
+			return nil
+		}
+		_, err = tx.Create(ctx, CreateQuery{Model: ModelAccount, ForceAllowID: true, Data: Record{
+			"id": userID + ":credential", "userId": userID,
+			"providerId": credentialProvider, "accountId": userID,
+			"password": passwordHash, "createdAt": now.UTC(), "updatedAt": now.UTC(),
+		}})
+		return err
+	})
+}
+
+func (s *databaseStore) ChangePasswordAndRotate(ctx context.Context, params ChangePasswordParams) (Session, error) {
+	var created Session
+	err := s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
+		account, err := tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
+			Eq("providerId", credentialProvider), Eq("accountId", params.UserID),
+			Eq("userId", params.UserID), Eq("password", params.PreviousHash),
+		}, Update: Record{
+			"password": params.ReplacementHash, "updatedAt": params.ReplacementSession.CreatedAt,
+		}})
+		if err != nil {
+			return err
+		}
+		if account == nil {
+			return ErrReplay
+		}
+		if params.RevokeOtherSessions {
+			if _, err = tx.UpdateMany(ctx, UpdateQuery{Model: ModelSession, Where: []Where{
+				Eq("userId", params.UserID), Eq("revokedAt", nil),
+			}, Update: Record{
+				"revokedAt": params.ReplacementSession.CreatedAt,
+				"updatedAt": params.ReplacementSession.CreatedAt,
+			}}); err != nil {
+				return err
+			}
+		} else {
+			current, updateErr := tx.Update(ctx, UpdateQuery{Model: ModelSession, Where: []Where{
+				Eq("userId", params.UserID), Eq("tokenHash", params.CurrentTokenHash), Eq("revokedAt", nil),
+			}, Update: Record{
+				"revokedAt": params.ReplacementSession.CreatedAt,
+				"updatedAt": params.ReplacementSession.CreatedAt,
+			}})
+			if updateErr != nil {
+				return updateErr
+			}
+			if current == nil {
+				return ErrReplay
+			}
+		}
+		row, err := tx.Create(ctx, CreateQuery{
+			Model: ModelSession, Data: sessionRecord(params.ReplacementSession), ForceAllowID: true,
+		})
+		if err != nil {
+			return err
+		}
+		created, err = sessionFromRecord(row)
+		return err
+	})
+	return created, err
+}
+
+func (s *databaseStore) UpdateUser(
+	ctx context.Context,
+	userID string,
+	fields Record,
+	now time.Time,
+) (User, error) {
+	update := maps.Clone(fields)
+	update["updatedAt"] = now.UTC()
+	row, err := s.db.Update(ctx, UpdateQuery{
+		Model: ModelUser, Where: []Where{Eq("id", userID)}, Update: update,
+	})
+	if err != nil {
+		return User{}, err
+	}
+	if row == nil {
+		return User{}, ErrNotFound
+	}
+	return userFromRecord(row)
+}
+
+func (s *databaseStore) ListAccounts(ctx context.Context, userID string) ([]OAuthAccount, error) {
+	rows, err := s.db.FindMany(ctx, FindManyQuery{
+		Model: ModelAccount, Where: []Where{Eq("userId", userID)},
+		Sort: &Sort{Field: "createdAt", Direction: "asc"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	accounts := make([]OAuthAccount, 0, len(rows))
+	for _, row := range rows {
+		account, err := accountFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, account)
+	}
+	return accounts, nil
+}
+
+func (s *databaseStore) UnlinkAccount(
+	ctx context.Context,
+	userID string,
+	providerID string,
+	accountID string,
+	allowLast bool,
+) error {
+	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
+		where := []Where{Eq("userId", userID), Eq("providerId", providerID)}
+		if accountID != "" {
+			where = append(where, Eq("accountId", accountID))
+		}
+		account, err := tx.FindOne(ctx, FindOneQuery{Model: ModelAccount, Where: where})
+		if err != nil {
+			return err
+		}
+		if account == nil {
+			return ErrNotFound
+		}
+		if !allowLast {
+			count, err := tx.Count(ctx, CountQuery{Model: ModelAccount, Where: []Where{Eq("userId", userID)}})
+			if err != nil {
+				return err
+			}
+			if count <= 1 {
+				return ErrConflict
+			}
+		}
+		id, err := recordString(account, "id")
+		if err != nil {
+			return err
+		}
+		return tx.Delete(ctx, DeleteQuery{Model: ModelAccount, Where: []Where{
+			Eq("id", id), Eq("userId", userID),
+		}})
+	})
+}
+
+func (s *databaseStore) DeleteUser(ctx context.Context, userID string) error {
+	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
+		if _, err := tx.DeleteMany(ctx, DeleteQuery{
+			Model: ModelSession, Where: []Where{Eq("userId", userID)},
+		}); err != nil {
+			return err
+		}
+		if _, err := tx.DeleteMany(ctx, DeleteQuery{
+			Model: ModelAccount, Where: []Where{Eq("userId", userID)},
+		}); err != nil {
+			return err
+		}
+		return tx.Delete(ctx, DeleteQuery{Model: ModelUser, Where: []Where{Eq("id", userID)}})
+	})
+}
+
+func (s *databaseStore) ConsumeEmailChange(ctx context.Context, hash string, now time.Time) (User, string, error) {
+	var user User
+	var returnTo string
+	err := s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
+		token, err := tx.ConsumeOne(ctx, DeleteQuery{Model: ModelVerification, Where: []Where{
+			{Field: "identifier", Operator: WhereStartsWith, Value: string(PurposeEmailChange) + ":"},
+			Eq("value", hash),
+			{Field: "expiresAt", Operator: WhereGT, Value: now.UTC()},
+		}})
+		if err != nil {
+			return err
+		}
+		if token == nil {
+			return ErrReplay
+		}
+		metadata := recordStringMap(token["metadata"])
+		if metadata["userId"] == "" || metadata["newEmail"] == "" {
+			return ErrReplay
+		}
+		returnTo = metadata["returnTo"]
+		row, err := tx.Update(ctx, UpdateQuery{Model: ModelUser, Where: []Where{
+			Eq("id", metadata["userId"]),
+		}, Update: Record{
+			"email": metadata["newEmail"], "emailVerified": true, "updatedAt": now.UTC(),
+		}})
+		if err != nil {
+			return err
+		}
+		if row == nil {
+			return ErrNotFound
+		}
+		user, err = userFromRecord(row)
+		return err
+	})
+	return user, returnTo, err
+}
+
+func (s *databaseStore) LinkOAuthAccount(
+	ctx context.Context,
+	accountID string,
+	userID string,
+	profile OAuthProfile,
+	tokens ProviderTokens,
+	now time.Time,
+) error {
+	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
+		existing, err := tx.FindOne(ctx, FindOneQuery{Model: ModelAccount, Where: []Where{
+			Eq("providerId", profile.Provider), Eq("accountId", profile.ProviderAccountID),
+		}})
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		if existing != nil {
+			owner, err := recordString(existing, "userId")
+			if err != nil {
+				return err
+			}
+			if owner != userID {
+				return ErrConflict
+			}
+			id, err := recordString(existing, "id")
+			if err != nil {
+				return err
+			}
+			_, err = tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
+				Eq("id", id), Eq("userId", userID),
+			}, Update: Record{
+				"accessToken": tokens.AccessToken, "refreshToken": tokens.RefreshToken,
+				"idToken": tokens.IDToken, "scope": tokens.Scope,
+				"accessTokenExpiresAt":  nullableTimeValue(tokens.AccessTokenExpiresAt),
+				"refreshTokenExpiresAt": nullableTimeValue(tokens.RefreshTokenExpiresAt),
+				"updatedAt":             now.UTC(),
+			}})
+			return err
+		}
+		_, err = tx.Create(ctx, CreateQuery{Model: ModelAccount, ForceAllowID: true, Data: Record{
+			"id": accountID, "userId": userID, "providerId": profile.Provider,
+			"accountId":   profile.ProviderAccountID,
+			"accessToken": tokens.AccessToken, "refreshToken": tokens.RefreshToken,
+			"idToken": tokens.IDToken, "scope": tokens.Scope,
+			"accessTokenExpiresAt":  nullableTimeValue(tokens.AccessTokenExpiresAt),
+			"refreshTokenExpiresAt": nullableTimeValue(tokens.RefreshTokenExpiresAt),
+			"createdAt":             now.UTC(), "updatedAt": now.UTC(),
+		}})
+		return err
+	})
+}
+
+func (s *databaseStore) OAuthAccountTokens(
+	ctx context.Context,
+	userID string,
+	providerID string,
+	accountID string,
+) (StoredOAuthAccount, error) {
+	where := []Where{Eq("userId", userID), Eq("providerId", providerID)}
+	if accountID != "" {
+		where = append(where, Eq("accountId", accountID))
+	}
+	row, err := s.db.FindOne(ctx, FindOneQuery{Model: ModelAccount, Where: where})
+	if err != nil {
+		return StoredOAuthAccount{}, err
+	}
+	if row == nil {
+		return StoredOAuthAccount{}, ErrNotFound
+	}
+	account, err := accountFromRecord(row)
+	if err != nil {
+		return StoredOAuthAccount{}, err
+	}
+	return StoredOAuthAccount{Account: account, Tokens: ProviderTokens{
+		AccessToken:           optionalString(row["accessToken"]),
+		RefreshToken:          optionalString(row["refreshToken"]),
+		IDToken:               optionalString(row["idToken"]),
+		Scope:                 optionalString(row["scope"]),
+		AccessTokenExpiresAt:  optionalTime(row["accessTokenExpiresAt"]),
+		RefreshTokenExpiresAt: optionalTime(row["refreshTokenExpiresAt"]),
+	}}, nil
+}
+
+func (s *databaseStore) UpdateOAuthAccountTokens(
+	ctx context.Context,
+	userID string,
+	accountID string,
+	tokens ProviderTokens,
+	now time.Time,
+) error {
+	row, err := s.db.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
+		Eq("id", accountID), Eq("userId", userID),
+	}, Update: Record{
+		"accessToken": tokens.AccessToken, "refreshToken": tokens.RefreshToken,
+		"idToken": tokens.IDToken, "scope": tokens.Scope,
+		"accessTokenExpiresAt":  nullableTimeValue(tokens.AccessTokenExpiresAt),
+		"refreshTokenExpiresAt": nullableTimeValue(tokens.RefreshTokenExpiresAt),
+		"updatedAt":             now.UTC(),
+	}})
+	if err != nil {
+		return err
+	}
+	if row == nil {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *databaseStore) CreateSession(ctx context.Context, session Session) (Session, error) {
 	row, err := s.db.Create(ctx, CreateQuery{Model: ModelSession, Data: sessionRecord(session), ForceAllowID: true})
 	if err != nil {
@@ -147,13 +464,102 @@ func (s *databaseStore) RevokeUserSessions(ctx context.Context, userID string, a
 	return err
 }
 
-func (s *databaseStore) PutOneTimeToken(ctx context.Context, token OneTimeToken) error {
-	_, err := s.db.Create(ctx, CreateQuery{Model: ModelVerification, ForceAllowID: true, Data: Record{
-		"id": token.ID, "identifier": string(token.Purpose), "value": token.Hash,
-		"expiresAt": token.ExpiresAt, "createdAt": token.CreatedAt,
-		"metadata": mergeStringMaps(token.Metadata, map[string]string{"userId": token.UserID}),
-	}})
+func (s *databaseStore) ListSessions(ctx context.Context, userID string, now time.Time) ([]Session, error) {
+	rows, err := s.db.FindMany(ctx, FindManyQuery{
+		Model: ModelSession,
+		Where: []Where{
+			Eq("userId", userID), Eq("revokedAt", nil),
+			{Field: "expiresAt", Operator: WhereGT, Value: now.UTC()},
+		},
+		Sort: &Sort{Field: "createdAt", Direction: "desc"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	sessions := make([]Session, 0, len(rows))
+	for _, row := range rows {
+		session, err := sessionFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, session)
+	}
+	return sessions, nil
+}
+
+func (s *databaseStore) RevokeSessionByID(
+	ctx context.Context,
+	userID string,
+	sessionID string,
+	at time.Time,
+) (bool, error) {
+	row, err := s.db.Update(ctx, UpdateQuery{Model: ModelSession, Where: []Where{
+		Eq("id", sessionID), Eq("userId", userID), Eq("revokedAt", nil),
+	}, Update: Record{"revokedAt": at.UTC(), "updatedAt": at.UTC()}})
+	if err != nil {
+		return false, err
+	}
+	return row != nil, nil
+}
+
+func (s *databaseStore) RevokeOtherSessions(
+	ctx context.Context,
+	userID string,
+	currentSessionID string,
+	at time.Time,
+) error {
+	_, err := s.db.UpdateMany(ctx, UpdateQuery{Model: ModelSession, Where: []Where{
+		Eq("userId", userID), {Field: "id", Operator: WhereNE, Value: currentSessionID},
+		Eq("revokedAt", nil),
+	}, Update: Record{"revokedAt": at.UTC(), "updatedAt": at.UTC()}})
 	return err
+}
+
+func (s *databaseStore) UpdateSession(
+	ctx context.Context,
+	userID string,
+	tokenHash string,
+	fields Record,
+	now time.Time,
+) (Session, error) {
+	update := maps.Clone(fields)
+	update["updatedAt"] = now.UTC()
+	row, err := s.db.Update(ctx, UpdateQuery{Model: ModelSession, Where: []Where{
+		Eq("userId", userID), Eq("tokenHash", tokenHash), Eq("revokedAt", nil),
+	}, Update: update})
+	if err != nil {
+		return Session{}, err
+	}
+	if row == nil {
+		return Session{}, ErrNotFound
+	}
+	return sessionFromRecord(row)
+}
+
+func (s *databaseStore) PutOneTimeToken(ctx context.Context, token OneTimeToken) error {
+	identifier := string(token.Purpose)
+	if token.Purpose == PurposeEmailChange {
+		identifier += ":" + token.UserID
+	}
+	create := func(database DatabaseAdapter) error {
+		_, err := database.Create(ctx, CreateQuery{Model: ModelVerification, ForceAllowID: true, Data: Record{
+			"id": token.ID, "identifier": identifier, "value": token.Hash,
+			"expiresAt": token.ExpiresAt, "createdAt": token.CreatedAt,
+			"metadata": mergeStringMaps(token.Metadata, map[string]string{"userId": token.UserID}),
+		}})
+		return err
+	}
+	if token.Purpose != PurposeEmailChange {
+		return create(s.db)
+	}
+	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
+		if _, err := tx.DeleteMany(ctx, DeleteQuery{Model: ModelVerification, Where: []Where{
+			Eq("identifier", identifier),
+		}}); err != nil {
+			return err
+		}
+		return create(tx)
+	})
 }
 
 func (s *databaseStore) ConsumePasswordReset(
@@ -246,6 +652,7 @@ func (s *databaseStore) PutOAuthState(ctx context.Context, state OAuthState) err
 		"metadata": map[string]string{
 			"pkceVerifier": state.PKCEVerifier, "nonce": state.Nonce,
 			"redirectURI": state.RedirectURI, "returnTo": state.ReturnTo,
+			"linkUserId": state.LinkUserID,
 		},
 	}})
 	return err
@@ -274,7 +681,7 @@ func (s *databaseStore) ConsumeOAuthState(ctx context.Context, hash string, now 
 	}
 	return OAuthState{
 		ID: id, Hash: hash, PKCEVerifier: meta["pkceVerifier"], Nonce: meta["nonce"], RedirectURI: meta["redirectURI"],
-		ReturnTo: meta["returnTo"], ExpiresAt: expires, CreatedAt: created,
+		ReturnTo: meta["returnTo"], LinkUserID: meta["linkUserId"], ExpiresAt: expires, CreatedAt: created,
 	}, nil
 }
 
@@ -471,6 +878,40 @@ func sessionFromRecord(row Record) (Session, error) {
 	}, nil
 }
 
+func accountFromRecord(row Record) (OAuthAccount, error) {
+	if row == nil {
+		return OAuthAccount{}, ErrNotFound
+	}
+	id, err := recordString(row, "id")
+	if err != nil {
+		return OAuthAccount{}, err
+	}
+	userID, err := recordString(row, "userId")
+	if err != nil {
+		return OAuthAccount{}, err
+	}
+	providerID, err := recordString(row, "providerId")
+	if err != nil {
+		return OAuthAccount{}, err
+	}
+	accountID, err := recordString(row, "accountId")
+	if err != nil {
+		return OAuthAccount{}, err
+	}
+	createdAt, err := recordTime(row, "createdAt")
+	if err != nil {
+		return OAuthAccount{}, err
+	}
+	updatedAt, err := recordTime(row, "updatedAt")
+	if err != nil {
+		return OAuthAccount{}, err
+	}
+	return OAuthAccount{
+		ID: id, UserID: userID, Provider: providerID, ProviderAccountID: accountID,
+		Scope: optionalString(row["scope"]), CreatedAt: createdAt, UpdatedAt: updatedAt,
+	}, nil
+}
+
 func domainEventRecord(event DomainEvent) Record {
 	return Record{
 		"id": event.ID, "schemaVersion": event.SchemaVersion, "name": event.Name,
@@ -527,6 +968,13 @@ func optionalTimePtr(value any) *time.Time {
 	default:
 		return nil
 	}
+}
+
+func optionalTime(value any) time.Time {
+	if result := optionalTimePtr(value); result != nil {
+		return *result
+	}
+	return time.Time{}
 }
 
 func nullableTime(value *time.Time) any {

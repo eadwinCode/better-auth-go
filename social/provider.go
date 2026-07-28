@@ -319,6 +319,42 @@ func (p *Provider) exchangeToken(ctx context.Context, code, verifier, redirectUR
 		}
 		form.Set(secretParam, p.clientSecret)
 	}
+	return p.requestToken(ctx, form)
+}
+
+// Refresh exchanges a refresh token using the provider's configured token
+// endpoint and client authentication method.
+func (p *Provider) Refresh(ctx context.Context, refreshToken string) (betterauth.ProviderTokens, error) {
+	if strings.TrimSpace(refreshToken) == "" {
+		return betterauth.ProviderTokens{}, errors.New("social: refresh token is required")
+	}
+	form := url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+	}
+	form.Set(p.clientIDParameter(), p.clientID)
+	if p.tokenAuth == TokenAuthBody || p.tokenSecretParam != "" {
+		secretParam := p.tokenSecretParam
+		if secretParam == "" {
+			secretParam = "client_secret"
+		}
+		form.Set(secretParam, p.clientSecret)
+	}
+	token, err := p.requestToken(ctx, form)
+	if err != nil {
+		return betterauth.ProviderTokens{}, err
+	}
+	result := betterauth.ProviderTokens{
+		AccessToken: token.AccessToken, RefreshToken: token.RefreshToken,
+		IDToken: token.IDToken, Scope: token.Scope,
+	}
+	if token.ExpiresIn > 0 {
+		result.AccessTokenExpiresAt = time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
+	}
+	return result, nil
+}
+
+func (p *Provider) requestToken(ctx context.Context, form url.Values) (tokenResponse, error) {
 	method := p.tokenMethod
 	if method == "" {
 		method = http.MethodPost
