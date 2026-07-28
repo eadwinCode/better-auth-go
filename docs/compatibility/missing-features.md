@@ -34,7 +34,7 @@ plugin should be its own package or a small cohesive PR series.
 
 ### Authentication
 
-- two-factor authentication;
+- two-factor authentication — implemented in the dedicated ADR 0005 PR;
 - passkeys/WebAuthn — implemented in the dedicated ADR 0004 PR;
 - magic link;
 - email OTP;
@@ -91,7 +91,7 @@ authorization, and token features.
 
 ## Proposed delivery order
 
-1. passkeys/WebAuthn and two-factor authentication;
+1. passkeys/WebAuthn and two-factor authentication — implemented;
 2. organizations, expanded admin, and authorization policies;
 3. enterprise SSO and SCIM;
 4. endpoint metadata/error registries and instrumentation;

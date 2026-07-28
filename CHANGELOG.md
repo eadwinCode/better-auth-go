@@ -23,6 +23,9 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 - Passkey/WebAuthn plugin with Better Auth-shaped endpoints, exact RP/origin
   policy, hash-at-rest single-use challenges, W3C fixture coverage, guarded
   counters, and core session rotation.
+- Two-factor authentication plugin with Better Auth-shaped TOTP, delivered OTP,
+  backup-code, trusted-device, and sign-in interception flows; encrypted secret
+  material; hash-at-rest challenges; atomic attempts; and account lockout.
 - Merged-schema index declarations for SQL and MongoDB plugin models.
 
 [Unreleased]: https://github.com/eadwinCode/better-auth-go/commits/main

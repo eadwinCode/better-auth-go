@@ -24,7 +24,9 @@ using native Go security defaults:
 - MongoDB, PostgreSQL, SQLite, a public adapter conformance suite, and an
   in-memory development adapter.
 - an opt-in Better Auth-shaped passkey/WebAuthn plugin with hash-at-rest,
-  single-use challenges and fixation-safe core session rotation.
+  single-use challenges and fixation-safe core session rotation;
+- an opt-in Better Auth-shaped 2FA plugin with encrypted TOTP/backup material,
+  delivered OTP, trusted devices, shared attempt budgets, and durable lockout.
 
 The project is pre-1.0. Review the compatibility matrix and changelog before
 upgrading.
@@ -174,6 +176,41 @@ authentication routes, plus list, rename, and delete. WebAuthn challenges are
 represented in the browser by a secure `__Host-` cookie, stored only as a hash,
 and atomically consumed. See the [passkey guide](./docs/passkeys.md) and
 [ADR 0004](./docs/adr/0004-passkeys-webauthn.md).
+
+## Two-factor authentication
+
+Two-factor authentication is an isolated server plugin:
+
+```go
+import "github.com/eadwinCode/better-auth-go/plugin/twofactor"
+
+cipher, err := betterauth.NewAESGCMTokenCipher(twoFactorKey)
+if err != nil {
+	return err
+}
+twoFactor, err := twofactor.New(twofactor.Config{
+	Issuer: "Example",
+	Cipher: cipher,
+	DeliverOTP: func(
+		ctx *betterauth.HookContext,
+		user betterauth.User,
+		code string,
+	) error {
+		return deliverOTP(ctx.Context, user, code)
+	},
+})
+if err != nil {
+	return err
+}
+config.Plugins = append(config.Plugins, twoFactor)
+```
+
+The plugin provides Better Auth's enable/disable, TOTP, delivered OTP, backup
+code, trusted-device, and credential-sign-in challenge flows. Secret material
+is encrypted, opaque challenge/device values are hash-only at rest, and the
+first-factor session is revoked before a 2FA redirect is returned. See the
+[2FA guide](./docs/two-factor.md) and
+[ADR 0005](./docs/adr/0005-two-factor-authentication.md).
 
 ## Server plugins and hooks
 
@@ -326,12 +363,13 @@ before deploying. Important operational requirements:
 - [Plugin-kernel decision record](./docs/adr/0002-plugin-kernel.md)
 - [Management, validation, and SQL decision record](./docs/adr/0003-core-management-validation-and-sql.md)
 - [Passkey/WebAuthn decision record](./docs/adr/0004-passkeys-webauthn.md)
+- [Two-factor authentication decision record](./docs/adr/0005-two-factor-authentication.md)
 - [Changelog](./CHANGELOG.md)
 
-The server plugin kernel and passkeys are implemented. Individual feature
-plugins—two-factor, organizations, username, magic links, SSO, SCIM, API keys,
-and others—remain separate compatibility milestones with their own threat
-models.
+The server plugin kernel, passkeys, and two-factor authentication are
+implemented. Organizations, username, magic links, SSO, SCIM, API keys, and
+other feature plugins remain separate compatibility milestones with their own
+threat models.
 
 ## License
 
