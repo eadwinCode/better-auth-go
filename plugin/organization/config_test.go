@@ -1,6 +1,7 @@
 package organization
 
 import (
+	"net/http"
 	"testing"
 )
 
@@ -24,6 +25,64 @@ func TestOrganizationConfigAndCompoundSchema(t *testing.T) {
 		if len(indexes) != 1 || indexes[0].Name != expected || !indexes[0].Unique {
 			t.Fatalf("%s compound indexes: %#v", model, indexes)
 		}
+	}
+}
+
+func TestOrganizationEndpointSurfaceMatchesBetterAuthV1(t *testing.T) {
+	plugin, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]string{
+		"/organization/create":                 http.MethodPost,
+		"/organization/check-slug":             http.MethodPost,
+		"/organization/update":                 http.MethodPost,
+		"/organization/delete":                 http.MethodPost,
+		"/organization/get-full-organization":  http.MethodGet,
+		"/organization/set-active":             http.MethodPost,
+		"/organization/list":                   http.MethodGet,
+		"/organization/remove-member":          http.MethodPost,
+		"/organization/update-member-role":     http.MethodPost,
+		"/organization/get-active-member":      http.MethodGet,
+		"/organization/leave":                  http.MethodPost,
+		"/organization/list-members":           http.MethodGet,
+		"/organization/get-active-member-role": http.MethodGet,
+		"/organization/invite-member":          http.MethodPost,
+		"/organization/accept-invitation":      http.MethodPost,
+		"/organization/reject-invitation":      http.MethodPost,
+		"/organization/cancel-invitation":      http.MethodPost,
+		"/organization/get-invitation":         http.MethodGet,
+		"/organization/list-invitations":       http.MethodGet,
+		"/organization/list-user-invitations":  http.MethodGet,
+		"/organization/create-team":            http.MethodPost,
+		"/organization/remove-team":            http.MethodPost,
+		"/organization/update-team":            http.MethodPost,
+		"/organization/list-teams":             http.MethodGet,
+		"/organization/set-active-team":        http.MethodPost,
+		"/organization/list-user-teams":        http.MethodGet,
+		"/organization/list-team-members":      http.MethodGet,
+		"/organization/add-team-member":        http.MethodPost,
+		"/organization/remove-team-member":     http.MethodPost,
+		"/organization/has-permission":         http.MethodPost,
+		"/organization/create-role":            http.MethodPost,
+		"/organization/delete-role":            http.MethodPost,
+		"/organization/list-roles":             http.MethodGet,
+		"/organization/get-role":               http.MethodGet,
+		"/organization/update-role":            http.MethodPost,
+	}
+	if len(plugin.Endpoints) != len(expected) {
+		t.Fatalf("endpoint count = %d, want %d", len(plugin.Endpoints), len(expected))
+	}
+	for _, endpoint := range plugin.Endpoints {
+		method, exists := expected[endpoint.Path]
+		if !exists || method != endpoint.Method || endpoint.Handler == nil ||
+			endpoint.BodyValidator == nil && endpoint.QueryValidator == nil {
+			t.Fatalf("unexpected or incomplete endpoint: %#v", endpoint)
+		}
+		delete(expected, endpoint.Path)
+	}
+	if len(expected) != 0 {
+		t.Fatalf("missing endpoints: %#v", expected)
 	}
 }
 

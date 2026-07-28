@@ -3,6 +3,9 @@
 package organization
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"slices"
@@ -41,6 +44,8 @@ type Hooks struct {
 	AfterMemberCreate        func(*betterauth.HookContext, Member) error
 	BeforeInvitationCreate   func(*betterauth.HookContext, *Invitation) error
 	AfterInvitationCreate    func(*betterauth.HookContext, Invitation) error
+	BeforeMutation           func(*betterauth.HookContext, MutationEvent) error
+	AfterMutation            func(*betterauth.HookContext, MutationEvent) error
 }
 
 type Config struct {
@@ -64,16 +69,224 @@ type runtime struct {
 	roles  map[string]Role
 }
 
+// Manager exposes the plugin descriptor and trusted server-only operations.
+type Manager struct {
+	runtime *runtime
+}
+
+type AddMemberInput struct {
+	Database       betterauth.DatabaseAdapter
+	OrganizationID string
+	UserID         string
+	Roles          []string
+	ActorUserID    string
+	Clock          betterauth.Clock
+	GenerateID     func() (string, error)
+}
+
+type wallClock struct{}
+
+func (wallClock) Now() time.Time { return time.Now() }
+
 func New(config Config) (betterauth.Plugin, error) {
-	normalized, roles, err := normalizeConfig(config)
+	manager, err := NewManager(config)
 	if err != nil {
 		return betterauth.Plugin{}, err
 	}
+	return manager.Plugin(), nil
+}
+
+func NewManager(config Config) (*Manager, error) {
+	normalized, roles, err := normalizeConfig(config)
+	if err != nil {
+		return nil, err
+	}
 	schema, err := betterauth.MergeSchema(baseSchema(), normalized.Schema)
 	if err != nil {
-		return betterauth.Plugin{}, fmt.Errorf("organization: schema: %w", err)
+		return nil, fmt.Errorf("organization: schema: %w", err)
 	}
-	return (&runtime{config: normalized, schema: schema, roles: roles}).plugin(), nil
+	return &Manager{runtime: &runtime{
+		config: normalized, schema: schema, roles: roles,
+	}}, nil
+}
+
+func (manager *Manager) Plugin() betterauth.Plugin {
+	if manager == nil || manager.runtime == nil {
+		return betterauth.Plugin{}
+	}
+	return manager.runtime.plugin()
+}
+
+// AddMember creates a membership from trusted server code. It is deliberately
+// not exposed over HTTP. The caller is responsible for its own authorization.
+func (manager *Manager) AddMember(
+	ctx context.Context,
+	input AddMemberInput,
+) (Member, error) {
+	if manager == nil || manager.runtime == nil || input.Database == nil {
+		return Member{}, errors.New("organization: manager and database are required")
+	}
+	input.OrganizationID = strings.TrimSpace(input.OrganizationID)
+	input.UserID = strings.TrimSpace(input.UserID)
+	input.ActorUserID = strings.TrimSpace(input.ActorUserID)
+	role, err := canonicalRoles(input.Roles)
+	if input.OrganizationID == "" || input.UserID == "" ||
+		input.ActorUserID == "" || err != nil {
+		return Member{}, errors.New(
+			"organization: valid organization, user, actor, and role are required",
+		)
+	}
+	now := time.Now().UTC()
+	if input.Clock != nil {
+		now = input.Clock.Now().UTC()
+	} else {
+		input.Clock = wallClock{}
+	}
+	generateID := input.GenerateID
+	if generateID == nil {
+		generateID = randomID
+	}
+	id, err := generateID()
+	if err != nil {
+		return Member{}, fmt.Errorf("organization: generate member id: %w", err)
+	}
+	auditID, err := generateID()
+	if err != nil {
+		return Member{}, fmt.Errorf("organization: generate audit id: %w", err)
+	}
+	member := Member{
+		ID: id, OrganizationID: input.OrganizationID, UserID: input.UserID,
+		Role: role, CreatedAt: now, UpdatedAt: now,
+	}
+	var created Member
+	err = input.Database.Transaction(ctx, func(tx betterauth.DatabaseAdapter) error {
+		if organization, findErr := tx.FindOne(ctx, betterauth.FindOneQuery{
+			Model:  ModelOrganization,
+			Where:  []betterauth.Where{betterauth.Eq("id", input.OrganizationID)},
+			Select: []string{"id"},
+		}); findErr != nil || organization == nil {
+			if findErr == nil {
+				findErr = betterauth.ErrNotFound
+			}
+			return findErr
+		}
+		if user, findErr := tx.FindOne(ctx, betterauth.FindOneQuery{
+			Model:  betterauth.ModelUser,
+			Where:  []betterauth.Where{betterauth.Eq("id", input.UserID)},
+			Select: []string{"id"},
+		}); findErr != nil || user == nil {
+			if findErr == nil {
+				findErr = betterauth.ErrNotFound
+			}
+			return findErr
+		}
+		count, countErr := tx.Count(ctx, betterauth.CountQuery{
+			Model: ModelMember,
+			Where: []betterauth.Where{
+				betterauth.Eq("organizationId", input.OrganizationID),
+			},
+		})
+		if countErr != nil {
+			return countErr
+		}
+		if count >= int64(manager.runtime.config.MaxMembersPerOrganization) {
+			return errors.New("organization: member limit reached")
+		}
+		for _, name := range strings.Split(role, ",") {
+			if _, exists := manager.runtime.roles[name]; exists {
+				continue
+			}
+			dynamic, findErr := tx.FindOne(ctx, betterauth.FindOneQuery{
+				Model: ModelOrganizationRole,
+				Where: []betterauth.Where{
+					betterauth.Eq("organizationId", input.OrganizationID),
+					betterauth.Eq("role", name),
+				},
+				Select: []string{"id"},
+			})
+			if findErr != nil || dynamic == nil {
+				if findErr == nil {
+					findErr = errors.New("organization: role is not defined")
+				}
+				return findErr
+			}
+		}
+		hookContext := &betterauth.HookContext{
+			Context: ctx, Database: tx, Clock: input.Clock, GenerateID: generateID,
+			User: &betterauth.User{ID: input.ActorUserID},
+		}
+		event := MutationEvent{
+			Action:         "organization.member.added",
+			OrganizationID: input.OrganizationID, SubjectID: input.UserID,
+			Data: map[string]any{"memberId": member.ID, "role": member.Role},
+		}
+		if manager.runtime.config.Hooks.BeforeMutation != nil {
+			if hookErr := manager.runtime.config.Hooks.BeforeMutation(
+				hookContext, event,
+			); hookErr != nil {
+				return hookErr
+			}
+		}
+		if manager.runtime.config.Hooks.BeforeMemberCreate != nil {
+			if hookErr := manager.runtime.config.Hooks.BeforeMemberCreate(
+				hookContext, &member,
+			); hookErr != nil {
+				return hookErr
+			}
+			member.ID = id
+			member.OrganizationID = input.OrganizationID
+			member.UserID = input.UserID
+			member.Role = role
+			member.CreatedAt = now
+			member.UpdatedAt = now
+		}
+		row, createErr := tx.Create(ctx, betterauth.CreateQuery{
+			Model: ModelMember, Data: memberRecord(member), ForceAllowID: true,
+		})
+		if createErr != nil {
+			return createErr
+		}
+		created, createErr = memberFromRecord(row)
+		if createErr != nil {
+			return createErr
+		}
+		_, createErr = tx.Create(ctx, betterauth.CreateQuery{
+			Model: betterauth.ModelAuditEvent,
+			Data: betterauth.Record{
+				"id": auditID, "schemaVersion": float64(1),
+				"action":      "organization.member.added",
+				"actorUserId": input.ActorUserID, "subjectUserId": input.UserID,
+				"occurredAt": now, "request": map[string]any{},
+				"details": map[string]any{
+					"organizationId": input.OrganizationID, "memberId": created.ID,
+				},
+			},
+			ForceAllowID: true,
+		})
+		if createErr != nil {
+			return createErr
+		}
+		if manager.runtime.config.Hooks.AfterMemberCreate != nil {
+			if hookErr := manager.runtime.config.Hooks.AfterMemberCreate(
+				hookContext, created,
+			); hookErr != nil {
+				return hookErr
+			}
+		}
+		if manager.runtime.config.Hooks.AfterMutation != nil {
+			return manager.runtime.config.Hooks.AfterMutation(hookContext, event)
+		}
+		return nil
+	})
+	return created, err
+}
+
+func randomID() (string, error) {
+	raw := make([]byte, 24)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 func normalizeConfig(config Config) (Config, map[string]Role, error) {

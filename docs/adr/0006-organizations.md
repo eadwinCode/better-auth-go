@@ -4,6 +4,10 @@
 - Date: 2026-07-28
 - Scope: isolated `plugin/organization` pull request
 
+Implementation status: the endpoint runtime, manager API, validators,
+transactional invariants, session rotation, hooks, audits, and black-box/race
+tests are implemented on the ADR 0006 runtime branch.
+
 ## Context
 
 Better Auth v1.6's organization plugin is a tenant-authorization subsystem, not
@@ -148,4 +152,3 @@ Native Go intentionally strengthens:
 - SQLite/PostgreSQL/MongoDB compound index and cascade/transaction tests;
 - fuzzing for slug, role-set, permission, pagination, and invitation parsing;
 - full test, vet, race, static, fuzz, and vulnerability gates.
-
