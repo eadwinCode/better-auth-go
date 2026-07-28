@@ -289,3 +289,30 @@ Exit criteria:
 - dynamic roles cannot grant permissions the actor does not possess;
 - compound uniqueness holds in MongoDB, PostgreSQL, and SQLite;
 - SSO and SCIM remain separate later PRs.
+
+## Phase 15: SCIM 2.0 provisioning
+
+1. Add ADR 0008 and freeze the Better Auth v1.6.25 SCIM connection,
+   management, User resource, metadata, filter, PATCH, and error contracts.
+2. Extend plugin routing for PUT, PATCH, and DELETE with unsafe-method origin
+   enforcement and explicit bearer-endpoint origin exceptions.
+3. Add the adapter-independent `scimProvider` schema, hash-only bearer tokens,
+   provider collision rules, personal ownership, organization authorization,
+   token rotation, hooks, and audits.
+4. Implement RFC 7644 media types/errors, metadata, pagination, bounded filters,
+   and User GET/list/POST/PUT/PATCH/DELETE with provider-account ownership.
+5. Enforce explicit existing-user linking, transactional organization
+   membership, subordinate-team cleanup, session revocation, and cross-tenant
+   deprovisioning boundaries.
+6. Add black-box protocol fixtures, concurrency/rotation tests, fuzzing,
+   adapter migration checks, documentation, examples, and release gates.
+
+Exit criteria:
+
+- raw SCIM tokens are returned once and never persisted;
+- provider IDs cannot collide with another account-producing provider;
+- every user mutation is bound to the authenticating provider account;
+- organization-scoped DELETE cannot delete a global cross-tenant user;
+- filters and PATCH paths cannot become arbitrary adapter queries;
+- management authorization is target-scoped and cannot cross owners or tenants;
+- SSO remains an independent PR.
