@@ -12,7 +12,7 @@ using native Go security defaults:
   opt-in deletion, sign-out, session listing/rotation/revocation, and account
   linking/unlinking;
 - password reset and email verification with single-use hash-at-rest tokens;
-- Better Auth's 34 built-in social-provider IDs plus generic OAuth2/OIDC;
+- Better Auth's 35 built-in social-provider IDs plus generic OAuth2/OIDC;
 - authorization-gated, one-hour maximum admin impersonation with durable audit;
 - Argon2id password hashes and an injected migration verifier for legacy scrypt;
 - opaque 256-bit session tokens with only SHA-256 hashes persisted;
@@ -361,6 +361,7 @@ before deploying. Important operational requirements:
 ## Compatibility and roadmap
 
 - [Better Auth v1.6 compatibility matrix](./docs/compatibility/better-auth-v1.6.md)
+- [Better Auth v1.6.25 production progress](./PROGRESS.md)
 - [Implementation plan](./IMPLEMENTATION_PLAN.md)
 - [Architecture decision record](./docs/adr/0001-auth-server-architecture.md)
 - [Plugin-kernel decision record](./docs/adr/0002-plugin-kernel.md)

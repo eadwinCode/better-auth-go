@@ -128,7 +128,7 @@ The following provider IDs are release-gated:
 The generic OAuth/OIDC provider API is also release-gated, so providers outside
 this list do not require a library release.
 
-All 34 IDs above have built-in presets and catalog contract tests. Live
+All 35 IDs above have built-in presets and catalog contract tests. Live
 credential interoperability remains an integration responsibility for each
 release because provider payloads and policies can change independently.
 
