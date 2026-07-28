@@ -134,6 +134,7 @@ release because provider payloads and policies can change independently.
 
 Feature plugins outside the requested initial scope—such as passkeys, two-factor
 authentication, organizations, username, magic links, anonymous users, SSO,
-SCIM, and API keys—must be possible through the schema/route/hook plugin
-contracts. Their full endpoint implementations are tracked for later parity
-milestones unless promoted into scope by a subsequent plan update.
+SCIM, and API keys—use the server kernel tracked in
+[the plugin compatibility checklist](./plugin-kernel.md). Their full endpoint
+implementations are tracked in the [feature gap register](./missing-features.md)
+as separate parity milestones.
