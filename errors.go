@@ -11,7 +11,14 @@ type ErrorCode string
 
 const (
 	CodeBadRequest         ErrorCode = "bad_request"
+	CodeValidation         ErrorCode = "validation_error"
+	CodeInvalidEmail       ErrorCode = "invalid_email"
+	CodePasswordTooShort   ErrorCode = "password_too_short"
+	CodePasswordTooLong    ErrorCode = "password_too_long"
 	CodeInvalidCredentials ErrorCode = "invalid_credentials"
+	CodeEmailNotVerified   ErrorCode = "email_not_verified"
+	CodeSignUpDisabled     ErrorCode = "email_password_sign_up_disabled"
+	CodeUserAlreadyExists  ErrorCode = "user_already_exists_use_another_email"
 	CodeUnauthorized       ErrorCode = "unauthorized"
 	CodeForbidden          ErrorCode = "forbidden"
 	CodeNotFound           ErrorCode = "not_found"
@@ -88,8 +95,22 @@ func httpErrorCode(code ErrorCode) string {
 	switch code {
 	case CodeBadRequest:
 		return "BAD_REQUEST"
+	case CodeValidation:
+		return "VALIDATION_ERROR"
+	case CodeInvalidEmail:
+		return "INVALID_EMAIL"
+	case CodePasswordTooShort:
+		return "PASSWORD_TOO_SHORT"
+	case CodePasswordTooLong:
+		return "PASSWORD_TOO_LONG"
 	case CodeInvalidCredentials:
 		return "INVALID_EMAIL_OR_PASSWORD"
+	case CodeEmailNotVerified:
+		return "EMAIL_NOT_VERIFIED"
+	case CodeSignUpDisabled:
+		return "EMAIL_PASSWORD_SIGN_UP_DISABLED"
+	case CodeUserAlreadyExists:
+		return "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"
 	case CodeUnauthorized:
 		return "UNAUTHORIZED"
 	case CodeForbidden, CodeInvalidCSRF:

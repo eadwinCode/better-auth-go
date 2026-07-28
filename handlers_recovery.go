@@ -54,9 +54,11 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 	if input.Token == "" {
 		input.Token = r.URL.Query().Get("token")
 	}
-	if len(input.Token) < 20 || len(input.Token) > 2048 ||
-		len(input.NewPassword) < s.cfg.MinPasswordBytes || len(input.NewPassword) > s.cfg.MaxPasswordBytes {
-		return publicError(CodeInvalidToken, "The token is invalid or expired.", http.StatusBadRequest, nil)
+	if len(input.Token) < 20 || len(input.Token) > 2048 {
+		return publicError(CodeInvalidToken, "Invalid token", http.StatusBadRequest, nil)
+	}
+	if err := s.passwordPolicyError(input.NewPassword); err != nil {
+		return err
 	}
 	if err := s.rateLimit(r.Context(), r, "reset-password", HashToken(input.Token)); err != nil {
 		return err
@@ -65,19 +67,17 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return publicError(CodeInternal, "Password reset could not be completed.", http.StatusInternalServerError, err)
 	}
-	session, raw, err := s.newSession("", s.cfg.SessionDuration)
+	_, err = s.store.ConsumePasswordReset(
+		r.Context(),
+		HashToken(input.Token),
+		passwordHash,
+		s.cfg.Clock.Now().UTC(),
+		s.cfg.EmailPassword.RevokeSessionsOnPasswordReset,
+	)
 	if err != nil {
-		return err
+		return publicError(CodeInvalidToken, "Invalid token", http.StatusBadRequest, err)
 	}
-	user, session, err := s.store.ConsumePasswordReset(r.Context(), HashToken(input.Token), passwordHash, session)
-	if err != nil {
-		return publicError(CodeInvalidToken, "The token is invalid or expired.", http.StatusBadRequest, err)
-	}
-	s.setSessionCookie(w, raw, session.ExpiresAt)
-	if err := s.ensureCSRFCookie(w, r); err != nil {
-		return err
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": true, "user": user})
+	writeJSON(w, http.StatusOK, map[string]any{"status": true})
 	return nil
 }
 

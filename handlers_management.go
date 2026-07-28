@@ -32,10 +32,11 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 	if err := s.decodeJSON(w, r, &input); err != nil {
 		return err
 	}
-	if len(input.CurrentPassword) > s.cfg.MaxPasswordBytes ||
-		len(input.NewPassword) < s.cfg.MinPasswordBytes ||
-		len(input.NewPassword) > s.cfg.MaxPasswordBytes {
-		return publicError(CodeBadRequest, "Invalid password.", http.StatusBadRequest, nil)
+	if len(input.CurrentPassword) > s.cfg.MaxPasswordBytes {
+		return invalidCredentials(nil)
+	}
+	if err := s.passwordPolicyError(input.NewPassword); err != nil {
+		return err
 	}
 	if err := s.rateLimit(r.Context(), r, "change-password", HashToken(user.ID)); err != nil {
 		return err
@@ -80,9 +81,11 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 // SetPassword sets or replaces the credential password for a user. It is a
 // trusted server API and is deliberately not exposed as an HTTP endpoint.
 func (s *Server) SetPassword(ctx context.Context, userID, password string) error {
-	if strings.TrimSpace(userID) == "" || len(password) < s.cfg.MinPasswordBytes ||
-		len(password) > s.cfg.MaxPasswordBytes {
+	if strings.TrimSpace(userID) == "" {
 		return publicError(CodeBadRequest, "Invalid password.", http.StatusBadRequest, nil)
+	}
+	if err := s.passwordPolicyError(password); err != nil {
+		return err
 	}
 	if _, err := s.store.FindUserByID(ctx, userID); err != nil {
 		return err

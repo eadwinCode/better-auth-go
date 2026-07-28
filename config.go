@@ -32,6 +32,23 @@ type UserManagementConfig struct {
 	DeleteUserEnabled  bool
 }
 
+// EmailPasswordConfig controls the Better Auth v1.6 email/password lifecycle.
+// AutoSignIn is optional because the upstream default is true.
+type EmailPasswordConfig struct {
+	// DisableSignUp rejects new email/password registrations.
+	DisableSignUp bool
+	// AutoSignIn controls session creation after signup. Nil defaults to true.
+	// New copies the pointed-to value so later caller mutation cannot change a
+	// running server.
+	AutoSignIn *bool
+	// RequireEmailVerification suppresses signup sessions and blocks credential
+	// sign-in until the single-use verification token is consumed.
+	RequireEmailVerification bool
+	// RevokeSessionsOnPasswordReset atomically revokes every active user
+	// session when a reset token is consumed. Better Auth defaults to false.
+	RevokeSessionsOnPasswordReset bool
+}
+
 type Config struct {
 	BasePath                string
 	PublicURL               string
@@ -50,6 +67,7 @@ type Config struct {
 	Cookie                  CookieConfig
 	Account                 AccountManagementConfig
 	User                    UserManagementConfig
+	EmailPassword           EmailPasswordConfig
 	SessionDuration         time.Duration
 	SessionFreshAge         time.Duration
 	ImpersonationDuration   time.Duration
@@ -137,6 +155,10 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 	if cfg.BackgroundTasks == nil {
 		cfg.BackgroundTasks = InlineBackgroundTasks{}
 	}
+	if cfg.EmailPassword.AutoSignIn != nil {
+		autoSignIn := *cfg.EmailPassword.AutoSignIn
+		cfg.EmailPassword.AutoSignIn = &autoSignIn
+	}
 	if len(cfg.TrustedOrigins) == 0 {
 		return cfg, nil, nil, fmt.Errorf("betterauth: at least one trusted origin is required")
 	}
@@ -193,10 +215,10 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 		return cfg, nil, nil, fmt.Errorf("betterauth: impersonation duration must not exceed one hour")
 	}
 	if cfg.PasswordResetTTL == 0 {
-		cfg.PasswordResetTTL = 30 * time.Minute
+		cfg.PasswordResetTTL = time.Hour
 	}
 	if cfg.EmailVerificationTTL == 0 {
-		cfg.EmailVerificationTTL = 24 * time.Hour
+		cfg.EmailVerificationTTL = time.Hour
 	}
 	if cfg.OAuthStateTTL == 0 {
 		cfg.OAuthStateTTL = 10 * time.Minute
@@ -229,10 +251,10 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 		return cfg, nil, nil, fmt.Errorf("betterauth: max response bytes is out of bounds")
 	}
 	if cfg.MinPasswordBytes == 0 {
-		cfg.MinPasswordBytes = 12
+		cfg.MinPasswordBytes = 8
 	}
 	if cfg.MaxPasswordBytes == 0 {
-		cfg.MaxPasswordBytes = 1024
+		cfg.MaxPasswordBytes = 128
 	}
 	if cfg.MinPasswordBytes < 8 || cfg.MaxPasswordBytes < cfg.MinPasswordBytes || cfg.MaxPasswordBytes > 1<<20 {
 		return cfg, nil, nil, fmt.Errorf("betterauth: password length policy is invalid")
@@ -270,6 +292,10 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 	}
 	cfg.SocialProviders = maps.Clone(cfg.SocialProviders)
 	return cfg, origins, returnTo, nil
+}
+
+func (cfg Config) autoSignInAfterSignUp() bool {
+	return cfg.EmailPassword.AutoSignIn == nil || *cfg.EmailPassword.AutoSignIn
 }
 
 func validProviderID(value string) bool {

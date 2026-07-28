@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	betterauth "github.com/eadwinCode/better-auth-go"
 )
 
 const betterAuthV1625 = "1.6.25"
@@ -205,9 +203,7 @@ func TestBetterAuthV1625BlackBoxCompatibility(t *testing.T) {
 		t.Fatalf("unexpected TypeScript oracle: status=%d body=%s", healthResponse.StatusCode, healthBody)
 	}
 
-	goClient, _ := newBlackBoxServerConfig(t, func(config *betterauth.Config) {
-		config.MinPasswordBytes = 8
-	})
+	goClient, _ := newBlackBoxServer(t)
 	email := "compat-" + time.Now().UTC().Format("20060102t150405.000000000") + "@example.com"
 	const (
 		name            = "Compatibility User"
@@ -225,6 +221,67 @@ func TestBetterAuthV1625BlackBoxCompatibility(t *testing.T) {
 		if strings.TrimSpace(string(goResult.body)) != "null" ||
 			strings.TrimSpace(string(tsResult.body)) != "null" {
 			t.Fatalf("unauthenticated sessions differ: Go=%s TypeScript=%s", goResult.body, tsResult.body)
+		}
+	})
+
+	t.Run("password bounds", func(t *testing.T) {
+		for _, test := range []struct {
+			name     string
+			email    string
+			password string
+			code     string
+		}{
+			{
+				name: "empty", email: "empty-" + email, password: "",
+				code: "VALIDATION_ERROR",
+			},
+			{
+				name: "too short", email: "short-" + email, password: "1234567",
+				code: "PASSWORD_TOO_SHORT",
+			},
+			{
+				name: "too long", email: "long-" + email, password: strings.Repeat("a", 129),
+				code: "PASSWORD_TOO_LONG",
+			},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				input := map[string]any{
+					"email": test.email, "password": test.password, "name": name,
+				}
+				goResult := goResponse(goClient.request(t, http.MethodPost, "/sign-up/email", input, false))
+				tsResult := oracle.request(t, http.MethodPost, "/sign-up/email", input, "")
+				if goResult.status != http.StatusBadRequest || tsResult.status != http.StatusBadRequest {
+					t.Fatalf("status mismatch: Go=%d %s TypeScript=%d %s",
+						goResult.status, goResult.body, tsResult.status, tsResult.body)
+				}
+				for implementation, result := range map[string]oracleResponse{
+					"Go": goResult, "TypeScript": tsResult,
+				} {
+					body := decodeObject(t, result.body)
+					if body["code"] != test.code {
+						t.Fatalf("%s password error mismatch: %#v", implementation, body)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("invalid email", func(t *testing.T) {
+		input := map[string]any{"email": "not-an-email", "password": password, "name": name}
+		goResult := goResponse(goClient.request(t, http.MethodPost, "/sign-up/email", input, false))
+		tsResult := oracle.request(t, http.MethodPost, "/sign-up/email", input, "")
+		if goResult.status != http.StatusBadRequest || tsResult.status != http.StatusBadRequest {
+			t.Fatalf("status mismatch: Go=%d %s TypeScript=%d %s",
+				goResult.status, goResult.body, tsResult.status, tsResult.body)
+		}
+		for implementation, result := range map[string]oracleResponse{
+			"Go": goResult, "TypeScript": tsResult,
+		} {
+			body := decodeObject(t, result.body)
+			if body["code"] != "VALIDATION_ERROR" ||
+				body["message"] != "[body.email] Invalid email address" {
+				t.Fatalf("%s invalid-email error mismatch: %#v", implementation, body)
+			}
 		}
 	})
 
@@ -415,13 +472,23 @@ func TestBetterAuthV1625BlackBoxCompatibility(t *testing.T) {
 		}
 	})
 
-	t.Run("duplicate account known status difference", func(t *testing.T) {
+	t.Run("duplicate account", func(t *testing.T) {
 		input := map[string]any{"email": email, "password": password, "name": name}
 		goResult := goResponse(goClient.request(t, http.MethodPost, "/sign-up/email", input, false))
 		tsResult := oracle.request(t, http.MethodPost, "/sign-up/email", input, "")
-		if goResult.status != http.StatusConflict || tsResult.status != http.StatusUnprocessableEntity {
-			t.Fatalf("documented status difference changed: Go=%d %s TypeScript=%d %s",
+		if goResult.status != http.StatusUnprocessableEntity ||
+			tsResult.status != http.StatusUnprocessableEntity {
+			t.Fatalf("status mismatch: Go=%d %s TypeScript=%d %s",
 				goResult.status, goResult.body, tsResult.status, tsResult.body)
+		}
+		for implementation, result := range map[string]oracleResponse{
+			"Go": goResult, "TypeScript": tsResult,
+		} {
+			body := decodeObject(t, result.body)
+			if body["code"] != "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL" ||
+				body["message"] != "User already exists. Use another email." {
+				t.Fatalf("%s duplicate error mismatch: %#v", implementation, body)
+			}
 		}
 	})
 

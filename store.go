@@ -38,8 +38,12 @@ func (s *databaseStore) CreateEmailUser(ctx context.Context, params CreateEmailU
 		if err != nil {
 			return err
 		}
-		if _, err = tx.Create(ctx, CreateQuery{Model: ModelSession, Data: sessionRecord(params.Session), ForceAllowID: true}); err != nil {
-			return err
+		if params.CreateSession {
+			if _, err = tx.Create(ctx, CreateQuery{
+				Model: ModelSession, Data: sessionRecord(params.Session), ForceAllowID: true,
+			}); err != nil {
+				return err
+			}
 		}
 		_, err = tx.Create(ctx, CreateQuery{Model: ModelOutboxEvent, Data: domainEventRecord(params.Event), ForceAllowID: true})
 		return err
@@ -566,15 +570,15 @@ func (s *databaseStore) ConsumePasswordReset(
 	ctx context.Context,
 	hash string,
 	passwordHash string,
-	session Session,
-) (User, Session, error) {
+	now time.Time,
+	revokeSessions bool,
+) (User, error) {
 	var user User
-	var created Session
 	err := s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
 		token, err := tx.ConsumeOne(ctx, DeleteQuery{Model: ModelVerification, Where: []Where{
 			Eq("identifier", string(PurposePasswordReset)),
 			Eq("value", hash),
-			{Field: "expiresAt", Operator: WhereGT, Value: session.CreatedAt},
+			{Field: "expiresAt", Operator: WhereGT, Value: now},
 		}})
 		if err != nil {
 			return err
@@ -587,33 +591,38 @@ func (s *databaseStore) ConsumePasswordReset(
 		if userID == "" {
 			return ErrReplay
 		}
-		session.UserID = userID
-		if _, err = tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
-			Eq("providerId", credentialProvider), Eq("accountId", userID),
-		}, Update: Record{"password": passwordHash, "updatedAt": session.CreatedAt}}); err != nil {
+		account, err := tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
+			Eq("providerId", credentialProvider), Eq("accountId", userID), Eq("userId", userID),
+		}, Update: Record{"password": passwordHash, "updatedAt": now}})
+		if err != nil {
 			return err
 		}
-		if _, err = tx.UpdateMany(ctx, UpdateQuery{Model: ModelSession, Where: []Where{
-			Eq("userId", userID), Eq("revokedAt", nil),
-		}, Update: Record{"revokedAt": session.CreatedAt, "updatedAt": session.CreatedAt}}); err != nil {
-			return err
+		if account == nil {
+			if _, err = tx.Create(ctx, CreateQuery{
+				Model: ModelAccount, ForceAllowID: true, Data: Record{
+					"id": userID + ":credential", "userId": userID,
+					"providerId": credentialProvider, "accountId": userID,
+					"password": passwordHash, "createdAt": now, "updatedAt": now,
+				},
+			}); err != nil {
+				return err
+			}
+		}
+		if revokeSessions {
+			if _, err = tx.UpdateMany(ctx, UpdateQuery{Model: ModelSession, Where: []Where{
+				Eq("userId", userID), Eq("revokedAt", nil),
+			}, Update: Record{"revokedAt": now, "updatedAt": now}}); err != nil {
+				return err
+			}
 		}
 		userRow, err := tx.FindOne(ctx, FindOneQuery{Model: ModelUser, Where: []Where{Eq("id", userID)}})
 		if err != nil {
 			return err
 		}
 		user, err = userFromRecord(userRow)
-		if err != nil {
-			return err
-		}
-		sessionRow, err := tx.Create(ctx, CreateQuery{Model: ModelSession, Data: sessionRecord(session), ForceAllowID: true})
-		if err != nil {
-			return err
-		}
-		created, err = sessionFromRecord(sessionRow)
 		return err
 	})
-	return user, created, err
+	return user, err
 }
 
 func (s *databaseStore) ConsumeEmailVerification(ctx context.Context, hash string, now time.Time) (User, error) {
