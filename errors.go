@@ -31,7 +31,7 @@ type Error struct {
 	Message    string        `json:"message"`
 	Status     int           `json:"-"`
 	RetryAfter time.Duration `json:"-"`
-	RequestID  string        `json:"request_id,omitempty"`
+	RequestID  string        `json:"requestId,omitempty"`
 	cause      error
 }
 
@@ -74,5 +74,41 @@ func writeError(w http.ResponseWriter, requestID string, err error) {
 		}
 		w.Header().Set("Retry-After", strconv.Itoa(seconds))
 	}
-	writeJSON(w, authErr.Status, map[string]any{"error": authErr})
+	response := map[string]any{
+		"code":    httpErrorCode(authErr.Code),
+		"message": authErr.Message,
+	}
+	if authErr.RequestID != "" {
+		response["requestId"] = authErr.RequestID
+	}
+	writeJSON(w, authErr.Status, response)
+}
+
+func httpErrorCode(code ErrorCode) string {
+	switch code {
+	case CodeBadRequest:
+		return "BAD_REQUEST"
+	case CodeInvalidCredentials:
+		return "INVALID_EMAIL_OR_PASSWORD"
+	case CodeUnauthorized:
+		return "UNAUTHORIZED"
+	case CodeForbidden, CodeInvalidCSRF:
+		return "FORBIDDEN"
+	case CodeNotFound:
+		return "NOT_FOUND"
+	case CodeConflict:
+		return "CONFLICT"
+	case CodeRateLimited:
+		return "TOO_MANY_REQUESTS"
+	case CodeInvalidOrigin:
+		return "INVALID_ORIGIN"
+	case CodeInvalidToken:
+		return "INVALID_TOKEN"
+	case CodeProviderFailure:
+		return "PROVIDER_ERROR"
+	case CodeMethodNotAllowed:
+		return "METHOD_NOT_ALLOWED"
+	default:
+		return "INTERNAL_SERVER_ERROR"
+	}
 }

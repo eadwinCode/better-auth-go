@@ -65,6 +65,13 @@ raw bearer tokens are hash-at-rest and never returned after issuance. A client
 compatibility test suite freezes exact JSON, status, cookie, and redirect
 behavior.
 
+Core user and session responses use Better Auth's camelCase field vocabulary,
+including a nullable `image` field. Public HTTP errors use top-level `code` and
+`message` fields; exact authentication and trusted-origin codes are
+differentially certified. Remaining route-specific error codes are tracked in
+`PROGRESS.md`. ADR 0009 records the accepted wire contract and the deliberately
+deferred enumeration-safe duplicate-sign-up behavior.
+
 ## Adapter map
 
 | Upstream adapter operation | Go operation |

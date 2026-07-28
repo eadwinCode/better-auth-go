@@ -1,31 +1,55 @@
 package betterauth
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // User is the adapter-independent authenticated identity.
 type User struct {
 	ID            string     `json:"id"`
 	Email         string     `json:"email"`
 	Name          string     `json:"name,omitempty"`
-	ImageURL      string     `json:"image_url,omitempty"`
-	EmailVerified bool       `json:"email_verified"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ImageURL      string     `json:"image,omitempty"`
+	EmailVerified bool       `json:"emailVerified"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
 	DisabledAt    *time.Time `json:"-"`
+}
+
+// MarshalJSON preserves the native Go string field while matching Better
+// Auth's nullable public image field.
+func (user User) MarshalJSON() ([]byte, error) {
+	var image any
+	if user.ImageURL != "" {
+		image = user.ImageURL
+	}
+	return json.Marshal(struct {
+		ID            string    `json:"id"`
+		Email         string    `json:"email"`
+		Name          string    `json:"name"`
+		Image         any       `json:"image"`
+		EmailVerified bool      `json:"emailVerified"`
+		CreatedAt     time.Time `json:"createdAt"`
+		UpdatedAt     time.Time `json:"updatedAt"`
+	}{
+		ID: user.ID, Email: user.Email, Name: user.Name, Image: image,
+		EmailVerified: user.EmailVerified, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt,
+	})
 }
 
 // Session is a server-side session. TokenHash is never serialized to clients.
 type Session struct {
 	ID              string     `json:"id"`
-	UserID          string     `json:"user_id"`
+	UserID          string     `json:"userId"`
 	TokenHash       string     `json:"-"`
-	ExpiresAt       time.Time  `json:"expires_at"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	LastSeenAt      time.Time  `json:"last_seen_at"`
+	ExpiresAt       time.Time  `json:"expiresAt"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
+	LastSeenAt      time.Time  `json:"lastSeenAt"`
 	RevokedAt       *time.Time `json:"-"`
-	ImpersonatorID  string     `json:"impersonator_id,omitempty"`
-	ImpersonationID string     `json:"impersonation_id,omitempty"`
+	ImpersonatorID  string     `json:"impersonatedBy,omitempty"`
+	ImpersonationID string     `json:"impersonationId,omitempty"`
 }
 
 // PasswordCredential contains a user's encoded password hash.

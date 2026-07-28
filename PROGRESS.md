@@ -82,7 +82,7 @@ contract differences must be listed below.
 | Email/password sign-up and sign-in | Present | Lifecycle characterization added | Partial |
 | Sign-out and session retrieval | Present | Lifecycle characterization added | Partial |
 | Session refresh and revocation | Present | Go black-box tests only | Partial |
-| User update, email change, deletion | Present | Go black-box tests only | Partial |
+| User update, email change, deletion | Present | User update differential passes; remaining routes use Go tests | Partial |
 | Password change and recovery | Present | Go black-box tests only | Partial |
 | Email verification | Present | Go black-box tests only | Partial |
 | Account list/link/unlink | Present | Go black-box tests only | Partial |
@@ -179,10 +179,10 @@ closed before the stable release:
 | --- | --- | --- | --- |
 | Successful password response token | Returns a bearer token | Returns `null`; only opaque cookie is issued | Deliberate security difference |
 | Session cookie | Signed Better Auth cookie name/format | `__Host-` opaque token, hash-at-rest | Deliberate security difference |
-| User/session JSON field names | camelCase | Several core structs use snake_case | Open compatibility gap |
-| Public error JSON | top-level `code` and `message` with upstream codes | nested `error` object with Go codes | Open compatibility gap |
-| Duplicate sign-up status | `422` | `409` | Open compatibility gap |
-| Successful `update-user` response | `{"status":true}` | returns the updated `user` | Open compatibility gap |
+| User/session JSON field names | camelCase with nullable `image` | Same | Resolved by ADR 0009 and differential tests |
+| Public error JSON | top-level `code` and `message` with upstream codes | Top-level shape and authentication/origin codes match | Partial; remaining route-specific codes need certification |
+| Duplicate sign-up | 422 by default; synthetic success with verification or no auto-sign-in | Generic 409 | Open; implement with the full email/password option contract |
+| Successful `update-user` response | `{"status":true}` | Same | Resolved by ADR 0009 and differential tests |
 | Session/account management responses | Upstream names and session tokens | stable IDs and token redaction | Deliberate security difference; remaining shapes need review |
 | CSRF model | trusted-origin/cookie behavior from upstream | trusted origin plus explicit double-submit token for authenticated mutations | Deliberate security difference |
 
@@ -216,9 +216,11 @@ entry in this table and a compatibility decision.
 
 ## Recommended work order
 
-1. Expand the TypeScript oracle and differential harness across all core routes
-   and options.
-2. Resolve or formally document every HTTP difference found by that harness.
+1. Implement the pinned email/password option contract, especially
+   `autoSignIn`, `requireEmailVerification`, enumeration-safe duplicate
+   sign-up, password bounds and reset-session revocation.
+2. Expand the TypeScript oracle and differential harness across the remaining
+   core routes and resolve or document every observed difference.
 3. Extend MongoDB, PostgreSQL and SQLite coverage with release-to-release
    migration fixtures, and make the TypeScript oracle reproducible in CI.
 4. Certify all 35 social-provider presets and generic OAuth/OIDC.

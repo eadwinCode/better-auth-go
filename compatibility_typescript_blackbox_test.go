@@ -143,18 +143,6 @@ func responseUser(t *testing.T, response oracleResponse) map[string]any {
 	return user
 }
 
-func booleanField(object map[string]any, names ...string) (bool, bool) {
-	for _, name := range names {
-		value, exists := object[name]
-		if !exists {
-			continue
-		}
-		result, ok := value.(bool)
-		return result, ok
-	}
-	return false, false
-}
-
 func assertEquivalentUser(
 	t *testing.T,
 	goResult oracleResponse,
@@ -169,9 +157,22 @@ func assertEquivalentUser(
 		if user["email"] != email || user["name"] != name {
 			t.Fatalf("%s user mismatch: %#v", implementation, user)
 		}
-		verified, ok := booleanField(user, "emailVerified", "email_verified")
+		verified, ok := user["emailVerified"].(bool)
 		if !ok || verified {
 			t.Fatalf("%s email verification mismatch: %#v", implementation, user)
+		}
+		for _, legacyField := range []string{"email_verified", "image_url", "created_at", "updated_at"} {
+			if _, exists := user[legacyField]; exists {
+				t.Fatalf("%s exposed legacy user field %q: %#v", implementation, legacyField, user)
+			}
+		}
+		if _, exists := user["image"]; !exists {
+			t.Fatalf("%s user has no nullable image field: %#v", implementation, user)
+		}
+		for _, timestamp := range []string{"createdAt", "updatedAt"} {
+			if value, ok := user[timestamp].(string); !ok || value == "" {
+				t.Fatalf("%s user has no %s: %#v", implementation, timestamp, user)
+			}
 		}
 		if value, ok := user["id"].(string); !ok || value == "" {
 			t.Fatalf("%s user has no ID: %#v", implementation, user)
@@ -258,6 +259,22 @@ func TestBetterAuthV1625BlackBoxCompatibility(t *testing.T) {
 			t.Fatalf("status mismatch: Go=%d TypeScript=%d", goResult.status, tsResult.status)
 		}
 		assertEquivalentUser(t, goResult, tsResult, email, name)
+		for implementation, result := range map[string]oracleResponse{"Go": goResult, "TypeScript": tsResult} {
+			session, ok := decodeObject(t, result.body)["session"].(map[string]any)
+			if !ok {
+				t.Fatalf("%s response has no session: %s", implementation, result.body)
+			}
+			for _, field := range []string{"id", "userId", "expiresAt", "createdAt", "updatedAt"} {
+				if _, exists := session[field]; !exists {
+					t.Fatalf("%s session has no %s: %#v", implementation, field, session)
+				}
+			}
+			for _, legacyField := range []string{"user_id", "expires_at", "created_at", "updated_at"} {
+				if _, exists := session[legacyField]; exists {
+					t.Fatalf("%s exposed legacy session field %q: %#v", implementation, legacyField, session)
+				}
+			}
+		}
 	})
 
 	t.Run("credential account listing", func(t *testing.T) {
@@ -301,7 +318,7 @@ func TestBetterAuthV1625BlackBoxCompatibility(t *testing.T) {
 		}
 	})
 
-	t.Run("user update response difference", func(t *testing.T) {
+	t.Run("user update", func(t *testing.T) {
 		input := map[string]any{"name": updatedName}
 		goResult := goResponse(goClient.request(t, http.MethodPost, "/update-user", input, true))
 		tsResult := oracle.request(t, http.MethodPost, "/update-user", input, "")
@@ -309,11 +326,10 @@ func TestBetterAuthV1625BlackBoxCompatibility(t *testing.T) {
 			t.Fatalf("status mismatch: Go=%d %s TypeScript=%d %s",
 				goResult.status, goResult.body, tsResult.status, tsResult.body)
 		}
-		if _, exists := decodeObject(t, goResult.body)["user"]; !exists {
-			t.Fatalf("Go update-user response characterization changed: %s", goResult.body)
-		}
-		if decodeObject(t, tsResult.body)["status"] != true {
-			t.Fatalf("TypeScript update-user response characterization changed: %s", tsResult.body)
+		for implementation, result := range map[string]oracleResponse{"Go": goResult, "TypeScript": tsResult} {
+			if decodeObject(t, result.body)["status"] != true {
+				t.Fatalf("%s update-user response mismatch: %s", implementation, result.body)
+			}
 		}
 		goSession := goResponse(goClient.request(t, http.MethodGet, "/get-session", nil, false))
 		tsSession := oracle.request(t, http.MethodGet, "/get-session", nil, "")
@@ -342,6 +358,14 @@ func TestBetterAuthV1625BlackBoxCompatibility(t *testing.T) {
 		for implementation, body := range map[string][]byte{"Go": goResult.body, "TypeScript": tsResult.body} {
 			if bytes.Contains(body, []byte("missing-"+email)) || bytes.Contains(body, []byte(password)) {
 				t.Fatalf("%s leaked submitted credentials: %s", implementation, body)
+			}
+			errorBody := decodeObject(t, body)
+			if errorBody["code"] != "INVALID_EMAIL_OR_PASSWORD" ||
+				errorBody["message"] != "Invalid email or password" {
+				t.Fatalf("%s credential error mismatch: %#v", implementation, errorBody)
+			}
+			if _, nested := errorBody["error"]; nested {
+				t.Fatalf("%s returned a legacy nested error: %#v", implementation, errorBody)
 			}
 		}
 	})
@@ -379,6 +403,15 @@ func TestBetterAuthV1625BlackBoxCompatibility(t *testing.T) {
 		if goResult.status != http.StatusForbidden || tsResult.status != http.StatusForbidden {
 			t.Fatalf("status mismatch: Go=%d %s TypeScript=%d %s",
 				goResult.status, goResult.body, tsResult.status, tsResult.body)
+		}
+		for implementation, result := range map[string]oracleResponse{"Go": goResult, "TypeScript": tsResult} {
+			errorBody := decodeObject(t, result.body)
+			if errorBody["code"] != "INVALID_ORIGIN" || errorBody["message"] != "Invalid origin" {
+				t.Fatalf("%s origin error mismatch: %#v", implementation, errorBody)
+			}
+			if _, nested := errorBody["error"]; nested {
+				t.Fatalf("%s returned a legacy nested error: %#v", implementation, errorBody)
+			}
 		}
 	})
 

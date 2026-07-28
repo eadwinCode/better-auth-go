@@ -138,11 +138,11 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) error 
 	if value, ok := fields["image"].(string); ok && len(value) > 2048 {
 		return publicError(CodeBadRequest, "Invalid user update.", http.StatusBadRequest, nil)
 	}
-	updated, err := s.store.UpdateUser(r.Context(), user.ID, fields, s.cfg.Clock.Now().UTC())
+	_, err = s.store.UpdateUser(r.Context(), user.ID, fields, s.cfg.Clock.Now().UTC())
 	if err != nil {
 		return publicError(CodeInternal, "User could not be updated.", http.StatusInternalServerError, err)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": updated})
+	writeJSON(w, http.StatusOK, map[string]bool{"status": true})
 	return nil
 }
 

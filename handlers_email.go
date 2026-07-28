@@ -151,5 +151,5 @@ func (s *Server) revokePreviousBrowserSession(ctx context.Context, r *http.Reque
 }
 
 func invalidCredentials(cause error) error {
-	return publicError(CodeInvalidCredentials, "Invalid email or password.", http.StatusUnauthorized, cause)
+	return publicError(CodeInvalidCredentials, "Invalid email or password", http.StatusUnauthorized, cause)
 }
