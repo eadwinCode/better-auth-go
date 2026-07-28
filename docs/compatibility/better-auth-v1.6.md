@@ -148,15 +148,18 @@ release because provider payloads and policies can change independently.
 
 ## Not yet in the initial release gate
 
-Feature plugins outside the requested initial scope—such as two-factor
-authentication, organizations, username, magic links, anonymous users, SSO,
-SCIM, and API keys—use the server kernel tracked in
+Feature plugins outside the requested initial scope—such as organizations,
+username, magic links, anonymous users, SSO, SCIM, and API keys—use the server
+kernel tracked in
 [the plugin compatibility checklist](./plugin-kernel.md). Their full endpoint
 implementations are tracked in the [feature gap register](./missing-features.md)
 as separate parity milestones.
 
 Passkeys/WebAuthn are specified in ADR 0004 and implemented as the first
 dedicated high-risk plugin PR.
+
+Two-factor authentication is specified in ADR 0005 and implemented as the
+second dedicated high-risk plugin PR.
 
 ## Passkey plugin endpoint map
 
@@ -177,3 +180,27 @@ User verification defaults to `required`; Better Auth's `preferred` behavior is
 an explicit compatibility option. Registration user resolution, optional
 sessionless enrollment, authenticator selection, extensions, schema mapping,
 and post-verification hooks have Go request-scoped equivalents.
+
+## Two-factor plugin endpoint map
+
+| Better Auth endpoint | better-auth-go | Status |
+| --- | --- | --- |
+| `POST /two-factor/enable` | same | implemented |
+| `POST /two-factor/disable` | same | implemented |
+| `POST /two-factor/get-totp-uri` | same | implemented |
+| `POST /two-factor/verify-totp` | same | implemented |
+| `POST /two-factor/send-otp` | same | implemented |
+| `POST /two-factor/verify-otp` | same | implemented |
+| `POST /two-factor/generate-backup-codes` | same | implemented |
+| `POST /two-factor/verify-backup-code` | same | implemented |
+| server-only backup-code viewing | `twofactor.Manager.ViewBackupCodes` | implemented |
+
+The plugin also enriches user-bearing sign-up, sign-in, session, refresh, and
+verification responses with `twoFactorEnabled`. Credential sign-in returns
+`twoFactorRedirect` and the available `twoFactorMethods`, while revoking the
+provisional first-factor session before response commit.
+
+Native Go differences are security-hardening choices: encryption is mandatory,
+backup codes cannot be stored in plaintext, secret-bearing management requires
+a fresh session and CSRF, pending/trusted bearer values are hash-only at rest,
+and backup-code viewing has no HTTP route.
