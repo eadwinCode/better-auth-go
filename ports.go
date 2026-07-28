@@ -40,6 +40,23 @@ type Mailer interface {
 // after durable account deletion. Implementations must be concurrency-safe.
 type UserDeletionHook func(context.Context, User) error
 
+// UserLifecycleHook observes a Better Auth lifecycle transition.
+// Implementations must be concurrency-safe.
+type UserLifecycleHook func(context.Context, User) error
+
+// SyntheticUserInput contains only public signup fields. AdditionalFields is
+// reserved for application-declared user schema fields and is an independent
+// map that a factory may safely retain or mutate.
+type SyntheticUserInput struct {
+	CoreFields       Record
+	AdditionalFields Record
+	ID               string
+}
+
+// SyntheticUserFactory builds an enumeration-resistant duplicate-signup user
+// shape, including application fields needed to match a real signup response.
+type SyntheticUserFactory func(SyntheticUserInput) Record
+
 // RateLimitRequest is intentionally small so limiters can map it to local
 // policies without receiving credentials.
 type RateLimitRequest struct {
@@ -106,6 +123,7 @@ type authStore interface {
 	DeleteUser(context.Context, string) error
 	ConsumeUserDeletion(context.Context, string, string, time.Time) error
 	ConsumeEmailChange(context.Context, string, time.Time) (User, string, error)
+	ConsumeEmailChangeConfirmation(context.Context, string, time.Time) (User, string, string, error)
 	LinkOAuthAccount(context.Context, string, string, OAuthProfile, ProviderTokens, time.Time) error
 	OAuthAccountTokens(context.Context, string, string, string) (StoredOAuthAccount, error)
 	UpdateOAuthAccountTokens(context.Context, string, string, ProviderTokens, time.Time) error
@@ -122,8 +140,9 @@ type authStore interface {
 
 	PutOneTimeToken(context.Context, OneTimeToken) error
 	HasOneTimeToken(context.Context, OneTimePurpose, string, time.Time) (bool, error)
-	ConsumePasswordReset(context.Context, string, string, time.Time, bool) (User, error)
+	ConsumePasswordReset(context.Context, string, string, time.Time) (User, error)
 	ConsumeEmailVerification(context.Context, string, time.Time) (User, error)
+	VerifyUserEmail(context.Context, string, time.Time) (User, error)
 
 	PutOAuthState(context.Context, OAuthState) error
 	ConsumeOAuthState(context.Context, string, time.Time) (OAuthState, error)

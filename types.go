@@ -129,15 +129,16 @@ type DomainEvent struct {
 type OneTimePurpose string
 
 const (
-	PurposePasswordReset    OneTimePurpose = "password_reset"
-	PurposeEmailVerify      OneTimePurpose = "email_verify"
-	PurposeEmailChange      OneTimePurpose = "email_change"
-	PurposeUserDeletion     OneTimePurpose = "user_deletion"
-	PurposeOAuthState       OneTimePurpose = "oauth_state"
-	ProviderGoogle                         = "google"
-	EventUserCreated                       = "user.created"
-	AuditImpersonationStart                = "admin.impersonation.started"
-	AuditImpersonationStop                 = "admin.impersonation.stopped"
+	PurposePasswordReset           OneTimePurpose = "password_reset"
+	PurposeEmailVerify             OneTimePurpose = "email_verify"
+	PurposeEmailChange             OneTimePurpose = "email_change"
+	PurposeEmailChangeConfirmation OneTimePurpose = "email_change_confirmation"
+	PurposeUserDeletion            OneTimePurpose = "user_deletion"
+	PurposeOAuthState              OneTimePurpose = "oauth_state"
+	ProviderGoogle                                = "google"
+	EventUserCreated                              = "user.created"
+	AuditImpersonationStart                       = "admin.impersonation.started"
+	AuditImpersonationStop                        = "admin.impersonation.stopped"
 )
 
 // OneTimeToken is a hash-at-rest, expiring, single-use token record.

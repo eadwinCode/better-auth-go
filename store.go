@@ -324,6 +324,30 @@ func (s *databaseStore) ConsumeEmailChange(ctx context.Context, hash string, now
 	return user, returnTo, err
 }
 
+func (s *databaseStore) ConsumeEmailChangeConfirmation(
+	ctx context.Context,
+	hash string,
+	now time.Time,
+) (User, string, string, error) {
+	row, err := s.db.ConsumeOne(ctx, DeleteQuery{Model: ModelVerification, Where: []Where{
+		{Field: "identifier", Operator: WhereStartsWith, Value: string(PurposeEmailChangeConfirmation) + ":"},
+		Eq("value", hash),
+		{Field: "expiresAt", Operator: WhereGT, Value: now.UTC()},
+	}})
+	if err != nil {
+		return User{}, "", "", err
+	}
+	if row == nil {
+		return User{}, "", "", ErrReplay
+	}
+	metadata := recordStringMap(row["metadata"])
+	if metadata["userId"] == "" || metadata["newEmail"] == "" {
+		return User{}, "", "", ErrReplay
+	}
+	user, err := s.FindUserByID(ctx, metadata["userId"])
+	return user, metadata["newEmail"], metadata["returnTo"], err
+}
+
 func (s *databaseStore) LinkOAuthAccount(
 	ctx context.Context,
 	accountID string,
@@ -565,7 +589,7 @@ func (s *databaseStore) UpdateSession(
 
 func (s *databaseStore) PutOneTimeToken(ctx context.Context, token OneTimeToken) error {
 	identifier := string(token.Purpose)
-	if token.Purpose == PurposeEmailChange {
+	if token.Purpose == PurposeEmailChange || token.Purpose == PurposeEmailChangeConfirmation {
 		identifier += ":" + token.UserID
 	}
 	create := func(database DatabaseAdapter) error {
@@ -576,7 +600,7 @@ func (s *databaseStore) PutOneTimeToken(ctx context.Context, token OneTimeToken)
 		}})
 		return err
 	}
-	if token.Purpose != PurposeEmailChange {
+	if token.Purpose != PurposeEmailChange && token.Purpose != PurposeEmailChangeConfirmation {
 		return create(s.db)
 	}
 	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
@@ -614,7 +638,6 @@ func (s *databaseStore) ConsumePasswordReset(
 	hash string,
 	passwordHash string,
 	now time.Time,
-	revokeSessions bool,
 ) (User, error) {
 	var user User
 	err := s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
@@ -651,13 +674,6 @@ func (s *databaseStore) ConsumePasswordReset(
 				return err
 			}
 		}
-		if revokeSessions {
-			if _, err = tx.UpdateMany(ctx, UpdateQuery{Model: ModelSession, Where: []Where{
-				Eq("userId", userID), Eq("revokedAt", nil),
-			}, Update: Record{"revokedAt": now, "updatedAt": now}}); err != nil {
-				return err
-			}
-		}
 		userRow, err := tx.FindOne(ctx, FindOneQuery{Model: ModelUser, Where: []Where{Eq("id", userID)}})
 		if err != nil {
 			return err
@@ -669,32 +685,25 @@ func (s *databaseStore) ConsumePasswordReset(
 }
 
 func (s *databaseStore) ConsumeEmailVerification(ctx context.Context, hash string, now time.Time) (User, error) {
-	var user User
-	err := s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
-		token, err := tx.ConsumeOne(ctx, DeleteQuery{Model: ModelVerification, Where: []Where{
-			Eq("identifier", string(PurposeEmailVerify)), Eq("value", hash),
-			{Field: "expiresAt", Operator: WhereGT, Value: now},
-		}})
-		if err != nil {
-			return err
-		}
-		if token == nil {
-			return ErrReplay
-		}
-		userID := recordStringMap(token["metadata"])["userId"]
-		if userID == "" {
-			return ErrReplay
-		}
-		row, err := tx.Update(ctx, UpdateQuery{Model: ModelUser, Where: []Where{Eq("id", userID)}, Update: Record{
-			"emailVerified": true, "updatedAt": now,
-		}})
-		if err != nil {
-			return err
-		}
-		user, err = userFromRecord(row)
-		return err
-	})
-	return user, err
+	token, err := s.db.ConsumeOne(ctx, DeleteQuery{Model: ModelVerification, Where: []Where{
+		Eq("identifier", string(PurposeEmailVerify)), Eq("value", hash),
+		{Field: "expiresAt", Operator: WhereGT, Value: now},
+	}})
+	if err != nil {
+		return User{}, err
+	}
+	if token == nil {
+		return User{}, ErrReplay
+	}
+	userID := recordStringMap(token["metadata"])["userId"]
+	if userID == "" {
+		return User{}, ErrReplay
+	}
+	return s.FindUserByID(ctx, userID)
+}
+
+func (s *databaseStore) VerifyUserEmail(ctx context.Context, userID string, now time.Time) (User, error) {
+	return s.UpdateUser(ctx, userID, Record{"emailVerified": true}, now)
 }
 
 func (s *databaseStore) PutOAuthState(ctx context.Context, state OAuthState) error {
