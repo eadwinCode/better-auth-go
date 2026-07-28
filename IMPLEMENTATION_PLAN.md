@@ -3,12 +3,14 @@
 This plan implements ADR 0001 in reviewable slices. Each slice ends with focused
 tests and an intentional commit.
 
-## Phase 0: Repository and contracts
+## Phase 0: Repository and compatibility contracts
 
 1. Initialize `github.com/eadwinCode/better-auth-go`.
 2. Add ADR 0001, this plan, license, contribution guidance, and security policy.
-3. Define v1 public records, configuration, ports, error codes, and constructor.
-4. Add fail-closed configuration tests.
+3. Pin an audited Better Auth v1.6 compatibility snapshot and provider catalog.
+4. Define v1 public records, configuration, hooks/plugins, error codes, and
+   constructor.
+5. Add fail-closed configuration tests.
 
 Exit criteria:
 
@@ -30,7 +32,25 @@ Exit criteria:
 - malformed hashes cannot trigger unbounded allocation;
 - token and cookie parsers have fuzz targets.
 
-## Phase 2: Core email/password and sessions
+## Phase 2: Generic adapter and schema layer
+
+1. Implement Better Auth-aligned adapter operations, predicates, projections,
+   joins, sorting, pagination, capability metadata, and transactions.
+2. Implement schema registry, model/field renaming, value transforms, and ID
+   generation.
+3. Implement safe adapter factory fallbacks while refusing to weaken required
+   atomicity.
+4. Implement typed core store over `user`, `session`, `account`,
+   `verification`, audit, and outbox models.
+5. Publish an adapter conformance suite.
+
+Exit criteria:
+
+- a third-party database adapter needs only the generic contract;
+- schema extensions and renamed models/fields work;
+- atomic consume, guarded increment, and rollback tests pass.
+
+## Phase 3: Core email/password and sessions
 
 1. Implement sign-up and sign-in services.
 2. Implement session get, refresh/rotate, revoke, and sign-out.
@@ -45,7 +65,7 @@ Exit criteria:
 - fixation and replay attempts fail;
 - account existence is not disclosed by public errors.
 
-## Phase 3: Recovery and verification
+## Phase 4: Recovery and verification
 
 1. Implement password-reset issuance and atomic consumption.
 2. Implement email-verification issuance and atomic consumption.
@@ -58,27 +78,35 @@ Exit criteria:
 - mail failures do not expose account existence;
 - reset replay and purpose confusion tests fail safely.
 
-## Phase 4: Google OAuth
+## Phase 5: Social OAuth/OIDC
 
-1. Implement authorization redirect with S256 PKCE and persisted single-use
-   state.
-2. Validate exact callback destinations against the allowlist.
-3. Implement bounded code exchange and user-info retrieval.
-4. Require verified email and atomically link or create the account.
-5. Rotate any existing session and map provider errors safely.
+1. Implement the generic OAuth2/OIDC authorization-code engine, discovery/JWKS,
+   nonce, S256 PKCE, encrypted provider-token persistence, and profile mapping.
+2. Port provider presets and provider-specific behavior for all IDs listed in
+   `docs/compatibility/better-auth-v1.6.md`.
+3. Implement Better Auth-compatible `sign-in/social` and callback routes.
+4. Validate exact callback/error/new-user destinations against allowlists.
+5. Require provider-appropriate verified identity evidence and atomically link
+   or create accounts.
+6. Rotate any existing session and map provider errors safely.
 
 Exit criteria:
 
-- black-box tests cover happy path, replay, state expiry, PKCE, unverified email,
-  account conflicts, malicious redirects, oversized responses, and provider
-  errors.
+- every upstream provider ID has a registry and contract fixture;
+- provider-specific fixtures test token/profile semantics without live secrets;
+- black-box tests cover happy path, replay, state expiry, nonce/PKCE, unverified
+  identity, account conflicts, malicious redirects, SSRF, oversized responses,
+  and provider errors.
 
-## Phase 5: Admin impersonation and audit
+## Phase 6: Admin impersonation and audit
 
 1. Invoke the authorization port with actor and subject context.
-2. Atomically create a capped impersonation session and durable audit event.
+2. Atomically create a capped impersonation session and durable start audit
+   event.
 3. Rotate the actor's current browser session token.
-4. Expose actor/subject metadata in server-side session records without leaking
+4. Stop impersonation by rotating back to the actor and durably recording the
+   stop event.
+5. Expose actor/subject metadata in server-side session records without leaking
    unnecessary security data.
 
 Exit criteria:
@@ -87,10 +115,11 @@ Exit criteria:
 - sessions never exceed one hour;
 - a session cannot exist without its audit event.
 
-## Phase 6: MongoDB adapter
+## Phase 7: MongoDB adapter
 
-1. Implement collections, codecs, index creation, and health checks.
-2. Implement all adapter operations using MongoDB transactions where required.
+1. Implement the complete generic adapter contract, codecs, index creation, and
+   health checks.
+2. Implement native atomic consume/guarded increment and transactions.
 3. Use unique indexes and conditional updates for replay/concurrency safety.
 4. Document replica-set/sharded-cluster requirements.
 5. Add integration tests gated by `MONGODB_URI`.
@@ -101,10 +130,11 @@ Exit criteria:
 - concurrent token/session consumption has exactly one winner;
 - all persisted secret material is hashed.
 
-## Phase 7: Production readiness
+## Phase 8: Production readiness
 
 1. Add runnable `net/http` and MongoDB examples.
-2. Add API, deployment, migration bridge, threat model, and operations docs.
+2. Add API, compatibility, adapter-authoring, provider-authoring, deployment,
+   migration bridge, threat model, and operations docs.
 3. Add CI for format, test, vet, race, fuzz smoke, govulncheck, and staticcheck.
 4. Add release workflow, changelog policy, and semantic version documentation.
 5. Run `go test ./...`, `go vet ./...`, `go test -race ./...`, fuzz smoke tests,
@@ -117,4 +147,3 @@ Exit criteria:
 - optional checks clearly report missing external services/tools;
 - the branch is pushed and a draft PR documents design, security properties,
   validation, and remaining release gates.
-
