@@ -172,6 +172,55 @@ func TestOriginFailsBeforePluginCode(t *testing.T) {
 	}
 }
 
+func TestPluginUnsafeMethodsRequireOriginUnlessExplicitlySkipped(t *testing.T) {
+	t.Parallel()
+	var called atomic.Int64
+	var endpoints []betterauth.PluginEndpoint
+	for _, method := range []string{
+		http.MethodPut, http.MethodPatch, http.MethodDelete,
+	} {
+		method := method
+		endpoints = append(endpoints, betterauth.PluginEndpoint{
+			Name: method, Path: "/scim-test/resource", Method: method,
+			Handler: func(*betterauth.HookContext) (*betterauth.PluginResponse, error) {
+				called.Add(1)
+				return betterauth.JSONResponse(http.StatusOK, map[string]string{"method": method})
+			},
+		})
+	}
+	endpoints = append(endpoints, betterauth.PluginEndpoint{
+		Name: "bearer", Path: "/scim-test/bearer", Method: http.MethodPatch,
+		SkipOriginCheck: true,
+		Handler: func(*betterauth.HookContext) (*betterauth.PluginResponse, error) {
+			called.Add(1)
+			return betterauth.JSONResponse(http.StatusNoContent, nil)
+		},
+	})
+	handler := newPluginServer(t, nil, nil, betterauth.Plugin{
+		ID: "scim-methods", Endpoints: endpoints,
+	})
+	for _, method := range []string{
+		http.MethodPut, http.MethodPatch, http.MethodDelete,
+	} {
+		response := pluginRequest(
+			t, handler, method, "/scim-test/resource", "https://evil.example", `{}`,
+		)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("%s origin status = %d", method, response.Code)
+		}
+	}
+	if called.Load() != 0 {
+		t.Fatalf("unsafe methods reached endpoint before origin validation: %d", called.Load())
+	}
+	response := pluginRequest(
+		t, handler, http.MethodPatch, "/scim-test/bearer", "https://idp.example", `{}`,
+	)
+	if response.Code != http.StatusNoContent || called.Load() != 1 {
+		t.Fatalf("explicit bearer origin exception failed: %d calls=%d",
+			response.Code, called.Load())
+	}
+}
+
 func TestPluginEndpointValidatorsRunBeforeMiddlewareAndHandler(t *testing.T) {
 	t.Parallel()
 	var calls atomic.Int64

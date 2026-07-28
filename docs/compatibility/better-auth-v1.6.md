@@ -161,6 +161,15 @@ dedicated high-risk plugin PR.
 Two-factor authentication is specified in ADR 0005 and implemented as the
 second dedicated high-risk plugin PR.
 
+Organizations are specified in ADR 0006 with their schema and authorization
+foundation isolated from protocol plugins.
+
+SCIM is specified in ADR 0008. Its provider schema, hash-only bearer boundary,
+bounded filter parser, standard metadata resources, and required plugin HTTP
+method/origin primitives are implemented as an independent foundation. User
+provisioning and connection-management routes remain release-gated until the
+black-box RFC 7644 matrix passes.
+
 ## Passkey plugin endpoint map
 
 | Better Auth endpoint | better-auth-go | Status |
