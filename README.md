@@ -31,6 +31,15 @@ using native Go security defaults:
 The project is pre-1.0. Review the compatibility matrix and changelog before
 upgrading.
 
+The pinned cross-runtime suite is reproducible from this repository:
+
+```bash
+cd compat/typescript-oracle
+bun install --frozen-lockfile
+cd ../..
+scripts/test-typescript-compat.sh
+```
+
 ## Install
 
 ```bash

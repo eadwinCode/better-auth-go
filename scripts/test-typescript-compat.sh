@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-typescript_root="${BETTER_AUTH_TS_DIR:-${repository_root}/../better-auth-ts}"
+typescript_root="${BETTER_AUTH_TS_DIR:-${repository_root}/compat/typescript-oracle}"
 compatibility_port="${BETTER_AUTH_TS_PORT:-43125}"
 
 if [[ ! -f "${typescript_root}/package.json" ]]; then
@@ -26,6 +26,7 @@ trap cleanup EXIT INT TERM
 
 oracle_url="http://127.0.0.1:${compatibility_port}"
 export BETTER_AUTH_SECRET="better-auth-go-v1.6.25-compatibility-only-secret"
+export BETTER_AUTH_TEST_CONTROL_SECRET="better-auth-go-test-control-only-secret"
 export BETTER_AUTH_URL="${oracle_url}"
 export BETTER_AUTH_BASE_PATH="/api/auth"
 export BETTER_AUTH_TRUSTED_ORIGINS="${oracle_url}"
@@ -63,5 +64,6 @@ fi
 (
   cd "${repository_root}"
   BETTER_AUTH_TS_URL="${oracle_url}" \
-    go test -count=1 -run '^TestBetterAuthV1625BlackBoxCompatibility$' .
+  BETTER_AUTH_TS_CONTROL_SECRET="${BETTER_AUTH_TEST_CONTROL_SECRET}" \
+    go test -count=1 -run '^TestBetterAuthV1625' .
 )

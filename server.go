@@ -107,6 +107,8 @@ func (s *Server) serveCoreHTTP(w http.ResponseWriter, r *http.Request) {
 		handler = s.postOnly(s.handleRefreshProviderToken)
 	case "/sign-in/social":
 		handler = s.postOnly(s.handleSocialAuthorize)
+	case "/request-password-reset":
+		handler = s.postOnly(s.handleForgotPassword)
 	case "/forget-password":
 		handler = s.postOnly(s.handleForgotPassword)
 	case "/reset-password":
@@ -120,7 +122,9 @@ func (s *Server) serveCoreHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/admin/stop-impersonating":
 		handler = s.postOnly(s.handleStopImpersonating)
 	default:
-		if providerID, found := strings.CutPrefix(relative, "/callback/"); found && validProviderID(providerID) {
+		if token, found := strings.CutPrefix(relative, "/reset-password/"); found && token != "" {
+			handler = s.getOnly(s.handleResetPasswordCallback(token))
+		} else if providerID, found := strings.CutPrefix(relative, "/callback/"); found && validProviderID(providerID) {
 			handler = s.handleSocialCallback(providerID)
 		} else {
 			writeError(w, requestID, publicError(CodeNotFound, "Endpoint not found.", http.StatusNotFound, nil))

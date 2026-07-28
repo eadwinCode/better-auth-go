@@ -566,6 +566,26 @@ func (s *databaseStore) PutOneTimeToken(ctx context.Context, token OneTimeToken)
 	})
 }
 
+func (s *databaseStore) HasOneTimeToken(
+	ctx context.Context,
+	purpose OneTimePurpose,
+	hash string,
+	now time.Time,
+) (bool, error) {
+	row, err := s.db.FindOne(ctx, FindOneQuery{Model: ModelVerification, Where: []Where{
+		Eq("identifier", string(purpose)),
+		Eq("value", hash),
+		{Field: "expiresAt", Operator: WhereGT, Value: now},
+	}})
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return row != nil, nil
+}
+
 func (s *databaseStore) ConsumePasswordReset(
 	ctx context.Context,
 	hash string,

@@ -38,6 +38,11 @@ All notable changes are documented here. Releases follow Semantic Versioning.
   sign-in, required email verification, and password-reset session revocation.
 - Enumeration-safe synthetic duplicate-signup responses when verification is
   required or automatic sign-in is disabled.
+- A checked-in Better Auth 1.6.25 Bun oracle with authenticated test-only mail
+  capture and pull-request CI differential coverage.
+- Canonical `POST /request-password-reset` and
+  `GET /reset-password/{token}` callback routes with redirect allowlist
+  enforcement; the previous `/forget-password` path remains an alias.
 
 ### Changed
 
@@ -54,5 +59,10 @@ All notable changes are documented here. Releases follow Semantic Versioning.
   one-hour lifetime.
 - Missing-user credential sign-in performs password-hash work before returning
   the generic authentication error.
+- Recovery messages, verification responses, authenticated verification
+  errors, session-revocation responses, and update-session responses now match
+  the pinned v1.6.25 wire shapes.
+- Session listing now requires a fresh session, and reports the upstream
+  `SESSION_NOT_FRESH` error when freshness has expired.
 
 [Unreleased]: https://github.com/eadwinCode/better-auth-go/commits/main

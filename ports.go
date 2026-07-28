@@ -116,6 +116,7 @@ type authStore interface {
 	UpdateSession(context.Context, string, string, Record, time.Time) (Session, error)
 
 	PutOneTimeToken(context.Context, OneTimeToken) error
+	HasOneTimeToken(context.Context, OneTimePurpose, string, time.Time) (bool, error)
 	ConsumePasswordReset(context.Context, string, string, time.Time, bool) (User, error)
 	ConsumeEmailVerification(context.Context, string, time.Time) (User, error)
 

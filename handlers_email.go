@@ -126,6 +126,7 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) error {
 			"email-verification",
 			s.cfg.EmailVerificationTTL,
 			"/verify-email",
+			"",
 		)
 	}
 	if !createSession {

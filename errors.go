@@ -10,26 +10,29 @@ import (
 type ErrorCode string
 
 const (
-	CodeBadRequest         ErrorCode = "bad_request"
-	CodeValidation         ErrorCode = "validation_error"
-	CodeInvalidEmail       ErrorCode = "invalid_email"
-	CodePasswordTooShort   ErrorCode = "password_too_short"
-	CodePasswordTooLong    ErrorCode = "password_too_long"
-	CodeInvalidCredentials ErrorCode = "invalid_credentials"
-	CodeEmailNotVerified   ErrorCode = "email_not_verified"
-	CodeSignUpDisabled     ErrorCode = "email_password_sign_up_disabled"
-	CodeUserAlreadyExists  ErrorCode = "user_already_exists_use_another_email"
-	CodeUnauthorized       ErrorCode = "unauthorized"
-	CodeForbidden          ErrorCode = "forbidden"
-	CodeNotFound           ErrorCode = "not_found"
-	CodeConflict           ErrorCode = "conflict"
-	CodeRateLimited        ErrorCode = "rate_limited"
-	CodeInvalidOrigin      ErrorCode = "invalid_origin"
-	CodeInvalidCSRF        ErrorCode = "invalid_csrf"
-	CodeInvalidToken       ErrorCode = "invalid_or_expired_token"
-	CodeProviderFailure    ErrorCode = "provider_failure"
-	CodeMethodNotAllowed   ErrorCode = "method_not_allowed"
-	CodeInternal           ErrorCode = "internal_error"
+	CodeBadRequest           ErrorCode = "bad_request"
+	CodeValidation           ErrorCode = "validation_error"
+	CodeInvalidEmail         ErrorCode = "invalid_email"
+	CodePasswordTooShort     ErrorCode = "password_too_short"
+	CodePasswordTooLong      ErrorCode = "password_too_long"
+	CodeInvalidCredentials   ErrorCode = "invalid_credentials"
+	CodeEmailNotVerified     ErrorCode = "email_not_verified"
+	CodeEmailMismatch        ErrorCode = "email_mismatch"
+	CodeEmailAlreadyVerified ErrorCode = "email_already_verified"
+	CodeSignUpDisabled       ErrorCode = "email_password_sign_up_disabled"
+	CodeUserAlreadyExists    ErrorCode = "user_already_exists_use_another_email"
+	CodeUnauthorized         ErrorCode = "unauthorized"
+	CodeForbidden            ErrorCode = "forbidden"
+	CodeSessionNotFresh      ErrorCode = "session_not_fresh"
+	CodeNotFound             ErrorCode = "not_found"
+	CodeConflict             ErrorCode = "conflict"
+	CodeRateLimited          ErrorCode = "rate_limited"
+	CodeInvalidOrigin        ErrorCode = "invalid_origin"
+	CodeInvalidCSRF          ErrorCode = "invalid_csrf"
+	CodeInvalidToken         ErrorCode = "invalid_or_expired_token"
+	CodeProviderFailure      ErrorCode = "provider_failure"
+	CodeMethodNotAllowed     ErrorCode = "method_not_allowed"
+	CodeInternal             ErrorCode = "internal_error"
 )
 
 // Error is a structured public-safe authentication error.
@@ -107,6 +110,10 @@ func httpErrorCode(code ErrorCode) string {
 		return "INVALID_EMAIL_OR_PASSWORD"
 	case CodeEmailNotVerified:
 		return "EMAIL_NOT_VERIFIED"
+	case CodeEmailMismatch:
+		return "EMAIL_MISMATCH"
+	case CodeEmailAlreadyVerified:
+		return "EMAIL_ALREADY_VERIFIED"
 	case CodeSignUpDisabled:
 		return "EMAIL_PASSWORD_SIGN_UP_DISABLED"
 	case CodeUserAlreadyExists:
@@ -115,6 +122,8 @@ func httpErrorCode(code ErrorCode) string {
 		return "UNAUTHORIZED"
 	case CodeForbidden, CodeInvalidCSRF:
 		return "FORBIDDEN"
+	case CodeSessionNotFresh:
+		return "SESSION_NOT_FRESH"
 	case CodeNotFound:
 		return "NOT_FOUND"
 	case CodeConflict:

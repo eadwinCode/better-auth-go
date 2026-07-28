@@ -587,7 +587,8 @@ func isCoreRoute(path string) bool {
 		"/list-accounts", "/link-social", "/unlink-account",
 		"/get-access-token", "/refresh-token",
 		"/sign-in/social",
-		"/forget-password", "/reset-password", "/send-verification-email",
+		"/request-password-reset", "/forget-password", "/reset-password",
+		"/send-verification-email",
 		"/verify-email", "/admin/impersonate-user", "/admin/stop-impersonating":
 		return true
 	default:
@@ -604,7 +605,8 @@ func coreRoutePaths() []string {
 		"/list-accounts", "/link-social", "/unlink-account",
 		"/get-access-token", "/refresh-token",
 		"/sign-in/social",
-		"/forget-password", "/reset-password", "/send-verification-email",
+		"/request-password-reset", "/forget-password", "/reset-password",
+		"/reset-password/:token", "/send-verification-email",
 		"/verify-email", "/admin/impersonate-user", "/admin/stop-impersonating",
 	}
 }
