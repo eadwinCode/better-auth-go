@@ -55,7 +55,7 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
-	databaseName := "better_auth_go_upgrade_" + time.Now().UTC().Format("20060102150405.000000000")
+	databaseName := "better_auth_go_upgrade_" + time.Now().UTC().Format("20060102150405_000000000")
 	database := client.Database(databaseName)
 	t.Cleanup(func() { _ = database.Drop(context.Background()) })
 	adapter, err := mongodb.New(mongodb.Config{Database: database})
