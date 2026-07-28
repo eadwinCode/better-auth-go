@@ -46,7 +46,8 @@ Reference snapshot audited on 2026-07-28:
 | `POST /update-session` | same | implemented for schema input fields |
 | `POST /update-user` | same | implemented |
 | `POST /change-email` | same | implemented; opt-in |
-| `POST /delete-user` | same | implemented; opt-in password/fresh-session flow |
+| `POST /delete-user` | same | implemented; opt-in direct or emailed-verification flow |
+| `GET /delete-user/callback` | same | implemented; authenticated, single-use and redirect-allowlisted |
 | `POST /change-password` | same | implemented |
 | `GET /list-accounts` | same | implemented with credential/token redaction |
 | `POST /link-social` | same | implemented |
@@ -98,6 +99,9 @@ session-management differential certification.
   authenticated resend errors match the upstream public codes. Go deliberately
   rejects verification-token replay because verification tokens are
   single-use and hash-at-rest.
+- Optional account-deletion verification defaults to a 24-hour single-use
+  token, supports the callback and token-in-POST forms, and runs configured
+  before/after deletion hooks. Go stores the token only as a hash.
 
 The Go password policy measures bytes to place a deterministic upper bound on
 password-hashing work. Better Auth uses JavaScript UTF-16 string length, so

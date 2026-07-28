@@ -28,8 +28,11 @@ type AccountManagementConfig struct {
 }
 
 type UserManagementConfig struct {
-	ChangeEmailEnabled bool
-	DeleteUserEnabled  bool
+	ChangeEmailEnabled            bool
+	DeleteUserEnabled             bool
+	SendDeleteAccountVerification bool
+	BeforeDelete                  UserDeletionHook
+	AfterDelete                   UserDeletionHook
 }
 
 // EmailPasswordConfig controls the Better Auth v1.6 email/password lifecycle.
@@ -73,6 +76,7 @@ type Config struct {
 	ImpersonationDuration   time.Duration
 	PasswordResetTTL        time.Duration
 	EmailVerificationTTL    time.Duration
+	DeleteUserTTL           time.Duration
 	OAuthStateTTL           time.Duration
 	ProviderTimeout         time.Duration
 	MaxRequestBytes         int64
@@ -220,6 +224,9 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 	if cfg.EmailVerificationTTL == 0 {
 		cfg.EmailVerificationTTL = time.Hour
 	}
+	if cfg.DeleteUserTTL == 0 {
+		cfg.DeleteUserTTL = 24 * time.Hour
+	}
 	if cfg.OAuthStateTTL == 0 {
 		cfg.OAuthStateTTL = 10 * time.Minute
 	}
@@ -232,11 +239,17 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 	for name, value := range map[string]time.Duration{
 		"password reset TTL":     cfg.PasswordResetTTL,
 		"email verification TTL": cfg.EmailVerificationTTL,
+		"delete user TTL":        cfg.DeleteUserTTL,
 		"OAuth state TTL":        cfg.OAuthStateTTL,
 	} {
 		if value < time.Minute || value > 7*24*time.Hour {
 			return cfg, nil, nil, fmt.Errorf("betterauth: %s is out of bounds", name)
 		}
+	}
+	if cfg.User.SendDeleteAccountVerification && !cfg.User.DeleteUserEnabled {
+		return cfg, nil, nil, fmt.Errorf(
+			"betterauth: delete verification requires user deletion to be enabled",
+		)
 	}
 	if cfg.MaxRequestBytes == 0 {
 		cfg.MaxRequestBytes = 64 << 10

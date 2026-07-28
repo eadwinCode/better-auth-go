@@ -36,6 +36,10 @@ type Mailer interface {
 	Send(context.Context, Mail) error
 }
 
+// UserDeletionHook runs application cleanup or policy immediately before or
+// after durable account deletion. Implementations must be concurrency-safe.
+type UserDeletionHook func(context.Context, User) error
+
 // RateLimitRequest is intentionally small so limiters can map it to local
 // policies without receiving credentials.
 type RateLimitRequest struct {
@@ -100,6 +104,7 @@ type authStore interface {
 	ListAccounts(context.Context, string) ([]OAuthAccount, error)
 	UnlinkAccount(context.Context, string, string, string, bool) error
 	DeleteUser(context.Context, string) error
+	ConsumeUserDeletion(context.Context, string, string, time.Time) error
 	ConsumeEmailChange(context.Context, string, time.Time) (User, string, error)
 	LinkOAuthAccount(context.Context, string, string, OAuthProfile, ProviderTokens, time.Time) error
 	OAuthAccountTokens(context.Context, string, string, string) (StoredOAuthAccount, error)

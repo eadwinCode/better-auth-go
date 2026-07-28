@@ -12,6 +12,9 @@ requires `BETTER_AUTH_TEST_CONTROL_SECRET`, and exists only in this fixture.
 The pinned admin and generic OAuth plugins are also enabled. A
 credential-protected loopback token endpoint supports public account-linking,
 provider-token, and impersonation differential flows without external calls.
+The fixture also mounts a second auth instance at `/api/auth-delete` with
+`sendDeleteAccountVerification` enabled so direct and verified account
+deletion can be characterized independently.
 
 Install dependencies with:
 

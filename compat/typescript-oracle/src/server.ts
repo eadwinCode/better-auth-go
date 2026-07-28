@@ -1,4 +1,9 @@
-import { auth, capturedMails, database } from "./auth.ts";
+import {
+  auth,
+  capturedMails,
+  database,
+  deletionVerificationAuth,
+} from "./auth.ts";
 import { betterAuthVersion, referenceConfig } from "./config.ts";
 
 function authorizedTestControl(request: Request): boolean {
@@ -100,6 +105,12 @@ const server = Bun.serve({
     if (oauthToken) return oauthToken;
     const controlled = await testControl(request, url);
     if (controlled) return controlled;
+    if (
+      url.pathname === referenceConfig.basePath + "-delete" ||
+      url.pathname.startsWith(referenceConfig.basePath + "-delete/")
+    ) {
+      return deletionVerificationAuth.handler(request);
+    }
     return auth.handler(request);
   },
 });

@@ -39,7 +39,7 @@ Last updated: 2026-07-28
 | Go unit and black-box tests | `go test -count=1 ./...` | Pass |
 | TypeScript oracle type check | `bun run typecheck` in `compat/typescript-oracle` | Pass |
 | TypeScript oracle migration | `scripts/test-typescript-compat.sh` isolated SQLite setup | Pass |
-| Go/TypeScript core characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback, multi-session, email change/deletion, account linking/unlinking, provider-token and impersonation suites |
+| Go/TypeScript core characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback, multi-session, email change, direct/emailed deletion, account linking/unlinking, provider-token and impersonation suites |
 | Pinned upstream source inventory | `scripts/check-upstream-v1.6.25.sh` | Pass at tag commit `07a646e` |
 | Formatting | `test -z "$(gofmt -l .)"` | Pass |
 | Vet | `go vet ./...` | Pass |
@@ -82,7 +82,7 @@ contract differences must be listed below.
 | Email/password sign-up and sign-in | Present, including production-critical v1.6 options | Default lifecycle, bounds and duplicate errors differential; option/security matrix in Go | Partial pending cross-runtime option matrix |
 | Sign-out and session retrieval | Present | Lifecycle characterization added | Partial |
 | Session refresh and revocation | Present | Session list/update and single/other/all revocation differential; refresh is Go-only rotation | Partial |
-| User update, email change, deletion | Present | User update, enumeration-resistant email change, verification, direct password deletion and resulting state differential pass | Partial pending emailed deletion callback and remaining options |
+| User update, email change, deletion | Present | User update, enumeration-resistant email change, verification, direct password deletion, emailed deletion callback, token replay/ownership and resulting state differential pass | Partial pending change-email modes and remaining lifecycle options |
 | Password change and recovery | Present | Change-password plus request/reset/callback/invalid/replay differential; option, concurrency and revocation Go tests | Partial pending remaining option matrix |
 | Email verification | Present | Send/verify/resend/state differential plus required-verification Go lifecycle | Partial pending callback and option matrix |
 | Account list/link/unlink | Present | Public link flow, listing, unlink success/missing/final-account errors differential pass | Partial pending remaining linking options/collisions |
@@ -220,8 +220,8 @@ entry in this table and a compatibility decision.
 
 ## Recommended work order
 
-1. Finish the remaining email/password option combinations and the optional
-   emailed account-deletion callback.
+1. Finish change-email modes and the remaining email/password and
+   email-verification lifecycle callbacks/options.
 2. Extend MongoDB, PostgreSQL and SQLite coverage with release-to-release
    migration fixtures.
 3. Certify all 35 social-provider presets and generic OAuth/OIDC.

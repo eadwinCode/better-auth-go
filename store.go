@@ -267,6 +267,26 @@ func (s *databaseStore) DeleteUser(ctx context.Context, userID string) error {
 	})
 }
 
+func (s *databaseStore) ConsumeUserDeletion(
+	ctx context.Context,
+	hash string,
+	userID string,
+	now time.Time,
+) error {
+	token, err := s.db.ConsumeOne(ctx, DeleteQuery{Model: ModelVerification, Where: []Where{
+		Eq("identifier", string(PurposeUserDeletion)),
+		Eq("value", hash),
+		{Field: "expiresAt", Operator: WhereGT, Value: now.UTC()},
+	}})
+	if err != nil {
+		return err
+	}
+	if token == nil || recordStringMap(token["metadata"])["userId"] != userID {
+		return ErrReplay
+	}
+	return nil
+}
+
 func (s *databaseStore) ConsumeEmailChange(ctx context.Context, hash string, now time.Time) (User, string, error) {
 	var user User
 	var returnTo string

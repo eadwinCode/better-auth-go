@@ -225,7 +225,9 @@ func (s *Server) handleChangeEmail(w http.ResponseWriter, r *http.Request) error
 }
 
 type deleteUserRequest struct {
-	Password string `json:"password,omitempty"`
+	CallbackURL string `json:"callbackURL,omitempty"`
+	Password    string `json:"password,omitempty"`
+	Token       string `json:"token,omitempty"`
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error {
@@ -242,18 +244,32 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 	if session.ImpersonatorID != "" {
 		return publicError(CodeForbidden, "An impersonated user cannot be deleted.", http.StatusForbidden, nil)
 	}
-	if err := s.requireFreshSession(session); err != nil {
-		return err
-	}
 	var input deleteUserRequest
 	if err := s.decodeOptionalJSON(w, r, &input); err != nil {
 		return err
 	}
-	credential, credentialErr := s.store.PasswordCredential(r.Context(), user.ID)
-	if credentialErr != nil && !errors.Is(credentialErr, ErrNotFound) {
-		return publicError(CodeInternal, "User could not be deleted.", http.StatusInternalServerError, credentialErr)
+	callbackURLInput := input.CallbackURL
+	if callbackURLInput == "" &&
+		input.Token == "" &&
+		s.cfg.User.SendDeleteAccountVerification {
+		callbackURLInput = "/"
 	}
-	if input.Password != "" && credentialErr == nil {
+	callbackURL, err := s.allowedDeletionRedirect(callbackURLInput)
+	if err != nil {
+		return err
+	}
+	if input.Password != "" {
+		credential, credentialErr := s.store.PasswordCredential(r.Context(), user.ID)
+		if credentialErr != nil && !errors.Is(credentialErr, ErrNotFound) {
+			return publicError(
+				CodeInternal, "User could not be deleted.", http.StatusInternalServerError, credentialErr,
+			)
+		}
+		if errors.Is(credentialErr, ErrNotFound) {
+			return publicError(
+				CodeCredentialNotFound, "Credential account not found", http.StatusBadRequest, credentialErr,
+			)
+		}
 		if len(input.Password) > s.cfg.MaxPasswordBytes {
 			return publicError(CodeInvalidPassword, "Invalid password", http.StatusBadRequest, nil)
 		}
@@ -264,19 +280,126 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 		if !verification.Valid {
 			return publicError(CodeInvalidPassword, "Invalid password", http.StatusBadRequest, nil)
 		}
-	} else if input.Password != "" && errors.Is(credentialErr, ErrNotFound) {
-		return publicError(
-			CodeCredentialNotFound, "Credential account not found", http.StatusBadRequest, credentialErr,
-		)
 	}
 	if err := s.rateLimit(r.Context(), r, "delete-user", HashToken(user.ID)); err != nil {
 		return err
+	}
+	if input.Token != "" {
+		if err := s.consumeUserDeletionToken(r, user.ID, input.Token); err != nil {
+			return err
+		}
+		if err := s.deleteUserAccount(w, r, user); err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "User deleted"})
+		return nil
+	}
+	if s.cfg.User.SendDeleteAccountVerification {
+		if err := s.issueOneTimeMail(
+			r,
+			user,
+			PurposeUserDeletion,
+			"account-deletion",
+			s.cfg.DeleteUserTTL,
+			"/delete-user/callback",
+			callbackURL,
+		); err != nil {
+			return publicError(
+				CodeInternal, "Deletion verification could not be sent.", http.StatusInternalServerError, err,
+			)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": true,
+			"message": "Verification email sent",
+		})
+		return nil
+	}
+	if input.Password == "" {
+		if err := s.requireFreshSession(session); err != nil {
+			return err
+		}
+	}
+	if err := s.deleteUserAccount(w, r, user); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "User deleted"})
+	return nil
+}
+
+func (s *Server) handleDeleteUserCallback(w http.ResponseWriter, r *http.Request) error {
+	if !s.cfg.User.DeleteUserEnabled {
+		return publicError(CodeNotFound, "Endpoint not found.", http.StatusNotFound, nil)
+	}
+	_, user, _, err := s.sessionFromRequest(r.Context(), r)
+	if err != nil {
+		return err
+	}
+	callbackURL, err := s.allowedDeletionRedirect(r.URL.Query().Get("callbackURL"))
+	if err != nil {
+		return err
+	}
+	token := r.URL.Query().Get("token")
+	if err := s.rateLimit(r.Context(), r, "delete-user/callback", HashToken(token)); err != nil {
+		return err
+	}
+	if err := s.consumeUserDeletionToken(r, user.ID, token); err != nil {
+		return err
+	}
+	if err := s.deleteUserAccount(w, r, user); err != nil {
+		return err
+	}
+	if callbackURL != "" {
+		http.Redirect(w, r, callbackURL, http.StatusFound)
+		return nil
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "User deleted"})
+	return nil
+}
+
+func (s *Server) allowedDeletionRedirect(raw string) (string, error) {
+	// Better Auth v1.6.25 defaults verified deletion to the server root.
+	// A root-relative redirect cannot leave the authentication origin and does
+	// not need an application allowlist entry.
+	if raw == "/" {
+		return raw, nil
+	}
+	return s.allowedRedirect(raw)
+}
+
+func (s *Server) consumeUserDeletionToken(r *http.Request, userID, token string) error {
+	if len(token) < 20 || len(token) > 2048 {
+		return publicError(CodeInvalidToken, "Invalid token", http.StatusNotFound, nil)
+	}
+	if err := s.store.ConsumeUserDeletion(
+		r.Context(),
+		HashToken(token),
+		userID,
+		s.cfg.Clock.Now().UTC(),
+	); err != nil {
+		return publicError(CodeInvalidToken, "Invalid token", http.StatusNotFound, err)
+	}
+	return nil
+}
+
+func (s *Server) deleteUserAccount(
+	w http.ResponseWriter,
+	r *http.Request,
+	user User,
+) error {
+	if s.cfg.User.BeforeDelete != nil {
+		if err := s.cfg.User.BeforeDelete(r.Context(), user); err != nil {
+			return err
+		}
 	}
 	if err := s.store.DeleteUser(r.Context(), user.ID); err != nil {
 		return publicError(CodeInternal, "User could not be deleted.", http.StatusInternalServerError, err)
 	}
 	s.clearSessionCookie(w)
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "message": "User deleted"})
+	if s.cfg.User.AfterDelete != nil {
+		if err := s.cfg.User.AfterDelete(r.Context(), user); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
