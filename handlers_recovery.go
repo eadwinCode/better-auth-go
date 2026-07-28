@@ -122,15 +122,36 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return publicError(CodeInternal, "Password reset could not be completed.", http.StatusInternalServerError, err)
 	}
-	_, err = s.store.ConsumePasswordReset(
+	user, err := s.store.ConsumePasswordReset(
 		r.Context(),
 		HashToken(input.Token),
 		passwordHash,
 		s.cfg.Clock.Now().UTC(),
-		s.cfg.EmailPassword.RevokeSessionsOnPasswordReset,
 	)
 	if err != nil {
 		return publicError(CodeInvalidToken, "Invalid token", http.StatusBadRequest, err)
+	}
+	if s.cfg.EmailPassword.OnPasswordReset != nil {
+		if err := s.cfg.EmailPassword.OnPasswordReset(r.Context(), user); err != nil {
+			return publicError(
+				CodeInternal,
+				"Password reset could not be completed.",
+				http.StatusInternalServerError,
+				err,
+			)
+		}
+	}
+	if s.cfg.EmailPassword.RevokeSessionsOnPasswordReset {
+		if err := s.store.RevokeUserSessions(
+			r.Context(), user.ID, s.cfg.Clock.Now().UTC(),
+		); err != nil {
+			return publicError(
+				CodeInternal,
+				"Password reset could not be completed.",
+				http.StatusInternalServerError,
+				err,
+			)
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": true})
 	return nil
@@ -148,7 +169,7 @@ func (s *Server) handleSendVerification(w http.ResponseWriter, r *http.Request) 
 	if err := s.rateLimit(r.Context(), r, "send-verification-email", HashToken(email)); err != nil {
 		return err
 	}
-	callbackURL, err := s.allowedRedirect(input.CallbackURL)
+	callbackURL, err := s.allowedLifecycleRedirect(input.CallbackURL)
 	if err != nil {
 		return err
 	}
@@ -181,7 +202,7 @@ func (s *Server) handleSendVerification(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleConfirmVerification(w http.ResponseWriter, r *http.Request) error {
-	callbackURL, err := s.allowedRedirect(r.URL.Query().Get("callbackURL"))
+	callbackURL, err := s.allowedLifecycleRedirect(r.URL.Query().Get("callbackURL"))
 	if err != nil {
 		return err
 	}
@@ -195,36 +216,95 @@ func (s *Server) handleConfirmVerification(w http.ResponseWriter, r *http.Reques
 	if err := s.rateLimit(r.Context(), r, "verify-email", HashToken(token)); err != nil {
 		return err
 	}
-	user, err := s.store.ConsumeEmailVerification(r.Context(), HashToken(token), s.cfg.Clock.Now().UTC())
-	emailChange := false
+	now := s.cfg.Clock.Now().UTC()
+	user, err := s.store.ConsumeEmailVerification(r.Context(), HashToken(token), now)
 	if err != nil {
 		if !errors.Is(err, ErrReplay) && !errors.Is(err, ErrNotFound) {
 			return publicError(CodeInvalidToken, "The token is invalid or expired.", http.StatusBadRequest, err)
 		}
 		var returnTo string
-		user, returnTo, err = s.store.ConsumeEmailChange(r.Context(), HashToken(token), s.cfg.Clock.Now().UTC())
+		user, returnTo, err = s.store.ConsumeEmailChange(r.Context(), HashToken(token), now)
 		if err != nil {
+			var newEmail string
+			user, newEmail, returnTo, err = s.store.ConsumeEmailChangeConfirmation(
+				r.Context(), HashToken(token), now,
+			)
+			if err == nil {
+				return s.sendConfirmedEmailChange(w, r, user, newEmail, returnTo)
+			}
 			if callbackURL != "" {
 				return redirectWithParameter(w, r, callbackURL, "error", "INVALID_TOKEN")
 			}
 			return publicError(CodeInvalidToken, "The token is invalid or expired.", http.StatusBadRequest, err)
 		}
-		emailChange = true
+		if s.cfg.EmailVerification.AfterVerification != nil {
+			if err := s.cfg.EmailVerification.AfterVerification(r.Context(), user); err != nil {
+				return publicError(CodeInternal, "Email verification could not be completed.", http.StatusInternalServerError, err)
+			}
+		}
 		if returnTo != "" {
 			w.Header().Set("Location", returnTo)
 			w.WriteHeader(http.StatusFound)
 			return nil
 		}
-	}
-	if emailChange {
 		writeJSON(w, http.StatusOK, map[string]any{"status": true, "user": user})
 		return nil
+	}
+	if s.cfg.EmailVerification.BeforeVerification != nil {
+		if err := s.cfg.EmailVerification.BeforeVerification(r.Context(), user); err != nil {
+			return publicError(CodeInternal, "Email verification could not be completed.", http.StatusInternalServerError, err)
+		}
+	}
+	user, err = s.store.VerifyUserEmail(r.Context(), user.ID, now)
+	if err != nil {
+		return publicError(CodeInternal, "Email verification could not be completed.", http.StatusInternalServerError, err)
+	}
+	if s.cfg.EmailVerification.AfterVerification != nil {
+		if err := s.cfg.EmailVerification.AfterVerification(r.Context(), user); err != nil {
+			return publicError(CodeInternal, "Email verification could not be completed.", http.StatusInternalServerError, err)
+		}
+	}
+	if s.cfg.EmailVerification.AutoSignInAfterVerification {
+		session, raw, sessionErr := s.newSession(user.ID, s.cfg.SessionDuration)
+		if sessionErr != nil {
+			return sessionErr
+		}
+		session, sessionErr = s.rotateOrCreateBrowserSession(r.Context(), r, session)
+		if sessionErr != nil {
+			return publicError(CodeInternal, "Email verification could not be completed.", http.StatusInternalServerError, sessionErr)
+		}
+		s.setSessionCookie(w, raw, session.ExpiresAt)
+		if sessionErr = s.ensureCSRFCookie(w, r); sessionErr != nil {
+			return sessionErr
+		}
 	}
 	if callbackURL != "" {
 		http.Redirect(w, r, callbackURL, http.StatusFound)
 		return nil
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": true, "user": nil})
+	return nil
+}
+
+func (s *Server) sendConfirmedEmailChange(
+	w http.ResponseWriter,
+	r *http.Request,
+	user User,
+	newEmail string,
+	returnTo string,
+) error {
+	target := user
+	target.Email = newEmail
+	if err := s.issueEmailChangeMail(
+		r, target, PurposeEmailChange, "email-change", newEmail, returnTo,
+	); err != nil {
+		return publicError(CodeInternal, "Email could not be changed.", http.StatusInternalServerError, err)
+	}
+	if returnTo != "" {
+		http.Redirect(w, r, returnTo, http.StatusFound)
+		return nil
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"status": true})
 	return nil
 }
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -176,7 +177,7 @@ func (s *Server) handleChangeEmail(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return publicError(CodeBadRequest, "Email could not be changed.", http.StatusBadRequest, err)
 	}
-	returnTo, err := s.allowedRedirect(input.CallbackURL)
+	returnTo, err := s.allowedLifecycleRedirect(input.CallbackURL)
 	if err != nil {
 		return err
 	}
@@ -197,6 +198,55 @@ func (s *Server) handleChangeEmail(w http.ResponseWriter, r *http.Request) error
 	} else if findErr != nil && !errors.Is(findErr, ErrNotFound) {
 		return publicError(CodeInternal, "Email could not be changed.", http.StatusInternalServerError, findErr)
 	}
+	if !user.EmailVerified && s.cfg.User.UpdateEmailWithoutVerification {
+		updated, updateErr := s.store.UpdateUser(
+			r.Context(), user.ID, Record{"email": email, "emailVerified": false}, s.cfg.Clock.Now().UTC(),
+		)
+		if updateErr != nil {
+			if errors.Is(updateErr, ErrConflict) {
+				writeJSON(w, http.StatusOK, map[string]bool{"status": true})
+				return nil
+			}
+			return publicError(CodeInternal, "Email could not be changed.", http.StatusInternalServerError, updateErr)
+		}
+		_ = s.issueOneTimeMail(
+			r, updated, PurposeEmailVerify, "email-verification",
+			s.cfg.EmailVerificationTTL, "/verify-email", returnTo,
+		)
+		writeJSON(w, http.StatusOK, map[string]bool{"status": true})
+		return nil
+	}
+	if user.EmailVerified && s.cfg.User.SendChangeEmailConfirmation {
+		if err := s.issueEmailChangeMail(
+			r,
+			user,
+			PurposeEmailChangeConfirmation,
+			"email-change-confirmation",
+			email,
+			returnTo,
+		); err != nil {
+			return publicError(CodeInternal, "Email could not be changed.", http.StatusInternalServerError, err)
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"status": true})
+		return nil
+	}
+	if err := s.issueEmailChangeMail(
+		r, user, PurposeEmailChange, "email-change", email, returnTo,
+	); err != nil {
+		return publicError(CodeInternal, "Email could not be changed.", http.StatusInternalServerError, err)
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"status": true})
+	return nil
+}
+
+func (s *Server) issueEmailChangeMail(
+	r *http.Request,
+	user User,
+	purpose OneTimePurpose,
+	kind string,
+	newEmail string,
+	returnTo string,
+) error {
 	raw, err := s.cfg.Tokens.Token(32)
 	if err != nil {
 		return err
@@ -207,21 +257,35 @@ func (s *Server) handleChangeEmail(w http.ResponseWriter, r *http.Request) error
 	}
 	now := s.cfg.Clock.Now().UTC()
 	token := OneTimeToken{
-		ID: id, UserID: user.ID, Hash: HashToken(raw), Purpose: PurposeEmailChange,
+		ID: id, UserID: user.ID, Hash: HashToken(raw), Purpose: purpose,
 		ExpiresAt: now.Add(s.cfg.EmailVerificationTTL), CreatedAt: now,
-		Metadata: map[string]string{"newEmail": email, "returnTo": returnTo},
+		Metadata: map[string]string{"newEmail": newEmail, "returnTo": returnTo},
 	}
 	if err := s.store.PutOneTimeToken(r.Context(), token); err != nil {
-		return publicError(CodeInternal, "Email could not be changed.", http.StatusInternalServerError, err)
+		return err
+	}
+	to := newEmail
+	if purpose == PurposeEmailChangeConfirmation {
+		to = user.Email
+	}
+	actionURL := s.actionURL("/verify-email", raw)
+	if returnTo != "" {
+		actionURL += "&callbackURL=" + url.QueryEscape(returnTo)
 	}
 	if err := s.cfg.Mailer.Send(r.Context(), Mail{
-		Kind: "email-change", To: email, Token: raw,
-		ActionURL: s.actionURL("/verify-email", raw), ExpiresAt: token.ExpiresAt,
+		Kind: kind, To: to, Token: raw,
+		ActionURL: actionURL, ExpiresAt: token.ExpiresAt,
 	}); err != nil {
-		return publicError(CodeInternal, "Email could not be changed.", http.StatusInternalServerError, err)
+		return err
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"status": true})
 	return nil
+}
+
+func (s *Server) allowedLifecycleRedirect(raw string) (string, error) {
+	if raw == "/" {
+		return raw, nil
+	}
+	return s.allowedRedirect(raw)
 }
 
 type deleteUserRequest struct {

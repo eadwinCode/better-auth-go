@@ -3,6 +3,7 @@ package betterauth
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -52,13 +53,14 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	enumerationSafe := s.cfg.EmailPassword.RequireEmailVerification || !s.cfg.autoSignInAfterSignUp()
-	if _, findErr := s.store.FindUserByEmail(r.Context(), email); findErr == nil {
+	if existing, findErr := s.store.FindUserByEmail(r.Context(), email); findErr == nil {
 		if !enumerationSafe {
 			return duplicateSignUpError(nil)
 		}
 		if _, hashErr := s.cfg.Passwords.Hash(r.Context(), input.Password); hashErr != nil {
 			return publicError(CodeInternal, "The account could not be created.", http.StatusInternalServerError, hashErr)
 		}
+		s.notifyExistingUserSignUp(r.Context(), existing)
 		return s.writeSyntheticSignUp(w, input, email)
 	} else if !errors.Is(findErr, ErrNotFound) {
 		return publicError(CodeInternal, "The account could not be created.", http.StatusInternalServerError, findErr)
@@ -118,7 +120,7 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) error {
 		}
 		return publicError(CodeInternal, "The account could not be created.", http.StatusInternalServerError, err)
 	}
-	if s.cfg.EmailPassword.RequireEmailVerification {
+	if s.sendVerificationOnSignUp() {
 		_ = s.issueOneTimeMail(
 			r,
 			created,
@@ -143,9 +145,10 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) error {
 }
 
 type signInRequest struct {
-	Email      string `json:"email"`
-	Password   string `json:"password"`
-	RememberMe *bool  `json:"rememberMe,omitempty"`
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	CallbackURL string `json:"callbackURL,omitempty"`
+	RememberMe  *bool  `json:"rememberMe,omitempty"`
 }
 
 func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) error {
@@ -192,6 +195,21 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if s.cfg.EmailPassword.RequireEmailVerification && !user.EmailVerified {
+		if s.cfg.EmailVerification.SendOnSignIn {
+			callbackURL, callbackErr := s.allowedLifecycleRedirect(input.CallbackURL)
+			if callbackErr != nil {
+				return callbackErr
+			}
+			_ = s.issueOneTimeMail(
+				r,
+				user,
+				PurposeEmailVerify,
+				"email-verification",
+				s.cfg.EmailVerificationTTL,
+				"/verify-email",
+				callbackURL,
+			)
+		}
 		return publicError(CodeEmailNotVerified, "Email not verified", http.StatusForbidden, nil)
 	}
 	duration := s.cfg.SessionDuration
@@ -255,15 +273,50 @@ func (s *Server) writeSyntheticSignUp(w http.ResponseWriter, input signUpRequest
 		return err
 	}
 	now := s.cfg.Clock.Now().UTC()
+	user := User{
+		ID: userID, Email: email, Name: strings.TrimSpace(input.Name),
+		ImageURL: strings.TrimSpace(input.Image), EmailVerified: false,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	var response any = user
+	if s.cfg.EmailPassword.CustomSyntheticUser != nil {
+		var image any
+		if user.ImageURL != "" {
+			image = user.ImageURL
+		}
+		core := Record{
+			"id": user.ID, "email": user.Email, "name": user.Name, "image": image,
+			"emailVerified": user.EmailVerified, "createdAt": user.CreatedAt, "updatedAt": user.UpdatedAt,
+		}
+		custom := s.cfg.EmailPassword.CustomSyntheticUser(SyntheticUserInput{
+			CoreFields: maps.Clone(core), AdditionalFields: Record{}, ID: user.ID,
+		})
+		for key, value := range custom {
+			core[key] = value
+		}
+		response = core
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token": nil,
-		"user": User{
-			ID: userID, Email: email, Name: strings.TrimSpace(input.Name),
-			ImageURL: strings.TrimSpace(input.Image), EmailVerified: false,
-			CreatedAt: now, UpdatedAt: now,
-		},
+		"user":  response,
 	})
 	return nil
+}
+
+func (s *Server) sendVerificationOnSignUp() bool {
+	if s.cfg.EmailVerification.SendOnSignUp != nil {
+		return *s.cfg.EmailVerification.SendOnSignUp
+	}
+	return s.cfg.EmailPassword.RequireEmailVerification
+}
+
+func (s *Server) notifyExistingUserSignUp(ctx context.Context, user User) {
+	if s.cfg.EmailPassword.OnExistingUserSignUp == nil {
+		return
+	}
+	_ = s.cfg.BackgroundTasks.Submit(ctx, func(background context.Context) error {
+		return s.cfg.EmailPassword.OnExistingUserSignUp(background, user)
+	})
 }
 
 func duplicateSignUpError(cause error) error {

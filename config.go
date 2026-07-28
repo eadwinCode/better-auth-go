@@ -28,11 +28,24 @@ type AccountManagementConfig struct {
 }
 
 type UserManagementConfig struct {
-	ChangeEmailEnabled            bool
-	DeleteUserEnabled             bool
-	SendDeleteAccountVerification bool
-	BeforeDelete                  UserDeletionHook
-	AfterDelete                   UserDeletionHook
+	ChangeEmailEnabled             bool
+	SendChangeEmailConfirmation    bool
+	UpdateEmailWithoutVerification bool
+	DeleteUserEnabled              bool
+	SendDeleteAccountVerification  bool
+	BeforeDelete                   UserDeletionHook
+	AfterDelete                    UserDeletionHook
+}
+
+// EmailVerificationConfig controls the Better Auth v1.6 verification
+// lifecycle. SendOnSignUp is optional because its default follows
+// EmailPassword.RequireEmailVerification.
+type EmailVerificationConfig struct {
+	SendOnSignUp                *bool
+	SendOnSignIn                bool
+	AutoSignInAfterVerification bool
+	BeforeVerification          UserLifecycleHook
+	AfterVerification           UserLifecycleHook
 }
 
 // EmailPasswordConfig controls the Better Auth v1.6 email/password lifecycle.
@@ -50,6 +63,16 @@ type EmailPasswordConfig struct {
 	// RevokeSessionsOnPasswordReset atomically revokes every active user
 	// session when a reset token is consumed. Better Auth defaults to false.
 	RevokeSessionsOnPasswordReset bool
+	// OnPasswordReset runs after the password is durably replaced and before
+	// optional session revocation.
+	OnPasswordReset UserLifecycleHook
+	// OnExistingUserSignUp receives an existing user only through the
+	// application-owned background runner. Its result never changes the
+	// enumeration-resistant synthetic response.
+	OnExistingUserSignUp UserLifecycleHook
+	// CustomSyntheticUser adds application-defined public fields to protected
+	// duplicate-signup responses.
+	CustomSyntheticUser SyntheticUserFactory
 }
 
 type Config struct {
@@ -71,6 +94,7 @@ type Config struct {
 	Account                 AccountManagementConfig
 	User                    UserManagementConfig
 	EmailPassword           EmailPasswordConfig
+	EmailVerification       EmailVerificationConfig
 	SessionDuration         time.Duration
 	SessionFreshAge         time.Duration
 	ImpersonationDuration   time.Duration
@@ -162,6 +186,10 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 	if cfg.EmailPassword.AutoSignIn != nil {
 		autoSignIn := *cfg.EmailPassword.AutoSignIn
 		cfg.EmailPassword.AutoSignIn = &autoSignIn
+	}
+	if cfg.EmailVerification.SendOnSignUp != nil {
+		sendOnSignUp := *cfg.EmailVerification.SendOnSignUp
+		cfg.EmailVerification.SendOnSignUp = &sendOnSignUp
 	}
 	if len(cfg.TrustedOrigins) == 0 {
 		return cfg, nil, nil, fmt.Errorf("betterauth: at least one trusted origin is required")
