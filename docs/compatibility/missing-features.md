@@ -35,7 +35,7 @@ plugin should be its own package or a small cohesive PR series.
 ### Authentication
 
 - two-factor authentication;
-- passkeys/WebAuthn;
+- passkeys/WebAuthn — in progress in the dedicated ADR 0004 PR;
 - magic link;
 - email OTP;
 - phone number;

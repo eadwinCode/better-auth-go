@@ -148,9 +148,12 @@ release because provider payloads and policies can change independently.
 
 ## Not yet in the initial release gate
 
-Feature plugins outside the requested initial scope—such as passkeys, two-factor
+Feature plugins outside the requested initial scope—such as two-factor
 authentication, organizations, username, magic links, anonymous users, SSO,
 SCIM, and API keys—use the server kernel tracked in
 [the plugin compatibility checklist](./plugin-kernel.md). Their full endpoint
 implementations are tracked in the [feature gap register](./missing-features.md)
 as separate parity milestones.
+
+Passkeys/WebAuthn are specified in ADR 0004 and are being implemented as the
+first dedicated high-risk plugin PR.

@@ -192,3 +192,39 @@ Exit criteria:
 - validator failures occur before middleware and endpoint code;
 - SQLite passes CRUD, atomic consume/increment, concurrency, and rollback tests;
 - PostgreSQL and SQLite share parameterized query and migration behavior.
+
+## Phase 11: Passkeys/WebAuthn
+
+1. Add ADR 0004 and freeze the Better Auth-shaped passkey endpoint and schema
+   contracts.
+2. Add a narrow request-scoped plugin capability for fixation-safe core session
+   issuance and rotation.
+3. Implement an opt-in `passkey` plugin using the audited Go WebAuthn library,
+   exact configured origins, an explicit RP ID, and fail-closed construction.
+4. Store challenge handles hashed at rest and consume ceremony-bound,
+   five-minute challenges atomically.
+5. Store validated credentials with random opaque user handles, globally unique
+   credential IDs, counters, backup flags, transports, and required attestation
+   metadata.
+6. Implement registration, discoverable and user-bound authentication, list,
+   rename, and delete routes with validators, session/freshness checks, CSRF,
+   ownership, and rate-limit rules.
+7. Add black-box HTTP tests, WebAuthn fixtures, replay and cross-ceremony
+   failures, origin/RP failures, counter concurrency tests, cookie parser fuzz
+   coverage, adapter schema tests, and race checks.
+8. Document browser integration, migration differences, and the explicit
+   user-verification policy.
+
+Exit criteria:
+
+- a challenge can be consumed only once and only for its ceremony and user;
+- assertion verification uses configured origins and RP ID, never request-
+  supplied policy;
+- credential IDs and discoverable user handles are ownership-bound;
+- successful sign-in rotates an existing session or creates a new hashed-token
+  session;
+- passkey list/update/delete never expose public keys, full credential records,
+  or another user's credential;
+- zero-only authenticators work while non-zero counter regressions fail closed;
+- all unit, black-box, race, vet, and applicable static/security checks pass;
+- 2FA, organizations, SSO, and SCIM remain in later PRs.
