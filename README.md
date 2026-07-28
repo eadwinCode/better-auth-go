@@ -8,7 +8,9 @@ The public server and adapter contracts track Better Auth TypeScript v1.6 while
 using native Go security defaults:
 
 - Better Auth-compatible core route names under `/api/auth`;
-- email/password sign-up, sign-in, sign-out, sessions, rotation, and revocation;
+- email/password sign-up, sign-in, password change, verified email change,
+  opt-in deletion, sign-out, session listing/rotation/revocation, and account
+  linking/unlinking;
 - password reset and email verification with single-use hash-at-rest tokens;
 - Better Auth's 34 built-in social-provider IDs plus generic OAuth2/OIDC;
 - authorization-gated, one-hour maximum admin impersonation with durable audit;
@@ -19,8 +21,8 @@ using native Go security defaults:
   enforcement;
 - Better Auth-aligned generic database adapters, schema extensions, model/field
   mappings, transactions, atomic consume, and guarded increments;
-- MongoDB, a public adapter conformance suite, and an in-memory development
-  adapter.
+- MongoDB, PostgreSQL, SQLite, a public adapter conformance suite, and an
+  in-memory development adapter.
 
 The project is pre-1.0. Review the compatibility matrix and changelog before
 upgrading.
@@ -159,6 +161,11 @@ auditPlugin := betterauth.Plugin{
 		Name: "get-event",
 		Path: "/audit/events/:id",
 		Method: http.MethodGet,
+		QueryValidator: betterauth.ObjectValidator{
+			Fields: map[string]betterauth.FieldValidation{
+				"expand": {Kind: betterauth.ValidationBoolean},
+			},
+		},
 		Use: []betterauth.RequestHook{betterauth.SessionMiddleware},
 		Handler: func(ctx *betterauth.HookContext) (*betterauth.PluginResponse, error) {
 			return betterauth.JSONResponse(http.StatusOK, map[string]string{
@@ -183,6 +190,10 @@ request-scoped `HookContext` values. Plugin cookies can be appended with
 host-only `__Host-` cookies. Cookie-authenticated mutation endpoints should use
 both `SessionMiddleware` and `CSRFMiddleware`; origin enforcement remains
 mandatory independently.
+Endpoint `BodyValidator` and `QueryValidator` declarations run after
+`OnRequest` and rate limiting but before middleware, before-hooks, and endpoint
+code. `ObjectValidator` is dependency-free; `EndpointValidatorFunc` can bridge
+an application's existing validation package.
 The default background runner waits inline; inject `Config.BackgroundTasks`
 when work should be handed to a durable asynchronous queue.
 
@@ -214,6 +225,39 @@ func TestAdapter(t *testing.T) {
 MongoDB uses native `findOneAndDelete`, guarded `findOneAndUpdate`, unique/TTL
 indexes, and transactions. Multi-document core flows require a replica set or
 sharded cluster.
+
+PostgreSQL and SQLite use the shared `database/sql` implementation. The
+application owns the driver and connection pool. Migration is explicit and
+additive:
+
+```go
+database, err := sql.Open("sqlite", sqliteDSN) // import your chosen driver
+if err != nil {
+	return err
+}
+adapter, err := sqlite.New(database)
+if err != nil {
+	return err
+}
+config.Database = adapter
+auth, err := betterauth.New(config)
+if err != nil {
+	return err
+}
+if err := adapter.Migrate(ctx, auth.Schema()); err != nil {
+	return err
+}
+```
+
+Use `adapter/postgresql.New` with a PostgreSQL `*sql.DB`. `Migrate` runs in a
+transaction, creates missing tables/indexes, adds missing nullable columns, and
+never drops data. A newly required column on a populated table fails closed so
+the application can perform an explicit backfill migration.
+
+Email change and user deletion are disabled until
+`Config.User.ChangeEmailEnabled` and `Config.User.DeleteUserEnabled` are set.
+The former verifies the new inbox with a single-use token; credential-user
+deletion requires password reauthentication.
 
 ## Password migration
 
@@ -249,6 +293,7 @@ before deploying. Important operational requirements:
 - [Implementation plan](./IMPLEMENTATION_PLAN.md)
 - [Architecture decision record](./docs/adr/0001-auth-server-architecture.md)
 - [Plugin-kernel decision record](./docs/adr/0002-plugin-kernel.md)
+- [Management, validation, and SQL decision record](./docs/adr/0003-core-management-validation-and-sql.md)
 - [Changelog](./CHANGELOG.md)
 
 The server plugin kernel is implemented. Individual feature plugins—passkeys,

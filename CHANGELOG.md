@@ -15,5 +15,10 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 - Native Argon2id, opaque hash-at-rest sessions, CSRF/origin defenses, recovery,
   verification, OAuth/OIDC, admin impersonation, audit, and outbox contracts.
 - MongoDB and in-memory adapters plus a public adapter conformance suite.
+- Core user/account/session management, including verified email change,
+  password rotation, opt-in deletion, OAuth linking and token refresh.
+- Plugin endpoint body/query validators with a strict declarative validator.
+- Shared `database/sql`, PostgreSQL, and SQLite adapters with explicit additive
+  schema migrations.
 
 [Unreleased]: https://github.com/eadwinCode/better-auth-go/commits/main

@@ -9,6 +9,7 @@ contract.
 | plugin dependencies/order | `Plugin.Dependencies` | in this PR |
 | plugin schema | `Plugin.Schema` | in this PR |
 | plugin endpoints | `Plugin.Endpoints` | in this PR |
+| endpoint body/query validation | `BodyValidator`, `QueryValidator`, `ObjectValidator` | implemented |
 | route middleware | `Plugin.Middlewares` | in this PR |
 | before hooks and matchers | `Plugin.Before` | in this PR |
 | after hooks and matchers | `Plugin.After` | in this PR |

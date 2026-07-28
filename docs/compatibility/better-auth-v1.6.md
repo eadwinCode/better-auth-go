@@ -38,6 +38,21 @@ Reference snapshot audited on 2026-07-28:
 | `GET\|POST /callback/:provider` | `/callback/{provider}` | implemented |
 | `POST /sign-out` | same | implemented |
 | `GET /get-session` | same | implemented |
+| `POST /refresh-session` | same | implemented Go rotation endpoint |
+| `GET /list-sessions` | same | implemented; returns session IDs, never bearer tokens |
+| `POST /revoke-session` | same | implemented; accepts an owned session ID |
+| `POST /revoke-other-sessions` | same | implemented |
+| `POST /revoke-sessions` | same | implemented |
+| `POST /update-session` | same | implemented for schema input fields |
+| `POST /update-user` | same | implemented |
+| `POST /change-email` | same | implemented; opt-in |
+| `POST /delete-user` | same | implemented; opt-in password/fresh-session flow |
+| `POST /change-password` | same | implemented |
+| `GET /list-accounts` | same | implemented with credential/token redaction |
+| `POST /link-social` | same | implemented |
+| `POST /unlink-account` | same | implemented |
+| `POST /get-access-token` | same | implemented with account ownership binding |
+| `POST /refresh-token` | same | implemented for refresh-capable providers |
 | `POST /forget-password` | same | implemented |
 | `POST /reset-password` | same | implemented |
 | `POST /send-verification-email` | same | implemented |
@@ -45,9 +60,10 @@ Reference snapshot audited on 2026-07-28:
 | `POST /admin/impersonate-user` | same | implemented |
 | `POST /admin/stop-impersonating` | same | implemented |
 
-Go adds explicit refresh/revocation endpoints without removing Better Auth
-session-management routes. A client compatibility test suite freezes exact JSON,
-status, cookie, and redirect behavior.
+The Go server uses stable session IDs for session-management requests because
+raw bearer tokens are hash-at-rest and never returned after issuance. A client
+compatibility test suite freezes exact JSON, status, cookie, and redirect
+behavior.
 
 ## Adapter map
 
