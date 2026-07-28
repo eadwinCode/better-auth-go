@@ -14,6 +14,77 @@ func (instance *runtime) plugin() betterauth.Plugin {
 		Schema: instance.schema,
 		Endpoints: []betterauth.PluginEndpoint{
 			{
+				Name: "generateSCIMToken",
+				Path: "/scim/generate-token", Method: http.MethodPost,
+				Use: []betterauth.RequestHook{
+					betterauth.FreshSessionMiddleware, betterauth.CSRFMiddleware,
+				},
+				BodyValidator: generateTokenValidator(), Handler: instance.generateToken,
+			},
+			{
+				Name: "listSCIMProviderConnections",
+				Path: "/scim/list-provider-connections", Method: http.MethodGet,
+				Use:     []betterauth.RequestHook{betterauth.SessionMiddleware},
+				Handler: instance.listConnections,
+			},
+			{
+				Name: "getSCIMProviderConnection",
+				Path: "/scim/get-provider-connection", Method: http.MethodGet,
+				Use:            []betterauth.RequestHook{betterauth.SessionMiddleware},
+				QueryValidator: providerIDValidator(), Handler: instance.getConnection,
+			},
+			{
+				Name: "deleteSCIMProviderConnection",
+				Path: "/scim/delete-provider-connection", Method: http.MethodPost,
+				Use: []betterauth.RequestHook{
+					betterauth.FreshSessionMiddleware, betterauth.CSRFMiddleware,
+				},
+				BodyValidator: providerIDValidator(), Handler: instance.deleteConnection,
+			},
+			{
+				Name: "createSCIMUser",
+				Path: "/scim/v2/Users", Method: http.MethodPost,
+				AllowNonKebabPath: true, SkipOriginCheck: true,
+				Use:           []betterauth.RequestHook{instance.authenticateBearer},
+				BodyValidator: userInputValidator(), Handler: instance.createUser,
+			},
+			{
+				Name: "listSCIMUsers",
+				Path: "/scim/v2/Users", Method: http.MethodGet,
+				AllowNonKebabPath: true, SkipOriginCheck: true,
+				Use:            []betterauth.RequestHook{instance.authenticateBearer},
+				QueryValidator: listUsersValidator(instance.config), Handler: instance.listUsers,
+			},
+			{
+				Name: "getSCIMUser",
+				Path: "/scim/v2/Users/:userId", Method: http.MethodGet,
+				AllowNonKebabPath: true, SkipOriginCheck: true,
+				Use:     []betterauth.RequestHook{instance.authenticateBearer},
+				Handler: instance.getUser,
+			},
+			{
+				Name: "updateSCIMUser",
+				Path: "/scim/v2/Users/:userId", Method: http.MethodPut,
+				AllowNonKebabPath: true, SkipOriginCheck: true,
+				Use:           []betterauth.RequestHook{instance.authenticateBearer},
+				BodyValidator: userInputValidator(), Handler: instance.replaceUser,
+			},
+			{
+				Name: "patchSCIMUser",
+				Path: "/scim/v2/Users/:userId", Method: http.MethodPatch,
+				AllowNonKebabPath: true, SkipOriginCheck: true,
+				Use:           []betterauth.RequestHook{instance.authenticateBearer},
+				BodyValidator: patchValidator(instance.config.MaxPatchOperations),
+				Handler:       instance.patchUser,
+			},
+			{
+				Name: "deleteSCIMUser",
+				Path: "/scim/v2/Users/:userId", Method: http.MethodDelete,
+				AllowNonKebabPath: true, SkipOriginCheck: true,
+				Use:     []betterauth.RequestHook{instance.authenticateBearer},
+				Handler: instance.deleteUser,
+			},
+			{
 				Name: "getSCIMServiceProviderConfig",
 				Path: "/scim/v2/ServiceProviderConfig", Method: http.MethodGet,
 				AllowNonKebabPath: true, Handler: instance.serviceProviderConfig,
@@ -39,6 +110,7 @@ func (instance *runtime) plugin() betterauth.Plugin {
 				AllowNonKebabPath: true, Handler: instance.resourceType,
 			},
 		},
+		OnResponse: instance.scimResponseHook,
 		RateLimits: []betterauth.PluginRateLimitRule{{
 			Matcher: func(context *betterauth.HookContext) bool {
 				return strings.HasPrefix(context.Path, "/scim/")
@@ -50,6 +122,12 @@ func (instance *runtime) plugin() betterauth.Plugin {
 
 func baseSchema() betterauth.Schema {
 	return betterauth.Schema{
+		betterauth.ModelAccount: {
+			Indexes: []betterauth.IndexSchema{{
+				Name: "scim_account_provider_identity", Fields: []string{"providerId", "accountId"},
+				Unique: true,
+			}},
+		},
 		ModelSCIMProvider: {
 			Fields: map[string]betterauth.FieldSchema{
 				"id": {

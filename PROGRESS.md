@@ -26,8 +26,8 @@ this release.
 
 The current core is suitable for controlled evaluation, and the repository's
 ordinary test suite is green. Production parity remains blocked by the
-complete cross-runtime HTTP matrix, provider certification, release-to-release
-database upgrade tests, incomplete SSO and SCIM ceremonies, and the remaining
+complete cross-runtime HTTP matrix, live provider and enterprise
+interoperability certification, release-candidate evidence, and the remaining
 1.6.25 plugin backlog.
 
 ## Evidence snapshot
@@ -46,7 +46,7 @@ Last updated: 2026-07-28
 | Race detector | `go test -race -count=1 ./...` | Pass |
 | Staticcheck | `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` | Pass |
 | Vulnerability scan | `govulncheck ./...` | Pass; no called vulnerabilities |
-| Fuzz smoke matrix | Nine 10-second targets from `.github/workflows/ci.yml` | Pass |
+| Fuzz smoke matrix | Eleven 10-second targets from `.github/workflows/ci.yml` | Pass |
 | SQLite adapter conformance | `go test -count=1 ./adapter/sqlite` | Pass as part of full suite |
 | MongoDB adapter conformance | `MONGODB_URI=... go test -count=1 ./adapter/mongodb` | Pass on MongoDB 8 single-node replica set |
 | PostgreSQL adapter conformance | `POSTGRES_DSN=... go test -count=1 ./adapter/postgresql` | Pass on PostgreSQL 17 |
@@ -120,8 +120,8 @@ They must never log provider credentials or returned tokens.
 | Passkey/WebAuthn | Full Go ceremony and adapter tests present | Partial pending TypeScript/browser differential certification |
 | Two-factor authentication | TOTP, delivered OTP, backup codes and trusted devices present | Partial pending TypeScript differential certification |
 | Organizations | Runtime, membership, invitations, teams, roles and tests present | Partial pending TypeScript differential certification |
-| SSO | Schema, configuration and hardened OIDC discovery foundation only | Partial; OIDC/SAML HTTP ceremonies are release blockers |
-| SCIM | Schema, token, filter and metadata foundation only | Partial; RFC 7644 connection and provisioning routes are release blockers |
+| SSO | Provider management, OIDC/PKCE/JWKS, domain verification, signed SAML ACS/metadata/replay protection and SLO are implemented | Runtime complete; deterministic OIDC and signed SAML black-box fixtures pass |
+| SCIM | Connection management, hash-only bearer authentication, metadata and complete User CRUD/list/filter/PUT/PATCH runtime | Implemented; black-box security matrix passes, pending pinned TypeScript/live-directory certification |
 
 ### Exact pinned v1.6.25 plugin inventory
 
@@ -145,9 +145,9 @@ The pinned monorepo also publishes seven server-plugin packages:
 - `@better-auth/sso`;
 - `@better-auth/stripe`.
 
-Passkey, two-factor and organizations have Go implementations; SSO and SCIM
-have foundations. Everything else above remains missing or partial unless its
-capability matrix says otherwise. TypeScript adapters, Expo/Electron clients,
+Passkey, two-factor, organizations, SSO, and SCIM have Go implementations.
+Everything else above remains missing or partial unless its capability matrix
+says otherwise. TypeScript adapters, Expo/Electron clients,
 telemetry internals and Redis secondary storage are not feature-plugin parity
 items; their server-side concepts are handled through the Go adapter, hook and
 storage contracts where applicable.
@@ -213,14 +213,15 @@ entry in this table and a compatibility decision.
 4. All 35 social-provider fixtures and generic OAuth/OIDC fixtures (present).
 5. Selected live provider sandbox tests.
 6. Passkey tests in supported browsers.
-7. SSO OIDC/SAML protocol fixtures and SCIM RFC 7644 fixtures.
+7. SSO OIDC/SAML and SCIM RFC fixtures (present), plus live enterprise
+   interoperability.
 8. Dependency vulnerability scan and review of any accepted finding.
 9. Install-from-tag test in a separate example module.
 10. Upgrade test from the previous release database schema.
 
 ## Recommended work order
 
-1. Complete SSO and SCIM.
+1. Certify SSO and SCIM against pinned and live enterprise fixtures.
 2. Implement and certify the remaining exports from the pinned 1.6.25 plugin
    inventory in small, security-reviewed pull requests.
 3. Run `v1.0.0-rc.1`; publish `v1.0.0` only after every release gate above is

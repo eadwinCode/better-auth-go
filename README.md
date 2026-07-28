@@ -461,9 +461,8 @@ before deploying. Important operational requirements:
 - [SCIM integration status](./docs/scim.md)
 - [Changelog](./CHANGELOG.md)
 
-The server plugin kernel, passkeys, two-factor authentication, and organizations
-are implemented. Enterprise SSO and SCIM have isolated security/schema
-foundations under active development. Username, magic links, API keys, and
+The server plugin kernel, passkeys, two-factor authentication, organizations,
+enterprise SSO, and SCIM are implemented. Username, magic links, API keys, and
 other feature plugins remain separate compatibility milestones with their own
 threat models.
 

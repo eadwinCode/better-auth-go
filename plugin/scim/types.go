@@ -20,8 +20,18 @@ const (
 type OrganizationAuthorizer interface {
 	AuthorizeSCIMConnection(*betterauth.HookContext, string) error
 	IsSCIMMember(*betterauth.HookContext, string, string) (bool, error)
+	// AddSCIMMember and RemoveSCIMMember receive a request copy whose Database
+	// is the active provisioning transaction. Implementations must use that
+	// adapter for membership persistence and must not retain the context.
 	AddSCIMMember(*betterauth.HookContext, string, string) error
 	RemoveSCIMMember(*betterauth.HookContext, string, string) error
+}
+
+// OrganizationRoleAuthorizer is the role-aware extension used when available.
+// The base OrganizationAuthorizer remains supported for applications whose
+// authorization port already encapsulates the same role policy.
+type OrganizationRoleAuthorizer interface {
+	AuthorizeSCIMConnectionRoles(*betterauth.HookContext, string, []string) error
 }
 
 type ProviderConnection struct {

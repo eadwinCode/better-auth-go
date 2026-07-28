@@ -55,9 +55,10 @@ layer rather than a plugin.
   flow;
 - organizations, members, invitations, teams, roles, and permissions —
   implemented in the dedicated ADR 0006 runtime PR;
-- SSO with OIDC and SAML (ADR/schema/configuration/discovery foundation in
-  progress);
-- SCIM provisioning (ADR/schema/token/filter/metadata foundation in progress).
+- SSO with OIDC and SAML — runtime implemented; pinned/live enterprise
+  certification remains;
+- SCIM provisioning — connection management and User CRUD/list/filter/PUT/PATCH
+  runtime implemented; TypeScript/live-directory certification remains.
 
 ### API and tokens
 
@@ -95,7 +96,7 @@ authorization, and token features.
 
 1. passkeys/WebAuthn and two-factor authentication — implemented;
 2. organizations — implemented; expanded admin and authorization policies;
-3. enterprise SSO and SCIM;
+3. enterprise SSO and SCIM interoperability certification;
 4. endpoint metadata/error registries and instrumentation;
 5. magic link, email OTP, username, anonymous, and bearer;
 6. API key, JWT, one-time-token, and multi-session;

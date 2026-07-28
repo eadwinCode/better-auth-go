@@ -109,6 +109,7 @@ func scimJSON(status int, value any) (*betterauth.PluginResponse, error) {
 	response, err := betterauth.JSONResponse(status, value)
 	if err == nil {
 		response.Headers.Set("Content-Type", "application/scim+json; charset=utf-8")
+		response.Headers.Set("Cache-Control", "no-store")
 	}
 	return response, err
 }

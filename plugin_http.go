@@ -279,7 +279,8 @@ func (s *Server) newHookContext(
 		context.Session, context.User = &session, &user
 	}
 	contentType := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("Content-Type"), ";")[0]))
-	if r.Body == nil || contentType != "application/json" {
+	if r.Body == nil ||
+		(contentType != "application/json" && contentType != "application/scim+json") {
 		return context, false, nil
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, s.cfg.MaxRequestBytes+1))
