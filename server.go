@@ -337,14 +337,14 @@ func (s *Server) ensureCSRFCookie(w http.ResponseWriter, r *http.Request) error 
 func (s *Server) checkOrigin(r *http.Request) error {
 	raw := r.Header.Get("Origin")
 	if raw == "" {
-		return publicError(CodeInvalidOrigin, "Origin is not trusted.", http.StatusForbidden, nil)
+		return publicError(CodeInvalidOrigin, "Invalid origin", http.StatusForbidden, nil)
 	}
 	origin, err := normalizeOrigin(raw)
 	if err != nil {
-		return publicError(CodeInvalidOrigin, "Origin is not trusted.", http.StatusForbidden, err)
+		return publicError(CodeInvalidOrigin, "Invalid origin", http.StatusForbidden, err)
 	}
 	if _, ok := s.trustedOrigins[origin]; !ok {
-		return publicError(CodeInvalidOrigin, "Origin is not trusted.", http.StatusForbidden, nil)
+		return publicError(CodeInvalidOrigin, "Invalid origin", http.StatusForbidden, nil)
 	}
 	return nil
 }

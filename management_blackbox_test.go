@@ -22,8 +22,13 @@ func TestCoreUserAccountAndPasswordManagement(t *testing.T) {
 	update := client.request(t, http.MethodPost, "/update-user", map[string]any{
 		"name": "After", "image": "https://images.example.com/avatar.png",
 	}, true)
-	if update.Code != http.StatusOK || !bytes.Contains(update.Body.Bytes(), []byte(`"name":"After"`)) {
+	if update.Code != http.StatusOK || !bytes.Contains(update.Body.Bytes(), []byte(`"status":true`)) {
 		t.Fatalf("update-user: %d %s", update.Code, update.Body.String())
+	}
+	updatedSession := client.request(t, http.MethodGet, "/get-session", nil, false)
+	if !bytes.Contains(updatedSession.Body.Bytes(), []byte(`"name":"After"`)) ||
+		!bytes.Contains(updatedSession.Body.Bytes(), []byte(`"image":"https://images.example.com/avatar.png"`)) {
+		t.Fatalf("updated user was not observable through the session: %s", updatedSession.Body.String())
 	}
 	forbidden := client.request(t, http.MethodPost, "/update-user", map[string]any{
 		"email": "takeover@example.com",
@@ -188,7 +193,7 @@ func TestVerifiedEmailChangeAndUserDeletion(t *testing.T) {
 	}
 	session := client.request(t, http.MethodGet, "/get-session", nil, false)
 	if !bytes.Contains(session.Body.Bytes(), []byte(`"email":"changed@example.com"`)) ||
-		!bytes.Contains(session.Body.Bytes(), []byte(`"email_verified":true`)) {
+		!bytes.Contains(session.Body.Bytes(), []byte(`"emailVerified":true`)) {
 		t.Fatalf("email change was not persisted: %s", session.Body.String())
 	}
 	wrong := client.request(t, http.MethodPost, "/delete-user", map[string]any{

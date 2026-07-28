@@ -35,4 +35,13 @@ All notable changes are documented here. Releases follow Semantic Versioning.
   schema, bounded bearer/filter parsing, organization authorization ports,
   standard metadata endpoints, and unsafe-method plugin routing.
 
+### Changed
+
+- Core user/session HTTP JSON now uses Better Auth v1.6 camelCase fields and a
+  nullable `image` value.
+- Public HTTP errors now use top-level Better Auth-shaped `code`, `message`,
+  and optional `requestId` fields while preserving stable Go error constants.
+- `POST /update-user` now returns Better Auth's `{"status":true}` response;
+  updated state remains available through `GET /get-session`.
+
 [Unreleased]: https://github.com/eadwinCode/better-auth-go/commits/main

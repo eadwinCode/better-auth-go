@@ -222,16 +222,14 @@ func TestAuthenticationErrorsAreGeneric(t *testing.T) {
 		t.Fatalf("unexpected status: %d", missing.Code)
 	}
 	var response struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(missing.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Error.Code != string(betterauth.CodeInvalidCredentials) || response.Error.Message != "Invalid email or password." {
-		t.Fatalf("unexpected error: %#v", response.Error)
+	if response.Code != "INVALID_EMAIL_OR_PASSWORD" || response.Message != "Invalid email or password" {
+		t.Fatalf("unexpected error: %#v", response)
 	}
 }
 
