@@ -44,16 +44,23 @@ func (validator EndpointValidatorFunc) Validate(value any) error {
 	return validator(value)
 }
 
-// PluginEndpoint declares a collision-checked GET or POST route relative to the
-// configured authentication base path.
+// PluginEndpoint declares a collision-checked HTTP route relative to the
+// configured authentication base path. SkipOriginCheck is only for
+// non-browser protocol callbacks or bearer-authenticated endpoints; enabling it
+// does not skip endpoint middleware, validators, hooks, or rate limits.
 type PluginEndpoint struct {
-	Name           string
-	Path           string
-	Method         string
-	Use            []RequestHook
-	BodyValidator  EndpointValidator
-	QueryValidator EndpointValidator
-	Handler        PluginEndpointHandler
+	Name            string
+	Path            string
+	Method          string
+	SkipOriginCheck bool
+	// AllowNonKebabPath permits protocol-mandated case-sensitive literals such
+	// as SCIM's ServiceProviderConfig. Ordinary plugin routes should remain
+	// lowercase kebab-case.
+	AllowNonKebabPath bool
+	Use               []RequestHook
+	BodyValidator     EndpointValidator
+	QueryValidator    EndpointValidator
+	Handler           PluginEndpointHandler
 }
 
 // PluginMiddleware runs before endpoint-specific middleware and before hooks.
@@ -453,7 +460,10 @@ func newPluginRuntime(plugins []Plugin, application ServerHooks) (pluginRuntime,
 			endpoint.Path = cleanAbsolutePath(endpoint.Path)
 			endpoint.Method = strings.ToUpper(strings.TrimSpace(endpoint.Method))
 			if endpoint.Path == "/" || endpoint.Handler == nil ||
-				(endpoint.Method != http.MethodGet && endpoint.Method != http.MethodPost) {
+				!slices.Contains([]string{
+					http.MethodGet, http.MethodPost, http.MethodPut,
+					http.MethodPatch, http.MethodDelete,
+				}, endpoint.Method) {
 				return pluginRuntime{}, fmt.Errorf("betterauth: plugin %q has an invalid endpoint", plugin.ID)
 			}
 			if isCoreRoute(endpoint.Path) || strings.HasPrefix(endpoint.Path, "/callback/") {
@@ -473,7 +483,9 @@ func newPluginRuntime(plugins []Plugin, application ServerHooks) (pluginRuntime,
 					}
 				}
 			}
-			shape, dynamic, err := pluginPathShape(endpoint.Path)
+			shape, dynamic, err := pluginPathShape(
+				endpoint.Path, endpoint.AllowNonKebabPath,
+			)
 			if err != nil {
 				return pluginRuntime{}, fmt.Errorf("betterauth: plugin %q endpoint: %w", plugin.ID, err)
 			}
@@ -597,7 +609,7 @@ func coreRoutePaths() []string {
 	}
 }
 
-func pluginPathShape(path string) (string, bool, error) {
+func pluginPathShape(path string, allowNonKebab bool) (string, bool, error) {
 	segments := strings.Split(strings.TrimPrefix(path, "/"), "/")
 	dynamic := false
 	for index, segment := range segments {
@@ -619,19 +631,21 @@ func pluginPathShape(path string) (string, bool, error) {
 			dynamic = true
 			continue
 		}
-		if !validLiteralPathSegment(segment) {
+		if !validLiteralPathSegment(segment, allowNonKebab) {
 			return "", false, fmt.Errorf("invalid literal path segment %q", segment)
 		}
 	}
 	return "/" + strings.Join(segments, "/"), dynamic, nil
 }
 
-func validLiteralPathSegment(value string) bool {
+func validLiteralPathSegment(value string, allowNonKebab bool) bool {
 	if value == "" || len(value) > 128 {
 		return false
 	}
 	for _, char := range value {
-		if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' {
+		upper := allowNonKebab && char >= 'A' && char <= 'Z'
+		if !upper && (char < 'a' || char > 'z') &&
+			(char < '0' || char > '9') && char != '-' {
 			return false
 		}
 	}

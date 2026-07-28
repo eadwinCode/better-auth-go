@@ -57,7 +57,7 @@ layer rather than a plugin.
   (ADR/schema/access foundation in progress);
 - SSO with OIDC and SAML (ADR/schema/configuration/discovery foundation in
   progress);
-- SCIM provisioning.
+- SCIM provisioning (ADR/schema/token/filter/metadata foundation in progress).
 
 ### API and tokens
 

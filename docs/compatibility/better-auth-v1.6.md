@@ -169,6 +169,12 @@ boundary, organization ports, and hardened OIDC discovery are implemented as a
 separate foundation; SSO HTTP ceremonies remain release-gated until the
 black-box protocol matrix passes.
 
+SCIM is specified in ADR 0008. Its provider schema, hash-only bearer boundary,
+bounded filter parser, standard metadata resources, and required plugin HTTP
+method/origin primitives are implemented as an independent foundation. User
+provisioning and connection-management routes remain release-gated until the
+black-box RFC 7644 matrix passes.
+
 ## Passkey plugin endpoint map
 
 | Better Auth endpoint | better-auth-go | Status |
