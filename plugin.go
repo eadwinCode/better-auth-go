@@ -752,6 +752,7 @@ func cloneSchema(schema Schema) Schema {
 	result := make(Schema, len(schema))
 	for name, model := range schema {
 		model.Fields = maps.Clone(model.Fields)
+		model.Indexes = cloneIndexes(model.Indexes)
 		result[name] = model
 	}
 	return result

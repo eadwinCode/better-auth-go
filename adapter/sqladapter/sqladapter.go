@@ -444,6 +444,27 @@ func (adapter *Adapter) migrate(ctx context.Context) error {
 				return fmt.Errorf("sqladapter: index %s.%s: %w", name, field, err)
 			}
 		}
+		for _, index := range model.Indexes {
+			storedFields := make([]string, len(index.Fields))
+			for position, logicalField := range index.Fields {
+				storedField := model.Fields[logicalField].FieldName
+				if storedField == "" {
+					storedField = logicalField
+				}
+				storedFields[position] = quote(storedField)
+			}
+			unique := ""
+			if index.Unique {
+				unique = "UNIQUE "
+			}
+			indexName := safeIndexName(index.Name)
+			if _, err := adapter.exec(
+				ctx, "CREATE "+unique+"INDEX IF NOT EXISTS "+quote(indexName)+
+					" ON "+quote(name)+" ("+strings.Join(storedFields, ", ")+")",
+			); err != nil {
+				return fmt.Errorf("sqladapter: compound index %s: %w", indexName, err)
+			}
+		}
 	}
 	if adapter.accountModel != "" && adapter.accountProviderField != "" && adapter.accountIDField != "" {
 		if _, exists := adapter.schema[adapter.accountModel]; exists {
