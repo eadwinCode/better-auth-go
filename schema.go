@@ -3,6 +3,7 @@ package betterauth
 import (
 	"fmt"
 	"maps"
+	"slices"
 )
 
 const (
@@ -39,6 +40,14 @@ type FieldSchema struct {
 type ModelSchema struct {
 	ModelName string
 	Fields    map[string]FieldSchema
+	Indexes   []IndexSchema
+}
+
+// IndexSchema declares a compound adapter index using logical field names.
+type IndexSchema struct {
+	Name   string
+	Fields []string
+	Unique bool
 }
 
 type Schema map[string]ModelSchema
@@ -132,6 +141,7 @@ func MergeSchema(base Schema, extensions ...Schema) (Schema, error) {
 	for name, model := range base {
 		copyModel := model
 		copyModel.Fields = maps.Clone(model.Fields)
+		copyModel.Indexes = cloneIndexes(model.Indexes)
 		result[name] = copyModel
 	}
 	for _, extension := range extensions {
@@ -140,6 +150,7 @@ func MergeSchema(base Schema, extensions ...Schema) (Schema, error) {
 			if !exists {
 				copyModel := model
 				copyModel.Fields = maps.Clone(model.Fields)
+				copyModel.Indexes = cloneIndexes(model.Indexes)
 				result[name] = copyModel
 				continue
 			}
@@ -165,8 +176,33 @@ func MergeSchema(base Schema, extensions ...Schema) (Schema, error) {
 				}
 				current.Fields[field] = definition
 			}
+			for _, index := range model.Indexes {
+				if !containsIndex(current.Indexes, index) {
+					index.Fields = slices.Clone(index.Fields)
+					current.Indexes = append(current.Indexes, index)
+				}
+			}
 			result[name] = current
 		}
 	}
 	return result, nil
+}
+
+func cloneIndexes(indexes []IndexSchema) []IndexSchema {
+	result := make([]IndexSchema, len(indexes))
+	for index, definition := range indexes {
+		definition.Fields = slices.Clone(definition.Fields)
+		result[index] = definition
+	}
+	return result
+}
+
+func containsIndex(indexes []IndexSchema, candidate IndexSchema) bool {
+	for _, existing := range indexes {
+		if existing.Name == candidate.Name && existing.Unique == candidate.Unique &&
+			slices.Equal(existing.Fields, candidate.Fields) {
+			return true
+		}
+	}
+	return false
 }

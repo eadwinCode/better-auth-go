@@ -305,6 +305,21 @@ func (a *Adapter) EnsureIndexes(ctx context.Context, schema betterauth.Schema) e
 				Keys: bson.D{{Key: storedField, Value: 1}}, Options: index,
 			})
 		}
+		for _, definition := range model.Indexes {
+			keys := make(bson.D, len(definition.Fields))
+			for position, logicalField := range definition.Fields {
+				keys[position] = bson.E{
+					Key: fieldNames[logicalModel][logicalField], Value: 1,
+				}
+			}
+			index := options.Index().SetName(definition.Name)
+			if definition.Unique {
+				index.SetUnique(true)
+			}
+			indexes[storedModel] = append(indexes[storedModel], mongo.IndexModel{
+				Keys: keys, Options: index,
+			})
+		}
 	}
 	addCoreMongoIndexes(indexes, modelNames, fieldNames)
 	for model, definitions := range indexes {

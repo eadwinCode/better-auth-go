@@ -324,6 +324,28 @@ func validateSchema(schema Schema) error {
 			}
 			storedFields[storedField] = logicalField
 		}
+		indexNames := map[string]struct{}{}
+		for _, index := range model.Indexes {
+			if index.Name == "" || len(index.Fields) < 2 {
+				return fmt.Errorf(
+					"betterauth: model %s has an invalid compound index", logical,
+				)
+			}
+			if _, exists := indexNames[index.Name]; exists {
+				return fmt.Errorf(
+					"betterauth: model %s has duplicate index %s", logical, index.Name,
+				)
+			}
+			indexNames[index.Name] = struct{}{}
+			for _, field := range index.Fields {
+				if _, exists := model.Fields[field]; !exists {
+					return fmt.Errorf(
+						"betterauth: model %s index %s references unknown field %s",
+						logical, index.Name, field,
+					)
+				}
+			}
+		}
 	}
 	return nil
 }

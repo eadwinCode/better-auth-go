@@ -140,4 +140,3 @@ same post-first-factor transition before claiming 2FA parity.
   account lockout, corrupt ciphertext, and session fixation;
 - fuzz tests for pending-login and trusted-device cookie parsing;
 - `go test`, `go vet`, race detector, static analysis, and vulnerability scan.
-
