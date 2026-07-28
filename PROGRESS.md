@@ -40,6 +40,7 @@ Last updated: 2026-07-28
 | TypeScript oracle type check | `bun run typecheck` in `better-auth-ts` | Pass |
 | TypeScript oracle migration | `bun --env-file=.env.example run migrate` | Pass |
 | Go/TypeScript core characterization | `scripts/test-typescript-compat.sh` | Pass; 13 lifecycle/security subtests |
+| Pinned upstream source inventory | `scripts/check-upstream-v1.6.25.sh` | Pass at tag commit `07a646e` |
 | Formatting | `test -z "$(gofmt -l .)"` | Pass |
 | Vet | `go vet ./...` | Pass |
 | Race detector | `go test -race -count=1 ./...` | Pass |
@@ -57,6 +58,9 @@ Do not convert a pending or skipped integration test into a pass.
 ## Compatibility baseline
 
 - Better Auth package: `better-auth@1.6.25`
+- Better Auth source: tag `v1.6.25`, commit
+  `07a646ea190167370fbbb60a0fa2c3be3bec5522`; sibling checkout
+  `../better-auth-repo`, overridable with `BETTER_AUTH_UPSTREAM_DIR`
 - TypeScript HTTP oracle: sibling checkout `../better-auth-ts`; override with
   `BETTER_AUTH_TS_DIR` for another local layout
 - Go module: `github.com/eadwinCode/better-auth-go`
@@ -119,22 +123,38 @@ They must never log provider credentials or returned tokens.
 | SSO | Schema, configuration and hardened OIDC discovery foundation only | Partial; OIDC/SAML HTTP ceremonies are release blockers |
 | SCIM | Schema, token, filter and metadata foundation only | Partial; RFC 7644 connection and provisioning routes are release blockers |
 
-### Remaining pinned v1.6.25 plugin inventory
+### Exact pinned v1.6.25 plugin inventory
 
-The authoritative inventory must be generated from the exports of the pinned
-1.6.25 packages. The known uncompleted groups include:
+The local upstream tag exports these 27 plugins from
+`better-auth/plugins`:
 
-- magic link, email OTP, phone number, username, anonymous users and One Tap;
-- SIWE, multi-session and last-login-method;
-- full Admin plugin behavior;
-- bearer, JWT and one-time-token behavior;
-- OAuth proxy and OAuth popup;
-- device authorization, OIDC provider and MCP;
-- Captcha, Have I Been Pwned, OpenAPI and test utilities;
-- custom-session and additional-field/access behavior.
+- access, admin, anonymous, bearer, captcha and custom session;
+- device authorization, email OTP, generic OAuth and Have I Been Pwned;
+- JWT, last-login-method, magic link, MCP and multi-session;
+- OAuth popup, OAuth proxy and OIDC provider;
+- One Tap, one-time token, OpenAPI and organizations;
+- phone number, SIWE, test utilities, two-factor and username.
 
-An item is included only if it is exported by the pinned 1.6.25 distribution.
-Documentation describing a later v1.6 patch must not silently expand this list.
+The pinned monorepo also publishes seven server-plugin packages:
+
+- `@better-auth/api-key`;
+- `@better-auth/i18n`;
+- `@better-auth/oauth-provider`;
+- `@better-auth/passkey`;
+- `@better-auth/scim`;
+- `@better-auth/sso`;
+- `@better-auth/stripe`.
+
+Passkey, two-factor and organizations have Go implementations; SSO and SCIM
+have foundations. Everything else above remains missing or partial unless its
+capability matrix says otherwise. TypeScript adapters, Expo/Electron clients,
+telemetry internals and Redis secondary storage are not feature-plugin parity
+items; their server-side concepts are handled through the Go adapter, hook and
+storage contracts where applicable.
+
+This inventory is enforced by `scripts/check-upstream-v1.6.25.sh`. Agent Auth
+and later payment/analytics integrations are not exported by the pinned tag and
+must not enter the v1.6.25 release scope.
 
 ### Database adapters
 

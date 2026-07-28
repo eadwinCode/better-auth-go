@@ -96,6 +96,20 @@ jobs:
         if: always()
         run: docker stop better-auth-go-mongo-ci || true
 
+  upstream-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: better-auth/better-auth
+          ref: v1.6.25
+          path: better-auth-repo
+      - name: Verify pinned Better Auth source inventory
+        env:
+          BETTER_AUTH_UPSTREAM_DIR: ${{ github.workspace }}/better-auth-repo
+        run: scripts/check-upstream-v1.6.25.sh
+
   fuzz-smoke:
     runs-on: ubuntu-latest
     steps:
