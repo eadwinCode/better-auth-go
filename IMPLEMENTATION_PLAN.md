@@ -290,6 +290,35 @@ Exit criteria:
 - compound uniqueness holds in MongoDB, PostgreSQL, and SQLite;
 - SSO and SCIM remain separate later PRs.
 
+## Phase 14: Enterprise SSO
+
+1. Add ADR 0007 and freeze the Better Auth v1.6.25 SSO provider, OIDC/OAuth2,
+   SAML, domain-verification, provisioning, and management contracts.
+2. Add the adapter-independent `ssoProvider` schema, encrypted provider
+   configuration, provider collision rules, organization authorization port,
+   and durable audit vocabulary.
+3. Implement bounded OIDC discovery, authorization code with PKCE, single-use
+   state and nonce, JWKS validation, verified-email linking, shared/per-provider
+   callbacks, and fixation-safe sessions.
+4. Implement SAML SP metadata, AuthnRequest correlation, signed assertion
+   verification, replay/timestamp/audience/recipient/algorithm enforcement,
+   IdP-initiated policy, and single logout.
+5. Implement provider CRUD, domain verification, provisioning hooks, trusted
+   redirects, generic provider errors, rate limits, and request-size limits.
+6. Add black-box protocol fixtures, concurrency/replay tests, fuzzing, adapter
+   migration checks, documentation, examples, and complete release gates.
+
+Exit criteria:
+
+- provider registration cannot cross user or organization ownership boundaries;
+- OIDC discovery and metadata fetches cannot escape the outbound URL policy;
+- every OIDC callback is PKCE-, state-, nonce-, issuer-, and audience-bound;
+- every SAML assertion is signature-, issuer-, audience-, recipient-,
+  timestamp-, provider-, and replay-bound;
+- provider secrets and private keys are encrypted and never returned;
+- successful SSO rotates or creates only core hash-at-rest sessions;
+- SCIM remains an independent Phase 15.
+
 ## Phase 15: SCIM 2.0 provisioning
 
 1. Add ADR 0008 and freeze the Better Auth v1.6.25 SCIM connection,
@@ -315,4 +344,4 @@ Exit criteria:
 - organization-scoped DELETE cannot delete a global cross-tenant user;
 - filters and PATCH paths cannot become arbitrary adapter queries;
 - management authorization is target-scoped and cannot cross owners or tenants;
-- SSO remains an independent PR.
+- SSO remains an independent plugin.

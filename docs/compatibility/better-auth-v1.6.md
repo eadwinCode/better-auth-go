@@ -162,7 +162,12 @@ Two-factor authentication is specified in ADR 0005 and implemented as the
 second dedicated high-risk plugin PR.
 
 Organizations are specified in ADR 0006 with their schema and authorization
-foundation isolated from protocol plugins.
+foundation isolated from the protocol plugins.
+
+Enterprise SSO is specified in ADR 0007. Its provider schema, configuration
+boundary, organization ports, and hardened OIDC discovery are implemented as a
+separate foundation; SSO HTTP ceremonies remain release-gated until the
+black-box protocol matrix passes.
 
 SCIM is specified in ADR 0008. Its provider schema, hash-only bearer boundary,
 bounded filter parser, standard metadata resources, and required plugin HTTP

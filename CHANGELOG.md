@@ -27,6 +27,10 @@ All notable changes are documented here. Releases follow Semantic Versioning.
   backup-code, trusted-device, and sign-in interception flows; encrypted secret
   material; hash-at-rest challenges; atomic attempts; and account lockout.
 - Merged-schema index declarations for SQL and MongoDB plugin models.
+- Enterprise SSO security contract and construction foundation with an
+  adapter-independent provider schema, encrypted configuration boundary,
+  fail-closed provider/domain/redirect policy, organization authorization
+  ports, and hardened OIDC discovery.
 - SCIM 2.0 security and construction foundation with a hash-only provider
   schema, bounded bearer/filter parsing, organization authorization ports,
   standard metadata endpoints, and unsafe-method plugin routing.

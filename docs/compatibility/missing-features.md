@@ -55,7 +55,8 @@ layer rather than a plugin.
   flow;
 - organizations, members, invitations, teams, roles, and permissions
   (ADR/schema/access foundation in progress);
-- SSO with OIDC and SAML;
+- SSO with OIDC and SAML (ADR/schema/configuration/discovery foundation in
+  progress);
 - SCIM provisioning (ADR/schema/token/filter/metadata foundation in progress).
 
 ### API and tokens
