@@ -30,6 +30,10 @@ credit.
 - Provider access, refresh, and ID tokens are encrypted before persistence.
 - Passwords use bounded Argon2id parameters and strict PHC parsing.
 - Cookie-authenticated state changes require trusted origin and CSRF validation.
+- PUT, PATCH, and DELETE plugin routes are treated as unsafe methods and require
+  trusted origins by default. Construction-time origin exceptions are only for
+  non-browser protocol callbacks or bearer-authenticated endpoints and do not
+  bypass endpoint middleware or hooks.
 - OAuth state is single-use and PKCE is S256 where supported.
 - OIDC ID tokens validate signature, issuer, audience, expiry, and nonce.
 - Redirect destinations are exact configured allowlist values.

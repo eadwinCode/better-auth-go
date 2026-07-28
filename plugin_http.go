@@ -129,7 +129,7 @@ func (s *Server) executePluginPipeline(
 		return nil, nil, false, publicError(CodeNotFound, "Endpoint not found.", http.StatusNotFound, nil)
 	}
 	pluginEndpoint, params, core, allowed, found, skipOrigin := s.resolvePluginRoute(relative, r.Method)
-	if r.Method == http.MethodPost && !skipOrigin {
+	if unsafeRequestMethod(r.Method) && !skipOrigin {
 		if err := s.checkOrigin(r); err != nil {
 			return nil, nil, false, err
 		}
@@ -197,7 +197,8 @@ func (s *Server) resolvePluginRoute(
 			allowed = append(allowed, candidate)
 		}
 		slices.Sort(allowed)
-		return methods[method], nil, false, allowed, true, false
+		selected := methods[method]
+		return selected, nil, false, allowed, true, selected.endpoint.SkipOriginCheck
 	}
 	var allowed []string
 	var selected compiledEndpoint
@@ -214,7 +215,8 @@ func (s *Server) resolvePluginRoute(
 	}
 	if len(allowed) > 0 {
 		slices.Sort(allowed)
-		return selected, selectedParams, false, slices.Compact(allowed), true, false
+		return selected, selectedParams, false, slices.Compact(allowed), true,
+			selected.endpoint.SkipOriginCheck
 	}
 	if isCoreRoute(path) {
 		expected := http.MethodPost
@@ -228,6 +230,15 @@ func (s *Server) resolvePluginRoute(
 		return compiledEndpoint{}, nil, true, []string{http.MethodGet, http.MethodPost}, true, true
 	}
 	return compiledEndpoint{}, nil, false, nil, false, false
+}
+
+func unsafeRequestMethod(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) newHookContext(

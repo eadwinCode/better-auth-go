@@ -27,5 +27,8 @@ All notable changes are documented here. Releases follow Semantic Versioning.
   backup-code, trusted-device, and sign-in interception flows; encrypted secret
   material; hash-at-rest challenges; atomic attempts; and account lockout.
 - Merged-schema index declarations for SQL and MongoDB plugin models.
+- SCIM 2.0 security and construction foundation with a hash-only provider
+  schema, bounded bearer/filter parsing, organization authorization ports,
+  standard metadata endpoints, and unsafe-method plugin routing.
 
 [Unreleased]: https://github.com/eadwinCode/better-auth-go/commits/main

@@ -250,14 +250,17 @@ config.Plugins = []betterauth.Plugin{auditPlugin}
 ```
 
 For state-changing API requests, trusted-origin enforcement runs before plugin
-code. Plugins may contribute exact origins but cannot bypass a failed check or
-remove mandatory no-store/security headers. Plugin descriptors are copied
-during `New`; callbacks must be concurrency-safe and must not retain
-request-scoped `HookContext` values. Plugin cookies can be appended with
-`PluginResponse.SetCookie`, which enforces Secure, HttpOnly, SameSite,
-host-only `__Host-` cookies. Cookie-authenticated mutation endpoints should use
-both `SessionMiddleware` and `CSRFMiddleware`; origin enforcement remains
-mandatory independently.
+code. Plugins may contribute exact origins but cannot expand policy from request
+data or remove mandatory no-store/security headers. Protocol endpoints that
+authenticate without browser credentials may use an explicit construction-time
+origin exception; this does not bypass their middleware, validators, hooks,
+rate limits, or response hooks. Plugin descriptors are copied during `New`;
+callbacks must be concurrency-safe and must not retain request-scoped
+`HookContext` values. Plugin cookies can be appended with
+`PluginResponse.SetCookie`, which enforces Secure, HttpOnly, SameSite, host-only
+`__Host-` cookies. Cookie-authenticated mutation endpoints should use both
+`SessionMiddleware` and `CSRFMiddleware`; origin enforcement remains mandatory
+independently.
 Endpoint `BodyValidator` and `QueryValidator` declarations run after
 `OnRequest` and rate limiting but before middleware, before-hooks, and endpoint
 code. `ObjectValidator` is dependency-free; `EndpointValidatorFunc` can bridge
@@ -364,12 +367,16 @@ before deploying. Important operational requirements:
 - [Management, validation, and SQL decision record](./docs/adr/0003-core-management-validation-and-sql.md)
 - [Passkey/WebAuthn decision record](./docs/adr/0004-passkeys-webauthn.md)
 - [Two-factor authentication decision record](./docs/adr/0005-two-factor-authentication.md)
+- [Organizations decision record](./docs/adr/0006-organizations.md)
+- [SCIM provisioning decision record](./docs/adr/0008-scim-provisioning.md)
+- [SCIM integration status](./docs/scim.md)
 - [Changelog](./CHANGELOG.md)
 
 The server plugin kernel, passkeys, and two-factor authentication are
-implemented. Organizations, username, magic links, SSO, SCIM, API keys, and
-other feature plugins remain separate compatibility milestones with their own
-threat models.
+implemented. Organizations and SCIM have isolated security/schema foundations
+under active development. Username, magic links, SSO, API keys, and other
+feature plugins remain separate compatibility milestones with their own threat
+models.
 
 ## License
 

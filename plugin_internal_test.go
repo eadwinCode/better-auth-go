@@ -10,7 +10,7 @@ func FuzzPluginPathMatching(f *testing.F) {
 		if len(template) > 2048 || len(path) > 2048 {
 			t.Skip()
 		}
-		_, _, _ = pluginPathShape(template)
+		_, _, _ = pluginPathShape(template, false)
 		_, _ = matchPluginPath(template, path)
 		_ = templatesOverlap(template, path)
 	})
