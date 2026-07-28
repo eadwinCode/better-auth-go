@@ -46,6 +46,7 @@ jobs:
       - run: go test -run=^$ -fuzz=FuzzSessionCookieParsing -fuzztime=10s .
       - run: go test -run=^$ -fuzz=FuzzAESGCMTokenCipherOpen -fuzztime=10s .
       - run: go test -run=^$ -fuzz=FuzzPluginPathMatching -fuzztime=10s .
+      - run: go test -run=^$ -fuzz=FuzzChallengeHandle -fuzztime=10s ./plugin/passkey
 
   static:
     runs-on: ubuntu-latest

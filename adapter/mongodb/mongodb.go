@@ -265,33 +265,117 @@ func (a *Adapter) Transaction(ctx context.Context, callback func(betterauth.Data
 }
 
 func (a *Adapter) EnsureCoreIndexes(ctx context.Context) error {
-	indexes := map[string][]mongo.IndexModel{
-		betterauth.ModelUser: {
-			{Keys: bson.D{{Key: "email", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_email")},
-		},
-		betterauth.ModelSession: {
-			{Keys: bson.D{{Key: "tokenHash", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_token_hash")},
-			{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0).SetName("ttl_expires")},
-			{Keys: bson.D{{Key: "userId", Value: 1}}, Options: options.Index().SetName("user_sessions")},
-		},
-		betterauth.ModelAccount: {
-			{Keys: bson.D{{Key: "providerId", Value: 1}, {Key: "accountId", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_provider_account")},
-			{Keys: bson.D{{Key: "userId", Value: 1}}, Options: options.Index().SetName("user_accounts")},
-		},
-		betterauth.ModelVerification: {
-			{Keys: bson.D{{Key: "value", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_value_hash")},
-			{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0).SetName("ttl_expires")},
-		},
-		betterauth.ModelOutboxEvent: {
-			{Keys: bson.D{{Key: "publishedAt", Value: 1}, {Key: "occurredAt", Value: 1}}, Options: options.Index().SetName("outbox_unpublished")},
-		},
+	return a.EnsureIndexes(ctx, betterauth.CoreSchema())
+}
+
+// EnsureIndexes creates indexes declared by the fully merged core/application/
+// plugin schema plus the core compound and TTL indexes. Call it with
+// Server.Schema after constructing the server.
+func (a *Adapter) EnsureIndexes(ctx context.Context, schema betterauth.Schema) error {
+	indexes := make(map[string][]mongo.IndexModel, len(schema))
+	modelNames := make(map[string]string, len(schema))
+	fieldNames := make(map[string]map[string]string, len(schema))
+	for logicalModel, model := range schema {
+		storedModel := model.ModelName
+		if storedModel == "" {
+			storedModel = logicalModel
+		}
+		modelNames[logicalModel] = storedModel
+		fieldNames[logicalModel] = make(map[string]string, len(model.Fields))
+		for logicalField, definition := range model.Fields {
+			storedField := definition.FieldName
+			if storedField == "" {
+				storedField = logicalField
+			}
+			fieldNames[logicalModel][logicalField] = storedField
+			// The conventional logical id is persisted as MongoDB's built-in
+			// unique _id field by toMongoRecord.
+			if logicalField == "id" && storedField == "id" {
+				continue
+			}
+			if !definition.Unique && !definition.Index {
+				continue
+			}
+			name := mongoIndexName(logicalModel, logicalField, definition.Unique)
+			index := options.Index().SetName(name)
+			if definition.Unique {
+				index.SetUnique(true)
+			}
+			indexes[storedModel] = append(indexes[storedModel], mongo.IndexModel{
+				Keys: bson.D{{Key: storedField, Value: 1}}, Options: index,
+			})
+		}
 	}
+	addCoreMongoIndexes(indexes, modelNames, fieldNames)
 	for model, definitions := range indexes {
 		if _, err := a.collection(model).Indexes().CreateMany(a.ctx(ctx), definitions); err != nil {
 			return translateError(err)
 		}
 	}
 	return nil
+}
+
+func addCoreMongoIndexes(
+	indexes map[string][]mongo.IndexModel,
+	models map[string]string,
+	fields map[string]map[string]string,
+) {
+	if model := models[betterauth.ModelSession]; model != "" {
+		indexes[model] = append(indexes[model], mongo.IndexModel{
+			Keys:    bson.D{{Key: fields[betterauth.ModelSession]["expiresAt"], Value: 1}},
+			Options: options.Index().SetExpireAfterSeconds(0).SetName("ttl_expires"),
+		})
+	}
+	if model := models[betterauth.ModelVerification]; model != "" {
+		indexes[model] = append(indexes[model], mongo.IndexModel{
+			Keys:    bson.D{{Key: fields[betterauth.ModelVerification]["expiresAt"], Value: 1}},
+			Options: options.Index().SetExpireAfterSeconds(0).SetName("ttl_expires"),
+		})
+	}
+	if model := models[betterauth.ModelAccount]; model != "" {
+		indexes[model] = append(indexes[model], mongo.IndexModel{
+			Keys: bson.D{
+				{Key: fields[betterauth.ModelAccount]["providerId"], Value: 1},
+				{Key: fields[betterauth.ModelAccount]["accountId"], Value: 1},
+			},
+			Options: options.Index().SetUnique(true).SetName("uniq_provider_account"),
+		})
+	}
+	if model := models[betterauth.ModelOutboxEvent]; model != "" {
+		indexes[model] = append(indexes[model], mongo.IndexModel{
+			Keys: bson.D{
+				{Key: fields[betterauth.ModelOutboxEvent]["publishedAt"], Value: 1},
+				{Key: fields[betterauth.ModelOutboxEvent]["occurredAt"], Value: 1},
+			},
+			Options: options.Index().SetName("outbox_unpublished"),
+		})
+	}
+}
+
+func mongoIndexName(model, field string, unique bool) string {
+	switch model + "." + field {
+	case betterauth.ModelUser + ".email":
+		return "uniq_email"
+	case betterauth.ModelSession + ".tokenHash":
+		return "uniq_token_hash"
+	case betterauth.ModelSession + ".userId":
+		return "user_sessions"
+	case betterauth.ModelAccount + ".userId":
+		return "user_accounts"
+	case betterauth.ModelVerification + ".value":
+		return "uniq_value_hash"
+	}
+	kind := "index"
+	if unique {
+		kind = "unique"
+	}
+	name := regexp.MustCompile(`[^A-Za-z0-9_-]+`).ReplaceAllString(
+		model+"_"+field+"_"+kind, "_",
+	)
+	if len(name) > 120 {
+		name = name[:120]
+	}
+	return name
 }
 
 func (a *Adapter) collection(model string) *mongo.Collection {

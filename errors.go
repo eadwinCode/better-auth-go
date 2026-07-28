@@ -48,6 +48,13 @@ func publicError(code ErrorCode, message string, status int, cause error) *Error
 	return &Error{Code: code, Message: message, Status: status, cause: cause}
 }
 
+// NewError creates a structured public-safe error for application hooks and
+// feature plugins. Message is returned to the caller and therefore must not
+// contain secrets, database details, or cryptographic verification errors.
+func NewError(code ErrorCode, message string, status int, cause error) *Error {
+	return publicError(code, message, status, cause)
+}
+
 func writeError(w http.ResponseWriter, requestID string, err error) {
 	var authErr *Error
 	if !errors.As(err, &authErr) {

@@ -49,9 +49,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := database.EnsureCoreIndexes(ctx); err != nil {
-		log.Fatal(err)
-	}
 	auth, err := betterauth.New(betterauth.Config{
 		PublicURL:               publicURL,
 		TrustedOrigins:          []string{appOrigin},
@@ -60,6 +57,9 @@ func main() {
 		ImpersonationAuthorizer: applicationAuthorization{},
 	})
 	if err != nil {
+		log.Fatal(err)
+	}
+	if err := database.EnsureIndexes(ctx, auth.Schema()); err != nil {
 		log.Fatal(err)
 	}
 

@@ -29,6 +29,7 @@ type FieldSchema struct {
 	Type       FieldType
 	Required   bool
 	Unique     bool
+	Index      bool
 	References string
 	Input      bool
 	Returned   bool
@@ -61,7 +62,7 @@ func CoreSchema() Schema {
 		ModelSession: {
 			Fields: map[string]FieldSchema{
 				"id":              {Type: FieldString, Required: true, Unique: true},
-				"userId":          {Type: FieldString, Required: true, References: ModelUser},
+				"userId":          {Type: FieldString, Required: true, Index: true, References: ModelUser},
 				"tokenHash":       {Type: FieldString, Required: true, Unique: true},
 				"expiresAt":       {Type: FieldDate, Required: true},
 				"createdAt":       {Type: FieldDate, Required: true},
@@ -75,7 +76,7 @@ func CoreSchema() Schema {
 		ModelAccount: {
 			Fields: map[string]FieldSchema{
 				"id":                    {Type: FieldString, Required: true, Unique: true},
-				"userId":                {Type: FieldString, Required: true, References: ModelUser},
+				"userId":                {Type: FieldString, Required: true, Index: true, References: ModelUser},
 				"providerId":            {Type: FieldString, Required: true},
 				"accountId":             {Type: FieldString, Required: true},
 				"password":              {Type: FieldString},

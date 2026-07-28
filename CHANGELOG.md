@@ -20,5 +20,9 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 - Plugin endpoint body/query validators with a strict declarative validator.
 - Shared `database/sql`, PostgreSQL, and SQLite adapters with explicit additive
   schema migrations.
+- Passkey/WebAuthn plugin with Better Auth-shaped endpoints, exact RP/origin
+  policy, hash-at-rest single-use challenges, W3C fixture coverage, guarded
+  counters, and core session rotation.
+- Merged-schema index declarations for SQL and MongoDB plugin models.
 
 [Unreleased]: https://github.com/eadwinCode/better-auth-go/commits/main

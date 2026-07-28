@@ -428,11 +428,18 @@ func (adapter *Adapter) migrate(ctx context.Context) error {
 			}
 		}
 		for _, field := range fields {
-			if !model.Fields[field].Unique {
+			definition := model.Fields[field]
+			if !definition.Unique && !definition.Index {
 				continue
 			}
-			indexName := safeIndexName(name + "_" + field + "_unique")
-			if _, err := adapter.exec(ctx, "CREATE UNIQUE INDEX IF NOT EXISTS "+quote(indexName)+
+			kind := "index"
+			unique := ""
+			if definition.Unique {
+				kind = "unique"
+				unique = "UNIQUE "
+			}
+			indexName := safeIndexName(name + "_" + field + "_" + kind)
+			if _, err := adapter.exec(ctx, "CREATE "+unique+"INDEX IF NOT EXISTS "+quote(indexName)+
 				" ON "+quote(name)+" ("+quote(field)+")"); err != nil {
 				return fmt.Errorf("sqladapter: index %s.%s: %w", name, field, err)
 			}
