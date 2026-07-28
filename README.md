@@ -364,12 +364,16 @@ before deploying. Important operational requirements:
 - [Management, validation, and SQL decision record](./docs/adr/0003-core-management-validation-and-sql.md)
 - [Passkey/WebAuthn decision record](./docs/adr/0004-passkeys-webauthn.md)
 - [Two-factor authentication decision record](./docs/adr/0005-two-factor-authentication.md)
+- [Organizations decision record](./docs/adr/0006-organizations.md)
+- [Enterprise SSO decision record](./docs/adr/0007-enterprise-sso.md)
+- [Enterprise SSO integration status](./docs/sso.md)
 - [Changelog](./CHANGELOG.md)
 
 The server plugin kernel, passkeys, and two-factor authentication are
-implemented. Organizations, username, magic links, SSO, SCIM, API keys, and
-other feature plugins remain separate compatibility milestones with their own
-threat models.
+implemented. Organizations and enterprise SSO have isolated security/schema
+foundations under active development. Username, magic links, SCIM, API keys,
+and other feature plugins remain separate compatibility milestones with their
+own threat models.
 
 ## License
 

@@ -53,8 +53,10 @@ layer rather than a plugin.
 
 - full admin user-management parity beyond the existing bounded impersonation
   flow;
-- organizations, members, invitations, teams, roles, and permissions;
-- SSO with OIDC and SAML;
+- organizations, members, invitations, teams, roles, and permissions
+  (ADR/schema/access foundation in progress);
+- SSO with OIDC and SAML (ADR/schema/configuration/discovery foundation in
+  progress);
 - SCIM provisioning.
 
 ### API and tokens
