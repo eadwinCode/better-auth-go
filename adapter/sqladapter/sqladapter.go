@@ -832,7 +832,10 @@ func physicalSchema(schema betterauth.Schema) (betterauth.Schema, error) {
 		if !validIdentifier(name) {
 			return nil, fmt.Errorf("sqladapter: invalid model name %q", name)
 		}
-		model := betterauth.ModelSchema{Fields: make(map[string]betterauth.FieldSchema, len(logicalModel.Fields))}
+		model := betterauth.ModelSchema{
+			Fields:  make(map[string]betterauth.FieldSchema, len(logicalModel.Fields)),
+			Indexes: make([]betterauth.IndexSchema, len(logicalModel.Indexes)),
+		}
 		for logicalField, definition := range logicalModel.Fields {
 			field := definition.FieldName
 			if field == "" {
@@ -842,6 +845,37 @@ func physicalSchema(schema betterauth.Schema) (betterauth.Schema, error) {
 				return nil, fmt.Errorf("sqladapter: invalid field name %q", field)
 			}
 			model.Fields[field] = definition
+		}
+		for index, definition := range logicalModel.Indexes {
+			if strings.TrimSpace(definition.Name) == "" {
+				return nil, fmt.Errorf(
+					"sqladapter: model %q has a compound index without a name", name,
+				)
+			}
+			mapped := betterauth.IndexSchema{
+				Name: definition.Name, Unique: definition.Unique,
+				Fields: make([]string, len(definition.Fields)),
+			}
+			if len(mapped.Fields) == 0 {
+				return nil, fmt.Errorf(
+					"sqladapter: compound index %q has no fields", definition.Name,
+				)
+			}
+			for position, logicalField := range definition.Fields {
+				fieldDefinition, exists := logicalModel.Fields[logicalField]
+				if !exists {
+					return nil, fmt.Errorf(
+						"sqladapter: compound index %q references unknown field %q",
+						definition.Name, logicalField,
+					)
+				}
+				field := fieldDefinition.FieldName
+				if field == "" {
+					field = logicalField
+				}
+				mapped.Fields[position] = field
+			}
+			model.Indexes[index] = mapped
 		}
 		idDefinition, exists := logicalModel.Fields["id"]
 		if !exists {
