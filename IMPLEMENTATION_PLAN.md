@@ -147,3 +147,26 @@ Exit criteria:
 - optional checks clearly report missing external services/tools;
 - the branch is pushed and a draft PR documents design, security properties,
   validation, and remaining release gates.
+
+## Phase 9: Server plugin kernel
+
+1. Compile immutable plugin descriptors with IDs, dependencies, initialization,
+   schema, trusted origins, and collision-safe endpoints.
+2. Implement bounded `OnRequest`, rate-limit, middleware, before, endpoint,
+   after, and `OnResponse` execution.
+3. Add parameterized routes, endpoint middleware, session and ownership
+   helpers, application hooks, and background-task injection.
+4. Decorate logical database operations with transaction-aware before/after
+   hooks.
+5. Test deterministic ordering, early returns, origin precedence, response
+   mutation, panic containment, rollback, collisions, and concurrent requests.
+6. Maintain a categorized feature-gap register that separates kernel
+   primitives from built-in plugin implementations.
+
+Exit criteria:
+
+- plugin code cannot bypass origin checks or mandatory response headers;
+- configuration cycles, route ambiguity, and invalid plugin contributions fail
+  construction;
+- request-specific state is never retained on the server or plugin registry;
+- built-in plugin implementations have an explicit follow-up backlog.

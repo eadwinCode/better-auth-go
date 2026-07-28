@@ -42,6 +42,8 @@ type RateLimitRequest struct {
 	Action     string
 	IP         string
 	AccountKey string
+	Window     time.Duration
+	Max        int
 }
 
 type RateLimitDecision struct {

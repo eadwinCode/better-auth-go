@@ -45,6 +45,7 @@ jobs:
       - run: go test -run=^$ -fuzz=FuzzArgon2idParser -fuzztime=10s .
       - run: go test -run=^$ -fuzz=FuzzSessionCookieParsing -fuzztime=10s .
       - run: go test -run=^$ -fuzz=FuzzAESGCMTokenCipherOpen -fuzztime=10s .
+      - run: go test -run=^$ -fuzz=FuzzPluginPathMatching -fuzztime=10s .
 
   static:
     runs-on: ubuntu-latest

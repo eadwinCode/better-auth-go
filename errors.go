@@ -52,6 +52,12 @@ func writeError(w http.ResponseWriter, requestID string, err error) {
 	var authErr *Error
 	if !errors.As(err, &authErr) {
 		authErr = publicError(CodeInternal, "The request could not be completed.", http.StatusInternalServerError, err)
+	} else {
+		copyError := *authErr
+		authErr = &copyError
+	}
+	if authErr.Status < 400 || authErr.Status > 599 || authErr.Code == "" || authErr.Message == "" {
+		authErr = publicError(CodeInternal, "The request could not be completed.", http.StatusInternalServerError, err)
 	}
 	authErr.RequestID = requestID
 	if authErr.RetryAfter > 0 {
