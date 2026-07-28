@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -49,6 +50,11 @@ type Options struct {
 	HTTPClient          *http.Client
 	Timeout             time.Duration
 	MaxResponseBytes    int64
+	// Clock controls token-expiry and OIDC verification time in deterministic
+	// tests. Nil uses the system UTC clock.
+	Clock betterauth.Clock
+
+	oidcDiscovery bool
 }
 
 type preset struct {
@@ -102,7 +108,12 @@ type Provider struct {
 	mapper                ProfileMapper
 	httpClient            *http.Client
 	maxResponseBytes      int64
+	clock                 betterauth.Clock
 }
+
+type systemClock struct{}
+
+func (systemClock) Now() time.Time { return time.Now().UTC() }
 
 func New(providerID string, options Options) (*Provider, error) {
 	definition, err := providerPreset(strings.ToLower(strings.TrimSpace(providerID)), options)
@@ -158,6 +169,10 @@ func New(providerID string, options Options) (*Provider, error) {
 	if maxResponse < 4096 || maxResponse > 8<<20 {
 		return nil, errors.New("social: max response bytes is out of bounds")
 	}
+	clock := options.Clock
+	if clock == nil {
+		clock = systemClock{}
+	}
 	baseClient := options.HTTPClient
 	if baseClient == nil {
 		baseClient = &http.Client{}
@@ -190,7 +205,7 @@ func New(providerID string, options Options) (*Provider, error) {
 		}
 		verifier = &idTokenVerifier{
 			client: &clientCopy, jwksURL: definition.jwksURL, issuers: definition.issuers,
-			audience: clientID, maxResponseBytes: maxResponse,
+			audience: clientID, maxResponseBytes: maxResponse, clock: clock,
 		}
 	}
 	return &Provider{
@@ -204,7 +219,117 @@ func New(providerID string, options Options) (*Provider, error) {
 		tokenSecretParam: definition.tokenSecretParam, scopeSeparator: definition.scopeSeparator,
 		authorizationFragment: definition.authorizationFragment,
 		authorizationExtra:    extra, mapper: mapper, httpClient: &clientCopy, maxResponseBytes: maxResponse,
+		clock: clock,
 	}, nil
+}
+
+// NewOIDC discovers and validates a generic OpenID Connect provider before
+// constructing an immutable OAuth provider. Issuer is required; explicit
+// endpoint options override discovered values only after the discovered
+// configuration itself has passed validation.
+func NewOIDC(ctx context.Context, providerID string, options Options) (*Provider, error) {
+	issuer, err := canonicalIssuer(options.Issuer)
+	if err != nil {
+		return nil, fmt.Errorf("social: OIDC issuer: %w", err)
+	}
+	timeout := options.Timeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+	if timeout < time.Second || timeout > time.Minute {
+		return nil, errors.New("social: HTTP timeout is out of bounds")
+	}
+	maxResponse := options.MaxResponseBytes
+	if maxResponse == 0 {
+		maxResponse = 1 << 20
+	}
+	if maxResponse < 4096 || maxResponse > 8<<20 {
+		return nil, errors.New("social: max response bytes is out of bounds")
+	}
+	baseClient := options.HTTPClient
+	if baseClient == nil {
+		baseClient = &http.Client{}
+	}
+	client := *baseClient
+	client.Timeout = timeout
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return errors.New("social: provider redirects are disabled")
+	}
+	var discovery struct {
+		Issuer                            string   `json:"issuer"`
+		AuthorizationEndpoint             string   `json:"authorization_endpoint"`
+		TokenEndpoint                     string   `json:"token_endpoint"`
+		UserInfoEndpoint                  string   `json:"userinfo_endpoint"`
+		JWKSURI                           string   `json:"jwks_uri"`
+		ResponseTypesSupported            []string `json:"response_types_supported"`
+		IDTokenSigningAlgorithmsSupported []string `json:"id_token_signing_alg_values_supported"`
+		TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
+	}
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, issuer+"/.well-known/openid-configuration", nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	if err := boundedJSON(&client, request, maxResponse, &discovery); err != nil {
+		return nil, fmt.Errorf("social: OIDC discovery: %w", err)
+	}
+	discoveredIssuer, err := canonicalIssuer(discovery.Issuer)
+	if err != nil || discoveredIssuer != issuer {
+		return nil, errors.New("social: OIDC discovery issuer mismatch")
+	}
+	if len(discovery.ResponseTypesSupported) > 0 &&
+		!contains(discovery.ResponseTypesSupported, "code") {
+		return nil, errors.New("social: OIDC provider does not support authorization code")
+	}
+	if len(discovery.IDTokenSigningAlgorithmsSupported) > 0 &&
+		!contains(discovery.IDTokenSigningAlgorithmsSupported, "RS256") {
+		return nil, errors.New("social: OIDC provider does not support RS256")
+	}
+	for name, endpoint := range map[string]string{
+		"authorization": discovery.AuthorizationEndpoint,
+		"token":         discovery.TokenEndpoint,
+		"JWKS":          discovery.JWKSURI,
+	} {
+		if err := validateDiscoveredEndpoint(endpoint, issuer); err != nil {
+			return nil, fmt.Errorf("social: OIDC %s endpoint: %w", name, err)
+		}
+	}
+	if discovery.UserInfoEndpoint != "" {
+		if err := validateDiscoveredEndpoint(discovery.UserInfoEndpoint, issuer); err != nil {
+			return nil, fmt.Errorf("social: OIDC user-info endpoint: %w", err)
+		}
+	}
+	if options.AuthorizationURL == "" {
+		options.AuthorizationURL = discovery.AuthorizationEndpoint
+	}
+	if options.TokenURL == "" {
+		options.TokenURL = discovery.TokenEndpoint
+	}
+	if options.UserInfoURL == "" {
+		options.UserInfoURL = discovery.UserInfoEndpoint
+	}
+	if options.JWKSURL == "" {
+		options.JWKSURL = discovery.JWKSURI
+	}
+	if options.TokenAuth == "" {
+		switch {
+		case contains(discovery.TokenEndpointAuthMethodsSupported, string(TokenAuthBasic)):
+			options.TokenAuth = TokenAuthBasic
+		case contains(discovery.TokenEndpointAuthMethodsSupported, string(TokenAuthBody)):
+			options.TokenAuth = TokenAuthBody
+		case contains(discovery.TokenEndpointAuthMethodsSupported, string(TokenAuthNone)):
+			options.TokenAuth = TokenAuthNone
+		}
+	}
+	if !options.DisableDefaultScope {
+		options.Scopes = append([]string{"openid", "profile", "email"}, options.Scopes...)
+	}
+	options.Issuer = issuer
+	options.HTTPClient = &client
+	options.oidcDiscovery = true
+	return New(providerID, options)
 }
 
 func (p *Provider) AuthorizationURL(state, challenge, nonce, redirectURI string) (string, error) {
@@ -287,7 +412,7 @@ func (p *Provider) Exchange(
 		IDToken: token.IDToken, Scope: token.Scope,
 	}
 	if token.ExpiresIn > 0 {
-		tokens.AccessTokenExpiresAt = time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
+		tokens.AccessTokenExpiresAt = p.clock.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
 	}
 	return betterauth.OAuthResult{Profile: profile, Tokens: tokens}, nil
 }
@@ -349,7 +474,7 @@ func (p *Provider) Refresh(ctx context.Context, refreshToken string) (betterauth
 		IDToken: token.IDToken, Scope: token.Scope,
 	}
 	if token.ExpiresIn > 0 {
-		result.AccessTokenExpiresAt = time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
+		result.AccessTokenExpiresAt = p.clock.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
 	}
 	return result, nil
 }
@@ -507,6 +632,145 @@ func defaultMapper(data map[string]any) (betterauth.OAuthProfile, error) {
 	}, nil
 }
 
+func providerMapper(providerID string) ProfileMapper {
+	return func(data map[string]any) (betterauth.OAuthProfile, error) {
+		original := data
+		profileData := unwrapProfile(data)
+		profile, err := defaultMapper(original)
+		if err != nil {
+			profile = betterauth.OAuthProfile{}
+		}
+		switch providerID {
+		case "atlassian":
+			profile.EmailVerified = false
+		case "discord":
+			profile.Name = firstString(profileData, "global_name", "username")
+			profile.ImageURL = firstString(profileData, "image_url")
+		case "dropbox":
+			if name := nestedMap(profileData, "name"); name != nil {
+				profile.Name = firstString(name, "display_name")
+			}
+			profile.ImageURL = firstString(profileData, "profile_photo_url")
+		case "facebook":
+			if picture := nestedMap(profileData, "picture", "data"); picture != nil {
+				profile.ImageURL = firstString(picture, "url")
+			}
+		case "figma":
+			profile.Name = firstString(profileData, "handle")
+			profile.ImageURL = firstString(profileData, "img_url")
+			profile.EmailVerified = false
+		case "kick":
+			profile.ImageURL = firstString(profileData, "profile_picture")
+			profile.EmailVerified = false
+		case "line":
+			profile.ProviderAccountID = firstString(profileData, "sub", "userId")
+			profile.Name = firstString(profileData, "name", "displayName")
+			profile.ImageURL = firstString(profileData, "picture", "pictureUrl")
+			profile.EmailVerified = false
+		case "linear":
+			profile.ImageURL = firstString(profileData, "avatarUrl")
+			profile.EmailVerified = false
+		case "naver":
+			profile.Name = firstString(profileData, "name", "nickname")
+			profile.ImageURL = firstString(profileData, "profile_image")
+			profile.EmailVerified = false
+		case "notion":
+			if person := nestedMap(profileData, "person"); person != nil {
+				profile.Email = firstString(person, "email")
+			}
+			profile.ImageURL = firstString(profileData, "avatar_url")
+			profile.EmailVerified = false
+		case "polar":
+			profile.Name = firstString(profileData, "public_name", "username")
+			profile.ImageURL = firstString(profileData, "avatar_url")
+		case "railway":
+			profile.EmailVerified = false
+		case "reddit":
+			profile.Name = firstString(profileData, "name")
+			profile.Email = profile.ProviderAccountID + "@reddit.invalid"
+			profile.EmailVerified = false
+			profile.ImageURL = strings.Split(firstString(profileData, "icon_img"), "?")[0]
+		case "roblox":
+			profile.Name = firstString(profileData, "nickname", "preferred_username")
+			profile.Email = firstString(profileData, "preferred_username")
+			profile.EmailVerified = false
+		case "salesforce":
+			if photos := nestedMap(profileData, "photos"); photos != nil {
+				profile.ImageURL = firstString(photos, "picture", "thumbnail")
+			}
+		case "slack":
+			profile.ProviderAccountID = firstString(profileData, "https://slack.com/user_id")
+			profile.Name = firstString(profileData, "name")
+			profile.Email = firstString(profileData, "email")
+			profile.EmailVerified = firstBool(profileData, "email_verified")
+			profile.ImageURL = firstString(profileData, "picture", "https://slack.com/user_image_512")
+		case "spotify":
+			profile.Name = firstString(profileData, "display_name")
+			profile.ImageURL = firstArrayString(profileData, "images", "url")
+			profile.EmailVerified = false
+		case "tiktok":
+			profile.ProviderAccountID = firstString(profileData, "open_id", "id")
+			profile.Name = firstString(profileData, "display_name", "username")
+			if profile.Email == "" {
+				profile.Email = firstString(profileData, "username")
+			}
+			profile.ImageURL = firstString(profileData, "avatar_large_url", "avatar_url")
+			profile.EmailVerified = false
+		case "twitter":
+			profile.Name = firstString(profileData, "name")
+			if confirmedEmail := firstString(profileData, "confirmed_email"); confirmedEmail != "" {
+				profile.Email = confirmedEmail
+				profile.EmailVerified = true
+			} else {
+				profile.Email = firstString(profileData, "username")
+				profile.EmailVerified = false
+			}
+			profile.ImageURL = firstString(profileData, "profile_image_url")
+		case "vk":
+			profile.Name = strings.TrimSpace(
+				firstString(profileData, "first_name") + " " + firstString(profileData, "last_name"),
+			)
+			profile.EmailVerified = false
+		case "wechat":
+			profile.ProviderAccountID = firstString(profileData, "unionid", "openid")
+			profile.Name = firstString(profileData, "nickname")
+			if profile.Email == "" {
+				profile.Email = profile.ProviderAccountID + "@wechat.invalid"
+			}
+			profile.ImageURL = firstString(profileData, "headimgurl")
+			profile.EmailVerified = false
+		case "zoom":
+			profile.Name = firstString(profileData, "display_name")
+			profile.ImageURL = firstString(profileData, "pic_url")
+		}
+		if profile.ProviderAccountID == "" {
+			return betterauth.OAuthProfile{}, errors.New("social: profile has no stable account ID")
+		}
+		return profile, nil
+	}
+}
+
+func nestedMap(data map[string]any, keys ...string) map[string]any {
+	current := data
+	for _, key := range keys {
+		value, ok := current[key].(map[string]any)
+		if !ok {
+			return nil
+		}
+		current = value
+	}
+	return current
+}
+
+func firstArrayString(data map[string]any, arrayKey, valueKey string) string {
+	values, _ := data[arrayKey].([]any)
+	if len(values) == 0 {
+		return ""
+	}
+	value, _ := values[0].(map[string]any)
+	return firstString(value, valueKey)
+}
+
 func unwrapProfile(data map[string]any) map[string]any {
 	for _, key := range []string{"user", "response", "data"} {
 		switch nested := data[key].(type) {
@@ -599,6 +863,55 @@ func validateEndpoint(raw string) error {
 	}
 	if parsed.User != nil || parsed.Fragment != "" {
 		return errors.New("credentials and fragments are not allowed")
+	}
+	return nil
+}
+
+func canonicalIssuer(raw string) (string, error) {
+	if err := validateEndpoint(raw); err != nil {
+		return "", err
+	}
+	parsed, _ := url.Parse(raw)
+	if parsed.RawQuery != "" {
+		return "", errors.New("query parameters are not allowed")
+	}
+	return strings.TrimSuffix(parsed.String(), "/"), nil
+}
+
+func validateDiscoveredEndpoint(raw, issuer string) error {
+	if err := validateEndpoint(raw); err != nil {
+		return err
+	}
+	endpoint, _ := url.Parse(raw)
+	issuerURL, _ := url.Parse(issuer)
+	endpointIP := net.ParseIP(endpoint.Hostname())
+	issuerIP := net.ParseIP(issuerURL.Hostname())
+	issuerIsLoopback := issuerIP != nil && issuerIP.IsLoopback()
+	if endpointIP != nil && !issuerIsLoopback &&
+		(endpointIP.IsLoopback() || endpointIP.IsPrivate() || endpointIP.IsLinkLocalUnicast() ||
+			endpointIP.IsLinkLocalMulticast() || endpointIP.IsUnspecified()) {
+		return errors.New("private network addresses are not allowed")
+	}
+	return nil
+}
+
+func boundedJSON(client *http.Client, request *http.Request, maxResponse int64, destination any) error {
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		return fmt.Errorf("provider returned HTTP %d", response.StatusCode)
+	}
+	decoder := json.NewDecoder(io.LimitReader(response.Body, maxResponse+1))
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return errors.New("provider returned trailing JSON")
 	}
 	return nil
 }
