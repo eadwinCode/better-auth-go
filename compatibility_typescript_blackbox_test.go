@@ -24,9 +24,10 @@ type oracleResponse struct {
 }
 
 type typescriptOracle struct {
-	baseURL *url.URL
-	origin  string
-	client  *http.Client
+	baseURL       *url.URL
+	origin        string
+	controlSecret string
+	client        *http.Client
 }
 
 func newTypeScriptOracle(t *testing.T) *typescriptOracle {
@@ -42,13 +43,27 @@ func newTypeScriptOracle(t *testing.T) *typescriptOracle {
 	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
 		t.Fatalf("BETTER_AUTH_TS_URL must use HTTP or HTTPS")
 	}
+	controlSecret := strings.TrimSpace(os.Getenv("BETTER_AUTH_TS_CONTROL_SECRET"))
+	if controlSecret == "" {
+		t.Fatal("BETTER_AUTH_TS_CONTROL_SECRET is required with BETTER_AUTH_TS_URL")
+	}
+	return newTypeScriptOracleClient(t, baseURL, controlSecret)
+}
+
+func newTypeScriptOracleClient(
+	t *testing.T,
+	baseURL *url.URL,
+	controlSecret string,
+) *typescriptOracle {
+	t.Helper()
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return &typescriptOracle{
-		baseURL: baseURL,
-		origin:  baseURL.Scheme + "://" + baseURL.Host,
+		baseURL:       baseURL,
+		origin:        baseURL.Scheme + "://" + baseURL.Host,
+		controlSecret: controlSecret,
 		client: &http.Client{
 			Jar:     jar,
 			Timeout: 10 * time.Second,
@@ -57,6 +72,78 @@ func newTypeScriptOracle(t *testing.T) *typescriptOracle {
 			},
 		},
 	}
+}
+
+func (oracle *typescriptOracle) clone(t *testing.T) *typescriptOracle {
+	t.Helper()
+	return newTypeScriptOracleClient(t, oracle.baseURL, oracle.controlSecret)
+}
+
+type capturedOracleMail struct {
+	Kind  string `json:"kind"`
+	Email string `json:"email"`
+	Token string `json:"token"`
+	URL   string `json:"url"`
+}
+
+func (oracle *typescriptOracle) clearMail(t *testing.T) {
+	t.Helper()
+	request, err := http.NewRequest(
+		http.MethodDelete,
+		oracle.baseURL.String()+"/__better_auth_test/mail",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("X-Better-Auth-Test-Secret", oracle.controlSecret)
+	response, err := oracle.client.Do(request)
+	if err != nil {
+		t.Fatalf("clear TypeScript oracle mail: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		t.Fatalf("clear TypeScript oracle mail: status=%d body=%s", response.StatusCode, body)
+	}
+}
+
+func (oracle *typescriptOracle) latestMail(
+	t *testing.T,
+	kind string,
+	email string,
+) capturedOracleMail {
+	t.Helper()
+	query := url.Values{"kind": {kind}, "email": {email}}
+	request, err := http.NewRequest(
+		http.MethodGet,
+		oracle.baseURL.String()+"/__better_auth_test/mail/latest?"+query.Encode(),
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("X-Better-Auth-Test-Secret", oracle.controlSecret)
+	response, err := oracle.client.Do(request)
+	if err != nil {
+		t.Fatalf("read TypeScript oracle mail: %v", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("read TypeScript oracle mail: status=%d body=%s", response.StatusCode, body)
+	}
+	var mail capturedOracleMail
+	if err := json.Unmarshal(body, &mail); err != nil {
+		t.Fatalf("decode TypeScript oracle mail %q: %v", body, err)
+	}
+	if mail.Token == "" || mail.Email != email || mail.Kind != kind {
+		t.Fatalf("unexpected TypeScript oracle mail: %#v", mail)
+	}
+	return mail
 }
 
 func (oracle *typescriptOracle) request(

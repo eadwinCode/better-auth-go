@@ -37,9 +37,9 @@ Last updated: 2026-07-28
 | Gate | Command or evidence | Result |
 | --- | --- | --- |
 | Go unit and black-box tests | `go test -count=1 ./...` | Pass |
-| TypeScript oracle type check | `bun run typecheck` in `better-auth-ts` | Pass |
-| TypeScript oracle migration | `bun --env-file=.env.example run migrate` | Pass |
-| Go/TypeScript core characterization | `scripts/test-typescript-compat.sh` | Pass; 13 lifecycle/security subtests |
+| TypeScript oracle type check | `bun run typecheck` in `compat/typescript-oracle` | Pass |
+| TypeScript oracle migration | `scripts/test-typescript-compat.sh` isolated SQLite setup | Pass |
+| Go/TypeScript core characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback and multi-session suites |
 | Pinned upstream source inventory | `scripts/check-upstream-v1.6.25.sh` | Pass at tag commit `07a646e` |
 | Formatting | `test -z "$(gofmt -l .)"` | Pass |
 | Vet | `go vet ./...` | Pass |
@@ -61,8 +61,8 @@ Do not convert a pending or skipped integration test into a pass.
 - Better Auth source: tag `v1.6.25`, commit
   `07a646ea190167370fbbb60a0fa2c3be3bec5522`; sibling checkout
   `../better-auth-repo`, overridable with `BETTER_AUTH_UPSTREAM_DIR`
-- TypeScript HTTP oracle: sibling checkout `../better-auth-ts`; override with
-  `BETTER_AUTH_TS_DIR` for another local layout
+- TypeScript HTTP oracle: checked in at `compat/typescript-oracle`; override
+  with `BETTER_AUTH_TS_DIR` only when testing another compatible fixture
 - Go module: `github.com/eadwinCode/better-auth-go`
 - Default route prefix: `/api/auth`
 - Provider catalog: **35** built-in provider IDs plus the generic OAuth/OIDC
@@ -81,10 +81,10 @@ contract differences must be listed below.
 | --- | --- | --- | --- |
 | Email/password sign-up and sign-in | Present, including production-critical v1.6 options | Default lifecycle, bounds and duplicate errors differential; option/security matrix in Go | Partial pending cross-runtime option matrix |
 | Sign-out and session retrieval | Present | Lifecycle characterization added | Partial |
-| Session refresh and revocation | Present | Go black-box tests only | Partial |
+| Session refresh and revocation | Present | Session list/update and single/other/all revocation differential; refresh is Go-only rotation | Partial |
 | User update, email change, deletion | Present | User update differential passes; remaining routes use Go tests | Partial |
-| Password change and recovery | Present | Option, concurrency and session-revocation black-box tests | Partial pending cross-runtime matrix |
-| Email verification | Present | Required-verification lifecycle black-box tests | Partial pending cross-runtime matrix |
+| Password change and recovery | Present | Change-password plus request/reset/callback/invalid/replay differential; option, concurrency and revocation Go tests | Partial pending remaining option matrix |
+| Email verification | Present | Send/verify/resend/state differential plus required-verification Go lifecycle | Partial pending callback and option matrix |
 | Account list/link/unlink | Present | Go black-box tests only | Partial |
 | Provider access/refresh tokens | Present | Go black-box tests only | Partial |
 | Admin impersonation | Bounded implementation present | Go audit tests only | Partial |
@@ -184,6 +184,7 @@ closed before the stable release:
 | Duplicate sign-up | 422 by default; synthetic success with verification or no auto-sign-in | Same | Resolved by ADR 0010; default behavior differential, protected modes security-tested |
 | Successful `update-user` response | `{"status":true}` | Same | Resolved by ADR 0009 and differential tests |
 | Session/account management responses | Upstream names and session tokens | stable IDs and token redaction | Deliberate security difference; remaining shapes need review |
+| Verification token replay | A valid signed token returns success after the account is verified | hashed token is consumed once; replay returns `INVALID_TOKEN` | Deliberate security difference |
 | CSRF model | trusted-origin/cookie behavior from upstream | trusted origin plus explicit double-submit token for authenticated mutations | Deliberate security difference |
 
 No additional difference may be normalized away by the test harness without an
@@ -216,10 +217,11 @@ entry in this table and a compatibility decision.
 
 ## Recommended work order
 
-1. Expand the TypeScript oracle and differential harness across the remaining
-   core routes and resolve or document every observed difference.
+1. Finish the differential core matrix for email change/deletion,
+   account linking/unlinking, provider-token routes, impersonation, and the
+   remaining email/password option combinations.
 2. Extend MongoDB, PostgreSQL and SQLite coverage with release-to-release
-   migration fixtures, and make the TypeScript oracle reproducible in CI.
+   migration fixtures.
 3. Certify all 35 social-provider presets and generic OAuth/OIDC.
 4. Complete SSO and SCIM.
 5. Implement and certify the remaining exports from the pinned 1.6.25 plugin

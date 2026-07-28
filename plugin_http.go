@@ -226,6 +226,9 @@ func (s *Server) resolvePluginRoute(
 		}
 		return compiledEndpoint{}, nil, true, []string{expected}, true, false
 	}
+	if token, resetCallback := strings.CutPrefix(path, "/reset-password/"); resetCallback && token != "" {
+		return compiledEndpoint{}, nil, true, []string{http.MethodGet}, true, false
+	}
 	if providerID, callback := strings.CutPrefix(path, "/callback/"); callback && validProviderID(providerID) {
 		return compiledEndpoint{}, nil, true, []string{http.MethodGet, http.MethodPost}, true, true
 	}

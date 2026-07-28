@@ -63,7 +63,8 @@ jobs:
       - name: Start MongoDB replica set
         run: |
           docker run --rm -d --name better-auth-go-mongo-ci \
-            -p 27017:27017 mongo:8 --replSet rs0 --bind_ip_all
+            -p 27017:27017 mongo:8 --replSet rs0 --bind_ip_all \
+            --oplogSize 128 --wiredTigerCacheSizeGB 0.25
           for attempt in $(seq 1 90); do
             if docker exec better-auth-go-mongo-ci mongosh --quiet \
               --eval 'db.runCommand({ ping: 1 }).ok' | grep -q '^1$'; then
@@ -109,6 +110,23 @@ jobs:
         env:
           BETTER_AUTH_UPSTREAM_DIR: ${{ github.workspace }}/better-auth-repo
         run: scripts/check-upstream-v1.6.25.sh
+
+  typescript-compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - name: Install pinned TypeScript oracle
+        working-directory: compat/typescript-oracle
+        run: bun install --frozen-lockfile
+      - name: Better Auth 1.6.25 differential suite
+        run: scripts/test-typescript-compat.sh
 
   fuzz-smoke:
     runs-on: ubuntu-latest

@@ -53,7 +53,9 @@ Reference snapshot audited on 2026-07-28:
 | `POST /unlink-account` | same | implemented |
 | `POST /get-access-token` | same | implemented with account ownership binding |
 | `POST /refresh-token` | same | implemented for refresh-capable providers |
-| `POST /forget-password` | same | implemented |
+| `POST /request-password-reset` | same | implemented; `redirectTo` is allowlisted |
+| pre-1.6 Go `/forget-password` | same alias | retained for backward compatibility |
+| `GET /reset-password/:token` | `/reset-password/{token}` | implemented allowlisted callback redirect |
 | `POST /reset-password` | same | implemented |
 | `POST /send-verification-email` | same | implemented |
 | `GET /verify-email` | same | implemented |
@@ -71,7 +73,8 @@ including a nullable `image` field. Public HTTP errors use top-level `code` and
 default duplicate-signup codes are differentially certified. Remaining
 route-specific error codes are tracked in `PROGRESS.md`. ADR 0009 records the
 core wire contract, and ADR 0010 records the email/password option and
-enumeration-protection contract.
+enumeration-protection contract. ADR 0011 records recovery, verification, and
+session-management differential certification.
 
 ## Email/password option contract
 
@@ -89,6 +92,12 @@ enumeration-protection contract.
   success under either enumeration-protection mode.
 - Reset and verification lifetimes default to one hour.
 - Reset does not create a session and only revokes sessions when configured.
+- The canonical reset-request message, reset callback, invalid-token and replay
+  behavior are differentially certified against 1.6.25.
+- Ordinary email verification returns `{"status":true,"user":null}` and
+  authenticated resend errors match the upstream public codes. Go deliberately
+  rejects verification-token replay because verification tokens are
+  single-use and hash-at-rest.
 
 The Go password policy measures bytes to place a deterministic upper bound on
 password-hashing work. Better Auth uses JavaScript UTF-16 string length, so

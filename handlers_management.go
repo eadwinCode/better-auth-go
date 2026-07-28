@@ -341,6 +341,9 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
+	if err := s.requireFreshSession(current); err != nil {
+		return err
+	}
 	sessions, err := s.store.ListSessions(r.Context(), user.ID, s.cfg.Clock.Now().UTC())
 	if err != nil {
 		return publicError(CodeInternal, "Sessions could not be listed.", http.StatusInternalServerError, err)
@@ -390,7 +393,7 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) err
 	if input.SessionID == current.ID {
 		s.clearSessionCookie(w)
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+	writeJSON(w, http.StatusOK, map[string]bool{"status": true})
 	return nil
 }
 
@@ -407,7 +410,7 @@ func (s *Server) handleRevokeOtherSessions(w http.ResponseWriter, r *http.Reques
 	); err != nil {
 		return publicError(CodeInternal, "Sessions could not be revoked.", http.StatusInternalServerError, err)
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+	writeJSON(w, http.StatusOK, map[string]bool{"status": true})
 	return nil
 }
 
@@ -423,7 +426,7 @@ func (s *Server) handleRevokeSessions(w http.ResponseWriter, r *http.Request) er
 		return publicError(CodeInternal, "Sessions could not be revoked.", http.StatusInternalServerError, err)
 	}
 	s.clearSessionCookie(w)
-	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+	writeJSON(w, http.StatusOK, map[string]bool{"status": true})
 	return nil
 }
 
@@ -449,13 +452,27 @@ func (s *Server) handleUpdateSession(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return publicError(CodeInternal, "Session could not be updated.", http.StatusInternalServerError, err)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"session": session, "user": user})
+	encoded, err := json.Marshal(session)
+	if err != nil {
+		return publicError(CodeInternal, "Session could not be updated.", http.StatusInternalServerError, err)
+	}
+	var publicSession map[string]any
+	if err := json.Unmarshal(encoded, &publicSession); err != nil {
+		return publicError(CodeInternal, "Session could not be updated.", http.StatusInternalServerError, err)
+	}
+	definition := s.cfg.Schema[ModelSession]
+	for field, value := range fields {
+		if definition.Fields[field].Returned {
+			publicSession[field] = value
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"session": publicSession})
 	return nil
 }
 
 func (s *Server) requireFreshSession(session Session) error {
 	if s.cfg.Clock.Now().UTC().Sub(session.CreatedAt) > s.cfg.SessionFreshAge {
-		return publicError(CodeForbidden, "A fresh session is required.", http.StatusForbidden, nil)
+		return publicError(CodeSessionNotFresh, "Session is not fresh", http.StatusForbidden, nil)
 	}
 	return nil
 }

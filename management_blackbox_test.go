@@ -116,7 +116,7 @@ func TestSessionManagementUsesOwnedSessionIDs(t *testing.T) {
 	revoke := first.request(t, http.MethodPost, "/revoke-session", map[string]any{
 		"sessionId": otherID,
 	}, true)
-	if revoke.Code != http.StatusOK {
+	if revoke.Code != http.StatusOK || !bytes.Contains(revoke.Body.Bytes(), []byte(`"status":true`)) {
 		t.Fatalf("revoke-session: %d %s", revoke.Code, revoke.Body.String())
 	}
 	stale := second.request(t, http.MethodGet, "/get-session", nil, false)
@@ -124,7 +124,7 @@ func TestSessionManagementUsesOwnedSessionIDs(t *testing.T) {
 		t.Fatalf("revoked session remained valid: %d %s", stale.Code, stale.Body.String())
 	}
 	revokeAll := first.request(t, http.MethodPost, "/revoke-sessions", map[string]any{}, true)
-	if revokeAll.Code != http.StatusOK {
+	if revokeAll.Code != http.StatusOK || !bytes.Contains(revokeAll.Body.Bytes(), []byte(`"status":true`)) {
 		t.Fatalf("revoke-sessions: %d %s", revokeAll.Code, revokeAll.Body.String())
 	}
 }
