@@ -62,7 +62,11 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adaptertest.SeedReleaseBaseline(t, adapter)
+	legacyDatabase, err := betterauth.WrapDatabaseAdapter(adapter, adaptertest.LegacyCoreSchema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptertest.SeedReleaseBaseline(t, legacyDatabase)
 	current := betterauth.CoreSchema()
 	if err := adapter.EnsureIndexes(t.Context(), current); err != nil {
 		t.Fatalf("upgrade current indexes: %v", err)
@@ -70,7 +74,11 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	if err := adapter.EnsureIndexes(t.Context(), current); err != nil {
 		t.Fatalf("idempotent current indexes: %v", err)
 	}
-	adaptertest.AssertReleaseUpgrade(t, adapter)
+	currentDatabase, err := betterauth.WrapDatabaseAdapter(adapter, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptertest.AssertReleaseUpgrade(t, currentDatabase)
 	for collection, expected := range map[string]string{
 		betterauth.ModelSession: "user_sessions",
 		betterauth.ModelAccount: "user_accounts",
