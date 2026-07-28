@@ -43,14 +43,18 @@ credit.
   challenge handles are hashed, ceremony-bound, expiring, and single-use.
 - Passkey discoverable user handles are opaque and never returned by the HTTP
   API; non-zero signature counter regressions fail closed.
+- TOTP secrets and backup codes are encrypted at rest; pending-login, delivered
+  OTP, and trusted-device bearer values are opaque and hash-only at rest.
+- Credential sign-in sessions are revoked before a two-factor challenge is
+  returned. Factor attempts are serialized and share a durable account lockout.
 
 ## Deployment checklist
 
 1. Serve only over TLS and preserve Secure cookies.
 2. Use exact HTTPS origins and callback URLs; do not use wildcards.
 3. Store MongoDB and OAuth credentials in a secret manager.
-4. Use a 32-byte random provider-token encryption key or an application key-ring
-   implementing `TokenCipher`.
+4. Use independent 32-byte random encryption keys or a domain-separated
+   application key-ring implementing `TokenCipher` for provider and 2FA secrets.
 5. Run MongoDB with transaction support and call `EnsureIndexes` with the
    server's fully merged schema.
 6. Configure a real rate limiter for sign-in, sign-up, recovery, verification,

@@ -76,10 +76,6 @@ func canonicalRoles(values []string) (string, error) {
 	return strings.Join(slices.Compact(result), ","), nil
 }
 
-func hasRole(value, role string) bool {
-	return slices.Contains(strings.Split(value, ","), role)
-}
-
 func (instance *runtime) staticPermission(roles, resource, action string) bool {
 	for _, name := range strings.Split(roles, ",") {
 		role, exists := instance.roles[name]

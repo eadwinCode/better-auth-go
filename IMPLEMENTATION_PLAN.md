@@ -230,6 +230,37 @@ Exit criteria:
 - all unit, black-box, race, vet, and applicable static/security checks pass;
 - 2FA, organizations, SSO, and SCIM remain in later PRs.
 
+## Phase 12: Two-factor authentication
+
+1. Add ADR 0005 and freeze the Better Auth v1.6-shaped TOTP, delivered OTP,
+   backup-code, trusted-device, and sign-in interception contracts.
+2. Extend the user schema with `twoFactorEnabled` and add an adapter-independent
+   `twoFactor` model with encrypted secret material and durable lockout state.
+3. Intercept successful credential sign-in, revoke the provisional session,
+   and issue a single-use hash-at-rest pending-login challenge.
+4. Implement TOTP enrollment and verification, injectable OTP delivery,
+   encrypted backup-code management, and server-only backup-code viewing.
+5. Add consume-and-rearm per-challenge attempts, shared account lockout, trusted
+   device rotation, session rotation, trusted-origin/CSRF enforcement, and
+   durable security audits.
+6. Add black-box flows, RFC 6238 fixtures, concurrency and replay tests, adapter
+   migration checks, cookie fuzzing, race checks, documentation, and examples.
+
+Exit criteria:
+
+- a first-factor credential session is never usable while 2FA is pending;
+- TOTP secrets and backup codes are always encrypted at rest;
+- pending-login, OTP, and trusted-device bearer values are hash-only at rest;
+- concurrent verification cannot exceed the attempt budget or consume one
+  backup code more than once;
+- successful second-factor verification consumes the challenge before issuing
+  a fixation-safe session and clears consecutive account failures;
+- sensitive management requires a fresh session, trusted origin, CSRF, and a
+  password whenever a credential account exists;
+- all unit, black-box, race, vet, fuzz, static, and applicable security checks
+  pass;
+- organizations, SSO, and SCIM remain in later isolated PRs.
+
 ## Phase 13: Organizations and tenant authorization
 
 1. Add ADR 0006 and freeze the Better Auth v1.6 organization, membership,

@@ -16,6 +16,7 @@ func TestMongoIndexNamesRemainCompatibleAndNamespacePlugins(t *testing.T) {
 		mongoIndexName(betterauth.ModelVerification, "value", true): "uniq_value_hash",
 		mongoIndexName("passkey", "credentialID", true):             "passkey_credentialID_unique",
 		mongoIndexName("passkey", "userHandle", false):              "passkey_userHandle_index",
+		mongoIndexName("twoFactor", "userId", true):                 "twoFactor_userId_unique",
 	}
 	for actual, expected := range tests {
 		if actual != expected {
