@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"sync"
 	"testing"
+	"time"
 
 	betterauth "github.com/eadwinCode/better-auth-go"
 	"github.com/eadwinCode/better-auth-go/adapter/memory"
@@ -60,6 +61,8 @@ func (provider *fakeOAuthProvider) Exchange(
 		},
 		Tokens: betterauth.ProviderTokens{
 			AccessToken: "plain-access-token", RefreshToken: "plain-refresh-token",
+			IDToken: "plain-id-token", Scope: "openid profile",
+			AccessTokenExpiresAt: time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC),
 		},
 	}, nil
 }
@@ -72,7 +75,9 @@ func (provider *fakeOAuthProvider) Refresh(
 		return betterauth.ProviderTokens{}, betterauth.ErrReplay
 	}
 	return betterauth.ProviderTokens{
-		AccessToken: "refreshed-access-token", RefreshToken: refreshToken, Scope: "openid profile",
+		AccessToken: "refreshed-access-token", RefreshToken: refreshToken,
+		IDToken: "refreshed-id-token", Scope: "openid profile",
+		AccessTokenExpiresAt: time.Date(2030, 1, 1, 1, 0, 0, 0, time.UTC),
 	}, nil
 }
 

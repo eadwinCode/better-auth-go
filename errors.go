@@ -10,29 +10,37 @@ import (
 type ErrorCode string
 
 const (
-	CodeBadRequest           ErrorCode = "bad_request"
-	CodeValidation           ErrorCode = "validation_error"
-	CodeInvalidEmail         ErrorCode = "invalid_email"
-	CodePasswordTooShort     ErrorCode = "password_too_short"
-	CodePasswordTooLong      ErrorCode = "password_too_long"
-	CodeInvalidCredentials   ErrorCode = "invalid_credentials"
-	CodeEmailNotVerified     ErrorCode = "email_not_verified"
-	CodeEmailMismatch        ErrorCode = "email_mismatch"
-	CodeEmailAlreadyVerified ErrorCode = "email_already_verified"
-	CodeSignUpDisabled       ErrorCode = "email_password_sign_up_disabled"
-	CodeUserAlreadyExists    ErrorCode = "user_already_exists_use_another_email"
-	CodeUnauthorized         ErrorCode = "unauthorized"
-	CodeForbidden            ErrorCode = "forbidden"
-	CodeSessionNotFresh      ErrorCode = "session_not_fresh"
-	CodeNotFound             ErrorCode = "not_found"
-	CodeConflict             ErrorCode = "conflict"
-	CodeRateLimited          ErrorCode = "rate_limited"
-	CodeInvalidOrigin        ErrorCode = "invalid_origin"
-	CodeInvalidCSRF          ErrorCode = "invalid_csrf"
-	CodeInvalidToken         ErrorCode = "invalid_or_expired_token"
-	CodeProviderFailure      ErrorCode = "provider_failure"
-	CodeMethodNotAllowed     ErrorCode = "method_not_allowed"
-	CodeInternal             ErrorCode = "internal_error"
+	CodeBadRequest              ErrorCode = "bad_request"
+	CodeValidation              ErrorCode = "validation_error"
+	CodeInvalidEmail            ErrorCode = "invalid_email"
+	CodePasswordTooShort        ErrorCode = "password_too_short"
+	CodePasswordTooLong         ErrorCode = "password_too_long"
+	CodeInvalidCredentials      ErrorCode = "invalid_credentials"
+	CodeEmailNotVerified        ErrorCode = "email_not_verified"
+	CodeEmailMismatch           ErrorCode = "email_mismatch"
+	CodeEmailAlreadyVerified    ErrorCode = "email_already_verified"
+	CodeInvalidPassword         ErrorCode = "invalid_password"
+	CodeCredentialNotFound      ErrorCode = "credential_account_not_found"
+	CodeAccountNotFound         ErrorCode = "account_not_found"
+	CodeUnlinkLastAccount       ErrorCode = "failed_to_unlink_last_account"
+	CodeProviderNotSupported    ErrorCode = "provider_not_supported"
+	CodeTokenRefreshUnsupported ErrorCode = "token_refresh_not_supported"
+	CodeRefreshTokenNotFound    ErrorCode = "refresh_token_not_found"
+	CodeFailedRefreshToken      ErrorCode = "failed_to_refresh_access_token"
+	CodeSignUpDisabled          ErrorCode = "email_password_sign_up_disabled"
+	CodeUserAlreadyExists       ErrorCode = "user_already_exists_use_another_email"
+	CodeUnauthorized            ErrorCode = "unauthorized"
+	CodeForbidden               ErrorCode = "forbidden"
+	CodeSessionNotFresh         ErrorCode = "session_not_fresh"
+	CodeNotFound                ErrorCode = "not_found"
+	CodeConflict                ErrorCode = "conflict"
+	CodeRateLimited             ErrorCode = "rate_limited"
+	CodeInvalidOrigin           ErrorCode = "invalid_origin"
+	CodeInvalidCSRF             ErrorCode = "invalid_csrf"
+	CodeInvalidToken            ErrorCode = "invalid_or_expired_token"
+	CodeProviderFailure         ErrorCode = "provider_failure"
+	CodeMethodNotAllowed        ErrorCode = "method_not_allowed"
+	CodeInternal                ErrorCode = "internal_error"
 )
 
 // Error is a structured public-safe authentication error.
@@ -114,6 +122,22 @@ func httpErrorCode(code ErrorCode) string {
 		return "EMAIL_MISMATCH"
 	case CodeEmailAlreadyVerified:
 		return "EMAIL_ALREADY_VERIFIED"
+	case CodeInvalidPassword:
+		return "INVALID_PASSWORD"
+	case CodeCredentialNotFound:
+		return "CREDENTIAL_ACCOUNT_NOT_FOUND"
+	case CodeAccountNotFound:
+		return "ACCOUNT_NOT_FOUND"
+	case CodeUnlinkLastAccount:
+		return "FAILED_TO_UNLINK_LAST_ACCOUNT"
+	case CodeProviderNotSupported:
+		return "PROVIDER_NOT_SUPPORTED"
+	case CodeTokenRefreshUnsupported:
+		return "TOKEN_REFRESH_NOT_SUPPORTED"
+	case CodeRefreshTokenNotFound:
+		return "REFRESH_TOKEN_NOT_FOUND"
+	case CodeFailedRefreshToken:
+		return "FAILED_TO_REFRESH_ACCESS_TOKEN"
 	case CodeSignUpDisabled:
 		return "EMAIL_PASSWORD_SIGN_UP_DISABLED"
 	case CodeUserAlreadyExists:

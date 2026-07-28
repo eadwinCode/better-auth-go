@@ -39,7 +39,7 @@ Last updated: 2026-07-28
 | Go unit and black-box tests | `go test -count=1 ./...` | Pass |
 | TypeScript oracle type check | `bun run typecheck` in `compat/typescript-oracle` | Pass |
 | TypeScript oracle migration | `scripts/test-typescript-compat.sh` isolated SQLite setup | Pass |
-| Go/TypeScript core characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback and multi-session suites |
+| Go/TypeScript core characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback, multi-session, email change/deletion, account linking/unlinking, provider-token and impersonation suites |
 | Pinned upstream source inventory | `scripts/check-upstream-v1.6.25.sh` | Pass at tag commit `07a646e` |
 | Formatting | `test -z "$(gofmt -l .)"` | Pass |
 | Vet | `go vet ./...` | Pass |
@@ -82,12 +82,12 @@ contract differences must be listed below.
 | Email/password sign-up and sign-in | Present, including production-critical v1.6 options | Default lifecycle, bounds and duplicate errors differential; option/security matrix in Go | Partial pending cross-runtime option matrix |
 | Sign-out and session retrieval | Present | Lifecycle characterization added | Partial |
 | Session refresh and revocation | Present | Session list/update and single/other/all revocation differential; refresh is Go-only rotation | Partial |
-| User update, email change, deletion | Present | User update differential passes; remaining routes use Go tests | Partial |
+| User update, email change, deletion | Present | User update, enumeration-resistant email change, verification, direct password deletion and resulting state differential pass | Partial pending emailed deletion callback and remaining options |
 | Password change and recovery | Present | Change-password plus request/reset/callback/invalid/replay differential; option, concurrency and revocation Go tests | Partial pending remaining option matrix |
 | Email verification | Present | Send/verify/resend/state differential plus required-verification Go lifecycle | Partial pending callback and option matrix |
-| Account list/link/unlink | Present | Go black-box tests only | Partial |
-| Provider access/refresh tokens | Present | Go black-box tests only | Partial |
-| Admin impersonation | Bounded implementation present | Go audit tests only | Partial |
+| Account list/link/unlink | Present | Public link flow, listing, unlink success/missing/final-account errors differential pass | Partial pending remaining linking options/collisions |
+| Provider access/refresh tokens | Present | Safe read/refresh fields, local provider refresh, persistence and refresh-token redaction differential pass | Partial pending provider-specific fixtures |
+| Admin impersonation | Bounded implementation present | Authorization, one-hour session, active identity and stop/restore differential; durable Go audit tests pass | Partial pending remaining admin-plugin options |
 | Request validators and size limits | Present | Go failure tests | Partial |
 | Trusted origins and CSRF | Present | Cross-runtime origin characterization added | Partial |
 | `onRequest`, `onResponse`, route and database hooks | Present | Go ordering/rollback/race tests | Partial |
@@ -186,6 +186,9 @@ closed before the stable release:
 | Session/account management responses | Upstream names and session tokens | stable IDs and token redaction | Deliberate security difference; remaining shapes need review |
 | Verification token replay | A valid signed token returns success after the account is verified | hashed token is consumed once; replay returns `INVALID_TOKEN` | Deliberate security difference |
 | CSRF model | trusted-origin/cookie behavior from upstream | trusted origin plus explicit double-submit token for authenticated mutations | Deliberate security difference |
+| Same-email change error | Returns only `message` for this `BAD_REQUEST` | Always returns structured `code` and `message` | Deliberate structured-error guarantee |
+| Provider refresh response | Returns the provider refresh token | Omits refresh tokens while returning safe access/ID-token metadata | Deliberate credential-redaction guarantee |
+| Impersonation session preservation | Stores and restores the original signed admin session cookie | Revokes/rotates on entry and creates a new actor session on exit, with durable audit events | Deliberate fixation-protection and audit guarantee |
 
 No additional difference may be normalized away by the test harness without an
 entry in this table and a compatibility decision.
@@ -217,9 +220,8 @@ entry in this table and a compatibility decision.
 
 ## Recommended work order
 
-1. Finish the differential core matrix for email change/deletion,
-   account linking/unlinking, provider-token routes, impersonation, and the
-   remaining email/password option combinations.
+1. Finish the remaining email/password option combinations and the optional
+   emailed account-deletion callback.
 2. Extend MongoDB, PostgreSQL and SQLite coverage with release-to-release
    migration fixtures.
 3. Certify all 35 social-provider presets and generic OAuth/OIDC.

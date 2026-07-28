@@ -34,13 +34,13 @@ func (s *Server) handleGetAccessToken(w http.ResponseWriter, r *http.Request) er
 		return publicError(CodeInternal, "Provider token could not be read.", http.StatusInternalServerError, err)
 	}
 	if tokens.AccessToken == "" ||
-		!tokens.AccessTokenExpiresAt.IsZero() && !tokens.AccessTokenExpiresAt.After(s.cfg.Clock.Now().UTC().Add(30*time.Second)) {
+		!tokens.AccessTokenExpiresAt.IsZero() && !tokens.AccessTokenExpiresAt.After(s.cfg.Clock.Now().UTC().Add(5*time.Second)) {
 		tokens, err = s.refreshProviderAccount(r.Context(), user.ID, stored, tokens)
 		if err != nil {
 			return err
 		}
 	}
-	writeProviderToken(w, tokens)
+	writeAccessToken(w, tokens)
 	return nil
 }
 
@@ -68,7 +68,7 @@ func (s *Server) handleRefreshProviderToken(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		return err
 	}
-	writeProviderToken(w, tokens)
+	writeRefreshedProviderToken(w, stored, tokens)
 	return nil
 }
 
@@ -84,11 +84,19 @@ func (s *Server) providerAccount(
 			CodeBadRequest, "Invalid provider account.", http.StatusBadRequest, nil,
 		)
 	}
+	if _, exists := s.cfg.SocialProviders[providerID]; !exists {
+		return StoredOAuthAccount{}, publicError(
+			CodeProviderNotSupported,
+			"Provider "+providerID+" is not supported.",
+			http.StatusBadRequest,
+			nil,
+		)
+	}
 	account, err := s.store.OAuthAccountTokens(ctx, userID, providerID, accountID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return StoredOAuthAccount{}, publicError(
-				CodeNotFound, "Provider account not found.", http.StatusNotFound, err,
+				CodeAccountNotFound, "Account not found", http.StatusBadRequest, err,
 			)
 		}
 		return StoredOAuthAccount{}, publicError(
@@ -106,10 +114,26 @@ func (s *Server) refreshProviderAccount(
 ) (ProviderTokens, error) {
 	provider, exists := s.cfg.SocialProviders[stored.Account.Provider]
 	refresher, refreshable := provider.(OAuthTokenRefresher)
-	if !exists || !refreshable || current.RefreshToken == "" ||
+	if !exists {
+		return ProviderTokens{}, publicError(
+			CodeProviderNotSupported,
+			"Provider "+stored.Account.Provider+" is not supported.",
+			http.StatusBadRequest,
+			nil,
+		)
+	}
+	if !refreshable {
+		return ProviderTokens{}, publicError(
+			CodeTokenRefreshUnsupported,
+			"Provider "+stored.Account.Provider+" does not support token refreshing.",
+			http.StatusBadRequest,
+			nil,
+		)
+	}
+	if current.RefreshToken == "" ||
 		!current.RefreshTokenExpiresAt.IsZero() && !current.RefreshTokenExpiresAt.After(s.cfg.Clock.Now().UTC()) {
 		return ProviderTokens{}, publicError(
-			CodeProviderFailure, "Provider token could not be refreshed.", http.StatusBadGateway, nil,
+			CodeRefreshTokenNotFound, "Refresh token not found", http.StatusBadRequest, nil,
 		)
 	}
 	requestContext, cancel := context.WithTimeout(ctx, s.cfg.ProviderTimeout)
@@ -117,7 +141,7 @@ func (s *Server) refreshProviderAccount(
 	refreshed, err := refresher.Refresh(requestContext, current.RefreshToken)
 	if err != nil || refreshed.AccessToken == "" {
 		return ProviderTokens{}, publicError(
-			CodeProviderFailure, "Provider token could not be refreshed.", http.StatusBadGateway, err,
+			CodeFailedRefreshToken, "Failed to refresh access token", http.StatusBadRequest, err,
 		)
 	}
 	if refreshed.RefreshToken == "" {
@@ -175,10 +199,56 @@ func openOptional(ctx context.Context, cipher TokenCipher, value string) (string
 	return cipher.Open(ctx, value)
 }
 
-func writeProviderToken(w http.ResponseWriter, tokens ProviderTokens) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"accessToken": tokens.AccessToken, "tokenType": "Bearer",
-		"accessTokenExpiresAt": nullableTimeValue(tokens.AccessTokenExpiresAt),
-		"scope":                tokens.Scope,
-	})
+func writeAccessToken(w http.ResponseWriter, tokens ProviderTokens) {
+	response := map[string]any{
+		"accessToken": tokens.AccessToken,
+		"scopes":      providerScopes(tokens.Scope),
+	}
+	if !tokens.AccessTokenExpiresAt.IsZero() {
+		response["accessTokenExpiresAt"] = tokens.AccessTokenExpiresAt
+	}
+	if tokens.IDToken != "" {
+		response["idToken"] = tokens.IDToken
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func writeRefreshedProviderToken(
+	w http.ResponseWriter,
+	stored StoredOAuthAccount,
+	tokens ProviderTokens,
+) {
+	response := map[string]any{
+		"accessToken": tokens.AccessToken,
+		"scope":       tokens.Scope,
+		"providerId":  stored.Account.Provider,
+		"accountId":   stored.Account.ProviderAccountID,
+	}
+	if !tokens.AccessTokenExpiresAt.IsZero() {
+		response["accessTokenExpiresAt"] = tokens.AccessTokenExpiresAt
+	}
+	if !tokens.RefreshTokenExpiresAt.IsZero() {
+		response["refreshTokenExpiresAt"] = tokens.RefreshTokenExpiresAt
+	}
+	if tokens.IDToken != "" {
+		response["idToken"] = tokens.IDToken
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func providerScopes(scope string) []string {
+	if scope == "" {
+		return []string{}
+	}
+	parts := strings.Split(scope, ",")
+	if len(parts) == 1 {
+		parts = strings.Fields(scope)
+	}
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }

@@ -46,7 +46,8 @@ func TestCoreUserAccountAndPasswordManagement(t *testing.T) {
 	unlink := client.request(t, http.MethodPost, "/unlink-account", map[string]any{
 		"providerId": "credential",
 	}, true)
-	if unlink.Code != http.StatusConflict {
+	if unlink.Code != http.StatusBadRequest ||
+		!bytes.Contains(unlink.Body.Bytes(), []byte(`"code":"FAILED_TO_UNLINK_LAST_ACCOUNT"`)) {
 		t.Fatalf("last account unlink was not blocked: %d %s", unlink.Code, unlink.Body.String())
 	}
 	oldSession := client.session.Value
@@ -199,13 +200,15 @@ func TestVerifiedEmailChangeAndUserDeletion(t *testing.T) {
 	wrong := client.request(t, http.MethodPost, "/delete-user", map[string]any{
 		"password": "wrong password",
 	}, true)
-	if wrong.Code != http.StatusUnauthorized {
+	if wrong.Code != http.StatusBadRequest ||
+		!bytes.Contains(wrong.Body.Bytes(), []byte(`"code":"INVALID_PASSWORD"`)) {
 		t.Fatalf("delete accepted wrong password: %d %s", wrong.Code, wrong.Body.String())
 	}
 	deleted := client.request(t, http.MethodPost, "/delete-user", map[string]any{
 		"password": "correct horse battery staple",
 	}, true)
-	if deleted.Code != http.StatusOK {
+	if deleted.Code != http.StatusOK ||
+		!bytes.Contains(deleted.Body.Bytes(), []byte(`"message":"User deleted"`)) {
 		t.Fatalf("delete-user: %d %s", deleted.Code, deleted.Body.String())
 	}
 	session = client.request(t, http.MethodGet, "/get-session", nil, false)
