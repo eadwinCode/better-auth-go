@@ -48,6 +48,7 @@ jobs:
       - run: go test -run=^$ -fuzz=FuzzPluginPathMatching -fuzztime=10s .
       - run: go test -run=^$ -fuzz=FuzzChallengeHandle -fuzztime=10s ./plugin/passkey
       - run: go test -run=^$ -fuzz=FuzzTwoFactorCookieValue -fuzztime=10s ./plugin/twofactor
+      - run: go test -run=^$ -fuzz=FuzzCanonicalRoles -fuzztime=10s ./plugin/organization
 
   static:
     runs-on: ubuntu-latest

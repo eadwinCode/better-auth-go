@@ -148,8 +148,8 @@ release because provider payloads and policies can change independently.
 
 ## Not yet in the initial release gate
 
-Feature plugins outside the requested initial scope—such as organizations,
-username, magic links, anonymous users, SSO, SCIM, and API keys—use the server
+Feature plugins outside the requested initial scope—such as username, magic
+links, anonymous users, SSO, SCIM, and API keys—use the server
 kernel tracked in
 [the plugin compatibility checklist](./plugin-kernel.md). Their full endpoint
 implementations are tracked in the [feature gap register](./missing-features.md)
@@ -161,8 +161,9 @@ dedicated high-risk plugin PR.
 Two-factor authentication is specified in ADR 0005 and implemented as the
 second dedicated high-risk plugin PR.
 
-Organizations are specified in ADR 0006 with their schema and authorization
-foundation isolated from the protocol plugins.
+Organizations are specified in ADR 0006. Their organization/member/invitation/
+team/role HTTP runtime, server-only member manager, session rotation, hooks,
+audits, validators, and adapter-independent storage are implemented.
 
 Enterprise SSO is specified in ADR 0007. Its provider schema, configuration
 boundary, organization ports, and hardened OIDC discovery are implemented as a

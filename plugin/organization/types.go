@@ -41,3 +41,37 @@ type Team struct {
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
 }
+
+type TeamMember struct {
+	ID        string    `json:"id"`
+	TeamID    string    `json:"teamId"`
+	UserID    string    `json:"userId"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type OrganizationRole struct {
+	ID             string     `json:"id"`
+	OrganizationID string     `json:"organizationId"`
+	Role           string     `json:"role"`
+	Permission     Permission `json:"permission"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+}
+
+// FullOrganization is returned by get-full-organization. User records are
+// intentionally not embedded; applications can join public profile data at
+// their boundary without expanding this plugin's disclosure surface.
+type FullOrganization struct {
+	Organization
+	Members []Member `json:"members"`
+	Teams   []Team   `json:"teams"`
+}
+
+// MutationEvent is passed to the generic organization lifecycle hooks.
+// Data is a detached copy and must not be used as an authorization signal.
+type MutationEvent struct {
+	Action         string         `json:"action"`
+	OrganizationID string         `json:"organizationId,omitempty"`
+	SubjectID      string         `json:"subjectId,omitempty"`
+	Data           map[string]any `json:"data,omitempty"`
+}
