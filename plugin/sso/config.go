@@ -47,8 +47,9 @@ type Config struct {
 }
 
 type runtime struct {
-	config Config
-	schema betterauth.Schema
+	config   Config
+	schema   betterauth.Schema
+	defaults map[string]ProviderRegistration
 }
 
 func New(config Config) (betterauth.Plugin, error) {
@@ -63,7 +64,11 @@ func New(config Config) (betterauth.Plugin, error) {
 	if err != nil {
 		return betterauth.Plugin{}, fmt.Errorf("sso: schema: %w", err)
 	}
-	return (&runtime{config: normalized, schema: schema}).plugin(), nil
+	defaults := make(map[string]ProviderRegistration, len(normalized.DefaultProviders))
+	for _, provider := range normalized.DefaultProviders {
+		defaults[provider.ProviderID] = provider
+	}
+	return (&runtime{config: normalized, schema: schema, defaults: defaults}).plugin(), nil
 }
 
 func normalizeConfig(config Config) (Config, error) {
@@ -181,7 +186,7 @@ func normalizeProvider(provider ProviderRegistration) (ProviderRegistration, err
 	if !validIdentifier(provider.ProviderID, 128) || reservedProviderID(provider.ProviderID) {
 		return provider, errors.New("invalid or reserved provider id")
 	}
-	domain, err := normalizeDomain(provider.Domain)
+	domain, err := normalizeDomains(provider.Domain)
 	if err != nil {
 		return provider, err
 	}

@@ -274,6 +274,9 @@ func (s *Server) newHookContext(
 		IssueSession: func(userID string) (*IssuedSession, error) {
 			return s.issuePluginSession(r, userID)
 		},
+		AuthenticateOAuth: func(profile OAuthProfile, tokens ProviderTokens) (*IssuedSession, bool, error) {
+			return s.authenticatePluginOAuth(r, profile, tokens)
+		},
 	}
 	if session, user, _, err := s.sessionFromRequest(r.Context(), r); err == nil {
 		context.Session, context.User = &session, &user

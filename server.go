@@ -264,6 +264,94 @@ func (s *Server) issuePluginSession(r *http.Request, userID string) (*IssuedSess
 	}, nil
 }
 
+func (s *Server) authenticatePluginOAuth(
+	r *http.Request,
+	profile OAuthProfile,
+	tokens ProviderTokens,
+) (*IssuedSession, bool, error) {
+	if profile.Provider == "" || profile.ProviderAccountID == "" ||
+		len(profile.Provider) > 128 || len(profile.ProviderAccountID) > 512 ||
+		!profile.EmailVerified {
+		return nil, false, publicError(
+			CodeProviderFailure, "The provider did not return a verified identity.",
+			http.StatusBadGateway, nil,
+		)
+	}
+	email, err := normalizeEmail(profile.Email)
+	if err != nil {
+		return nil, false, publicError(
+			CodeProviderFailure, "The provider did not return a verified identity.",
+			http.StatusBadGateway, err,
+		)
+	}
+	profile.Email = email
+	encryptedTokens, err := s.encryptProviderTokens(r.Context(), tokens)
+	if err != nil {
+		return nil, false, publicError(
+			CodeInternal, "External sign in could not be completed.",
+			http.StatusInternalServerError, err,
+		)
+	}
+	userID, err := s.newID()
+	if err != nil {
+		return nil, false, err
+	}
+	session, raw, err := s.newSession(userID, s.cfg.SessionDuration)
+	if err != nil {
+		return nil, false, err
+	}
+	eventID, err := s.newID()
+	if err != nil {
+		return nil, false, err
+	}
+	event := DomainEvent{
+		ID: eventID, SchemaVersion: 1, Name: EventUserCreated, AggregateID: userID,
+		OccurredAt: session.CreatedAt, Payload: map[string]string{
+			"userId": userID, "email": profile.Email, "provider": profile.Provider,
+		},
+	}
+	user, created, isNew, err := s.store.UpsertOAuthUser(
+		r.Context(), profile, encryptedTokens, session, event,
+	)
+	if err != nil {
+		if errors.Is(err, ErrConflict) {
+			return nil, false, publicError(
+				CodeConflict, "The external account could not be linked.",
+				http.StatusConflict, err,
+			)
+		}
+		return nil, false, publicError(
+			CodeInternal, "External sign in could not be completed.",
+			http.StatusInternalServerError, err,
+		)
+	}
+	csrf, err := s.cfg.Tokens.Token(32)
+	if err != nil {
+		return nil, false, err
+	}
+	s.revokePreviousBrowserSession(r.Context(), r, raw)
+	now := s.cfg.Clock.Now().UTC()
+	return &IssuedSession{
+		Session: created,
+		User:    user,
+		csrf:    csrf,
+		cookies: []*http.Cookie{
+			{
+				Name: s.cfg.Cookie.Name, Value: raw, Path: "/",
+				Expires: created.ExpiresAt,
+				MaxAge:  int(created.ExpiresAt.Sub(now).Seconds()),
+				Secure:  true, HttpOnly: true, SameSite: s.cfg.Cookie.SameSite,
+			},
+			{
+				Name: s.cfg.Cookie.CSRFName, Value: csrf, Path: "/",
+				Expires: created.ExpiresAt,
+				MaxAge:  int(created.ExpiresAt.Sub(now).Seconds()),
+				Secure:  true, HttpOnly: false, SameSite: s.cfg.Cookie.SameSite,
+			},
+		},
+	}, isNew, nil
+}
+
 func (s *Server) sessionFromRequest(ctx context.Context, r *http.Request) (Session, User, string, error) {
 	cookie, err := r.Cookie(s.cfg.Cookie.Name)
 	if err != nil || cookie.Value == "" || len(cookie.Value) > 2048 {
