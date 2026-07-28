@@ -12,7 +12,8 @@ and client-contract documentation before its status can become complete.
 
 | Capability | Current state | Planned work |
 | --- | --- | --- |
-| endpoint body/query validation and metadata | handlers receive bounded decoded JSON and query values, but endpoints do not declare validators or OpenAPI metadata | add adapter-independent validator and metadata contracts |
+| endpoint body/query validation | `EndpointValidator`, `EndpointValidatorFunc`, and strict `ObjectValidator` run before middleware/endpoint code | implemented |
+| endpoint metadata | validators are implemented, but endpoints do not yet declare OpenAPI metadata | add operation IDs, tags, response schemas, and documentation generation |
 | plugin initialization context extension | initialization can add schema and exact origins | add typed, immutable plugin context values without exposing secrets or mutable global state |
 | wildcard trusted origins | rejected fail-closed | add a compiled, IDNA-aware matcher with public-suffix and scheme tests |
 | request-derived trusted origins | not implemented | add a bounded resolver port whose results pass the same validation and cannot weaken static policy |
@@ -90,13 +91,14 @@ authorization, and token features.
 
 ## Proposed delivery order
 
-1. endpoint validators, error registries, and instrumentation;
-2. magic link, email OTP, username, anonymous, and bearer;
-3. API key, JWT, one-time-token, and multi-session;
-4. two-factor authentication and passkeys;
-5. organizations and expanded admin;
-6. SSO, SCIM, OAuth/OIDC provider, MCP, and device authorization;
-7. utility and external-integration packages.
+1. passkeys/WebAuthn and two-factor authentication;
+2. organizations, expanded admin, and authorization policies;
+3. enterprise SSO and SCIM;
+4. endpoint metadata/error registries and instrumentation;
+5. magic link, email OTP, username, anonymous, and bearer;
+6. API key, JWT, one-time-token, and multi-session;
+7. OAuth/OIDC provider, MCP, device authorization, utilities, and external
+   integrations.
 
 Order may change when a consuming application needs a feature sooner, but no
 feature skips its security contract or adapter-independent tests.

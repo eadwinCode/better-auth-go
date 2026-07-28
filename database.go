@@ -149,6 +149,13 @@ type DatabaseAdapter interface {
 	Transaction(context.Context, func(DatabaseAdapter) error) error
 }
 
+// SchemaConfigurableAdapter receives the fully merged logical schema before
+// the server applies logical-to-physical query mapping. Adapters with a fixed
+// schema do not need to implement it.
+type SchemaConfigurableAdapter interface {
+	WithSchema(Schema) (DatabaseAdapter, error)
+}
+
 // ValidateWhere applies contract defaults and rejects malformed predicates.
 func ValidateWhere(where []Where, allowEmpty bool) ([]Where, error) {
 	if len(where) == 0 && !allowEmpty {

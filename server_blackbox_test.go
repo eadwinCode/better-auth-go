@@ -63,6 +63,13 @@ type testClient struct {
 }
 
 func newBlackBoxServer(t *testing.T) (*testClient, *captureMailer) {
+	return newBlackBoxServerConfig(t, nil)
+}
+
+func newBlackBoxServerConfig(
+	t *testing.T,
+	configure func(*betterauth.Config),
+) (*testClient, *captureMailer) {
 	t.Helper()
 	mailer := &captureMailer{}
 	params := betterauth.Argon2Params{
@@ -73,12 +80,16 @@ func newBlackBoxServer(t *testing.T) (*testClient, *captureMailer) {
 		t.Fatal(err)
 	}
 	database := memory.New()
-	server, err := betterauth.New(betterauth.Config{
+	config := betterauth.Config{
 		PublicURL: "https://auth.example.com", TrustedOrigins: []string{"https://app.example.com"},
 		Database: database, Mailer: mailer, ImpersonationAuthorizer: allowImpersonation{},
 		Clock:  fixedClock{now: time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)},
 		Tokens: &sequenceTokens{}, Passwords: passwords,
-	})
+	}
+	if configure != nil {
+		configure(&config)
+	}
+	server, err := betterauth.New(config)
 	if err != nil {
 		t.Fatal(err)
 	}

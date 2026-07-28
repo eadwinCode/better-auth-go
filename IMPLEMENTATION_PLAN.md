@@ -170,3 +170,25 @@ Exit criteria:
   construction;
 - request-specific state is never retained on the server or plugin registry;
 - built-in plugin implementations have an explicit follow-up backlog.
+
+## Phase 10: Core management, validators, and SQL adapters
+
+1. Complete Better Auth-shaped user, account, provider-token, and session
+   management routes with ownership, freshness, and CSRF checks.
+2. Add dependency-free plugin body/query validators before endpoint code.
+3. Implement a schema-aware `database/sql` adapter with explicit additive
+   migrations and PostgreSQL/SQLite dialect packages.
+4. Run SQLite through the public adapter conformance suite and cover management
+   routes with black-box security tests.
+5. Keep passkeys, 2FA, organizations, SSO, and SCIM in subsequent threat-model
+   PRs.
+
+Exit criteria:
+
+- account/session listings never expose password, provider refresh tokens, raw
+  session tokens, or token hashes;
+- cross-user account/session mutations have no effect;
+- password changes rotate the current session atomically;
+- validator failures occur before middleware and endpoint code;
+- SQLite passes CRUD, atomic consume/increment, concurrency, and rollback tests;
+- PostgreSQL and SQLite share parameterized query and migration behavior.

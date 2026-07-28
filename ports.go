@@ -80,6 +80,12 @@ type OAuthProvider interface {
 	Exchange(context.Context, string, string, string, string) (OAuthResult, error)
 }
 
+// OAuthTokenRefresher is implemented by providers that can exchange a refresh
+// token for a new token set.
+type OAuthTokenRefresher interface {
+	Refresh(context.Context, string) (ProviderTokens, error)
+}
+
 // authStore is the typed internal persistence contract built over the public
 // generic DatabaseAdapter.
 type authStore interface {
@@ -88,12 +94,26 @@ type authStore interface {
 	FindUserByID(context.Context, string) (User, error)
 	PasswordCredential(context.Context, string) (PasswordCredential, error)
 	ReplacePasswordHash(context.Context, string, string, string, time.Time) error
+	SetPasswordHash(context.Context, string, string, time.Time) error
+	ChangePasswordAndRotate(context.Context, ChangePasswordParams) (Session, error)
+	UpdateUser(context.Context, string, Record, time.Time) (User, error)
+	ListAccounts(context.Context, string) ([]OAuthAccount, error)
+	UnlinkAccount(context.Context, string, string, string, bool) error
+	DeleteUser(context.Context, string) error
+	ConsumeEmailChange(context.Context, string, time.Time) (User, string, error)
+	LinkOAuthAccount(context.Context, string, string, OAuthProfile, ProviderTokens, time.Time) error
+	OAuthAccountTokens(context.Context, string, string, string) (StoredOAuthAccount, error)
+	UpdateOAuthAccountTokens(context.Context, string, string, ProviderTokens, time.Time) error
 
 	CreateSession(context.Context, Session) (Session, error)
 	SessionByTokenHash(context.Context, string) (Session, User, error)
 	RotateSession(context.Context, string, Session) (Session, error)
 	RevokeSession(context.Context, string, time.Time) error
 	RevokeUserSessions(context.Context, string, time.Time) error
+	ListSessions(context.Context, string, time.Time) ([]Session, error)
+	RevokeSessionByID(context.Context, string, string, time.Time) (bool, error)
+	RevokeOtherSessions(context.Context, string, string, time.Time) error
+	UpdateSession(context.Context, string, string, Record, time.Time) (Session, error)
 
 	PutOneTimeToken(context.Context, OneTimeToken) error
 	ConsumePasswordReset(context.Context, string, string, Session) (User, Session, error)
@@ -111,6 +131,20 @@ type CreateEmailUserParams struct {
 	PasswordHash string
 	Session      Session
 	Event        DomainEvent
+}
+
+type ChangePasswordParams struct {
+	UserID              string
+	PreviousHash        string
+	ReplacementHash     string
+	CurrentTokenHash    string
+	ReplacementSession  Session
+	RevokeOtherSessions bool
+}
+
+type StoredOAuthAccount struct {
+	Account OAuthAccount
+	Tokens  ProviderTokens
 }
 
 // NopRateLimiter permits every request.

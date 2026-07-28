@@ -57,19 +57,3 @@ func (s *Server) handleRefreshSession(w http.ResponseWriter, r *http.Request) er
 	writeJSON(w, http.StatusOK, map[string]any{"session": replacement, "user": user})
 	return nil
 }
-
-func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) error {
-	if err := s.requireCSRF(r); err != nil {
-		return err
-	}
-	_, _, raw, err := s.sessionFromRequest(r.Context(), r)
-	if err != nil {
-		return err
-	}
-	if err := s.store.RevokeSession(r.Context(), HashToken(raw), s.cfg.Clock.Now().UTC()); err != nil {
-		return publicError(CodeInternal, "Session could not be revoked.", http.StatusInternalServerError, err)
-	}
-	s.clearSessionCookie(w)
-	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
-	return nil
-}

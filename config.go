@@ -17,6 +17,21 @@ type CookieConfig struct {
 	SameSite http.SameSite
 }
 
+type AccountManagementConfig struct {
+	// AllowUnlinkingAll permits removal of the final sign-in method. The secure
+	// default is false so a user cannot accidentally make their account
+	// unreachable.
+	AllowUnlinkingAll bool
+	// AllowLinkingDifferentEmails permits an authenticated user to link a
+	// provider identity whose verified email differs from the current user.
+	AllowLinkingDifferentEmails bool
+}
+
+type UserManagementConfig struct {
+	ChangeEmailEnabled bool
+	DeleteUserEnabled  bool
+}
+
 type Config struct {
 	BasePath                string
 	PublicURL               string
@@ -33,7 +48,10 @@ type Config struct {
 	SocialProviders         map[string]OAuthProvider
 	AllowedRedirectURLs     []string
 	Cookie                  CookieConfig
+	Account                 AccountManagementConfig
+	User                    UserManagementConfig
 	SessionDuration         time.Duration
+	SessionFreshAge         time.Duration
 	ImpersonationDuration   time.Duration
 	PasswordResetTTL        time.Duration
 	EmailVerificationTTL    time.Duration
@@ -86,6 +104,12 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 	}
 	if err := validateSchema(cfg.Schema); err != nil {
 		return cfg, nil, nil, err
+	}
+	if configurable, ok := cfg.Database.(SchemaConfigurableAdapter); ok {
+		cfg.Database, err = configurable.WithSchema(cfg.Schema)
+		if err != nil {
+			return cfg, nil, nil, fmt.Errorf("betterauth: configure database schema: %w", err)
+		}
 	}
 	cfg.Database, err = WrapDatabaseAdapter(cfg.Database, cfg.Schema)
 	if err != nil {
@@ -155,6 +179,12 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 	}
 	if cfg.SessionDuration < 5*time.Minute || cfg.SessionDuration > 365*24*time.Hour {
 		return cfg, nil, nil, fmt.Errorf("betterauth: session duration is out of bounds")
+	}
+	if cfg.SessionFreshAge == 0 {
+		cfg.SessionFreshAge = 24 * time.Hour
+	}
+	if cfg.SessionFreshAge < time.Minute || cfg.SessionFreshAge > 30*24*time.Hour {
+		return cfg, nil, nil, fmt.Errorf("betterauth: session fresh age is out of bounds")
 	}
 	if cfg.ImpersonationDuration == 0 {
 		cfg.ImpersonationDuration = time.Hour

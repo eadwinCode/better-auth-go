@@ -64,6 +64,18 @@ func (provider *fakeOAuthProvider) Exchange(
 	}, nil
 }
 
+func (provider *fakeOAuthProvider) Refresh(
+	_ context.Context,
+	refreshToken string,
+) (betterauth.ProviderTokens, error) {
+	if refreshToken != "plain-refresh-token" {
+		return betterauth.ProviderTokens{}, betterauth.ErrReplay
+	}
+	return betterauth.ProviderTokens{
+		AccessToken: "refreshed-access-token", RefreshToken: refreshToken, Scope: "openid profile",
+	}, nil
+}
+
 func TestOAuthStatePKCERedirectAndEncryptedTokens(t *testing.T) {
 	t.Parallel()
 	database := memory.New()
@@ -137,5 +149,95 @@ func TestOAuthStatePKCERedirectAndEncryptedTokens(t *testing.T) {
 	server.Handler().ServeHTTP(replay, callback.Clone(context.Background()))
 	if replay.Code != http.StatusBadRequest {
 		t.Fatalf("state replay was not rejected: %d %s", replay.Code, replay.Body.String())
+	}
+
+	client := &testClient{handler: server.Handler(), database: database}
+	for _, cookie := range callbackRecorder.Result().Cookies() {
+		switch cookie.Name {
+		case "__Host-better_auth_session":
+			client.session = cookie
+		case "__Host-better_auth_csrf":
+			client.csrf = cookie
+		}
+	}
+	access := client.request(t, http.MethodPost, "/get-access-token", map[string]any{
+		"providerId": "test",
+	}, true)
+	if access.Code != http.StatusOK ||
+		!bytes.Contains(access.Body.Bytes(), []byte(`"accessToken":"plain-access-token"`)) ||
+		bytes.Contains(access.Body.Bytes(), []byte("plain-refresh-token")) {
+		t.Fatalf("get-access-token: %d %s", access.Code, access.Body.String())
+	}
+	refreshed := client.request(t, http.MethodPost, "/refresh-token", map[string]any{
+		"providerId": "test",
+	}, true)
+	if refreshed.Code != http.StatusOK ||
+		!bytes.Contains(refreshed.Body.Bytes(), []byte(`"accessToken":"refreshed-access-token"`)) {
+		t.Fatalf("refresh-token: %d %s", refreshed.Code, refreshed.Body.String())
+	}
+}
+
+func TestOAuthAccountLinkingRequiresMatchingAuthenticatedUser(t *testing.T) {
+	t.Parallel()
+	database := memory.New()
+	provider := &fakeOAuthProvider{}
+	cipher, err := betterauth.NewAESGCMTokenCipher([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	passwords, err := betterauth.NewArgon2idVerifier(betterauth.Argon2Params{
+		Memory: 19 * 1024, Iterations: 2, Parallelism: 1, SaltLength: 16, KeyLength: 32,
+	}, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := betterauth.New(betterauth.Config{
+		PublicURL: "https://auth.example.com", TrustedOrigins: []string{"https://app.example.com"},
+		AllowedRedirectURLs: []string{"https://app.example.com/dashboard"},
+		Database:            database, Mailer: discardMailer{}, ImpersonationAuthorizer: denyImpersonation{},
+		Tokens: &sequenceTokens{}, Passwords: passwords, ProviderTokenCipher: cipher,
+		SocialProviders: map[string]betterauth.OAuthProvider{"test": provider},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &testClient{handler: server.Handler(), database: database}
+	signup := client.request(t, http.MethodPost, "/sign-up/email", map[string]any{
+		"email": "oauth@example.com", "password": "correct horse battery staple", "name": "OAuth User",
+	}, false)
+	if signup.Code != http.StatusOK {
+		t.Fatal(signup.Body.String())
+	}
+	start := client.request(t, http.MethodPost, "/link-social", map[string]any{
+		"provider": "test", "callbackURL": "https://app.example.com/dashboard", "disableRedirect": true,
+	}, true)
+	if start.Code != http.StatusOK {
+		t.Fatalf("link-social: %d %s", start.Code, start.Body.String())
+	}
+	var authorization struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(start.Body.Bytes(), &authorization); err != nil {
+		t.Fatal(err)
+	}
+	destination, err := url.Parse(authorization.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callback := client.request(
+		t, http.MethodGet,
+		"/callback/test?state="+url.QueryEscape(destination.Query().Get("state"))+"&code=valid-code",
+		nil, false,
+	)
+	if callback.Code != http.StatusFound {
+		t.Fatalf("link callback: %d %s", callback.Code, callback.Body.String())
+	}
+	accounts := client.request(t, http.MethodGet, "/list-accounts", nil, false)
+	var linked []betterauth.OAuthAccount
+	if err := json.Unmarshal(accounts.Body.Bytes(), &linked); err != nil {
+		t.Fatal(err)
+	}
+	if len(linked) != 2 {
+		t.Fatalf("expected credential and linked account: %s", accounts.Body.String())
 	}
 }
