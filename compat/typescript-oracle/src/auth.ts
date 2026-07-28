@@ -4,7 +4,7 @@ import { admin, genericOAuth } from "better-auth/plugins";
 import { referenceConfig } from "./config.ts";
 
 export type CapturedMail = {
-  kind: "password-reset" | "email-verification";
+  kind: "password-reset" | "email-verification" | "account-deletion";
   email: string;
   token: string;
   url: string;
@@ -16,11 +16,11 @@ export const database = new Database(referenceConfig.databasePath, {
   create: true,
 });
 
-export const auth = betterAuth({
+const createAuth = (basePath: string, verifyAccountDeletion: boolean) => betterAuth({
   appName: "better-auth-go compatibility oracle",
   secret: referenceConfig.secret,
   baseURL: referenceConfig.baseURL,
-  basePath: referenceConfig.basePath,
+  basePath,
   trustedOrigins: referenceConfig.trustedOrigins,
   database,
   emailAndPassword: {
@@ -52,6 +52,18 @@ export const auth = betterAuth({
     },
     deleteUser: {
       enabled: true,
+      ...(verifyAccountDeletion
+        ? {
+            async sendDeleteAccountVerification({ user, url, token }) {
+              capturedMails.push({
+                kind: "account-deletion" as const,
+                email: user.email,
+                token,
+                url,
+              });
+            },
+          }
+        : {}),
     },
   },
   account: {
@@ -113,3 +125,9 @@ export const auth = betterAuth({
     }),
   ],
 });
+
+export const auth = createAuth(referenceConfig.basePath, false);
+export const deletionVerificationAuth = createAuth(
+  referenceConfig.basePath + "-delete",
+  true,
+);

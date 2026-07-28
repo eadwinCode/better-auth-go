@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	betterauth "github.com/eadwinCode/better-auth-go"
 	"github.com/eadwinCode/better-auth-go/adapter/memory"
@@ -40,6 +41,15 @@ func TestConfigFailsClosed(t *testing.T) {
 		{"insecure origin", func(config *betterauth.Config) { config.TrustedOrigins = []string{"http://app.example.com"} }},
 		{"same site none", func(config *betterauth.Config) { config.Cookie.SameSite = http.SameSiteNoneMode }},
 		{"non-host cookie", func(config *betterauth.Config) { config.Cookie.Name = "session" }},
+		{"delete verification without deletion", func(config *betterauth.Config) {
+			config.User.SendDeleteAccountVerification = true
+		}},
+		{"delete verification TTL too short", func(config *betterauth.Config) {
+			config.DeleteUserTTL = time.Minute - time.Nanosecond
+		}},
+		{"delete verification TTL too long", func(config *betterauth.Config) {
+			config.DeleteUserTTL = 7*24*time.Hour + time.Nanosecond
+		}},
 	}
 	for _, test := range tests {
 		test := test

@@ -132,6 +132,7 @@ const (
 	PurposePasswordReset    OneTimePurpose = "password_reset"
 	PurposeEmailVerify      OneTimePurpose = "email_verify"
 	PurposeEmailChange      OneTimePurpose = "email_change"
+	PurposeUserDeletion     OneTimePurpose = "user_deletion"
 	PurposeOAuthState       OneTimePurpose = "oauth_state"
 	ProviderGoogle                         = "google"
 	EventUserCreated                       = "user.created"

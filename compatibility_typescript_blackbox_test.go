@@ -26,6 +26,7 @@ type oracleResponse struct {
 type typescriptOracle struct {
 	baseURL       *url.URL
 	origin        string
+	basePath      string
 	controlSecret string
 	client        *http.Client
 }
@@ -63,6 +64,7 @@ func newTypeScriptOracleClient(
 	return &typescriptOracle{
 		baseURL:       baseURL,
 		origin:        baseURL.Scheme + "://" + baseURL.Host,
+		basePath:      "/api/auth",
 		controlSecret: controlSecret,
 		client: &http.Client{
 			Jar:     jar,
@@ -76,7 +78,16 @@ func newTypeScriptOracleClient(
 
 func (oracle *typescriptOracle) clone(t *testing.T) *typescriptOracle {
 	t.Helper()
-	return newTypeScriptOracleClient(t, oracle.baseURL, oracle.controlSecret)
+	clone := newTypeScriptOracleClient(t, oracle.baseURL, oracle.controlSecret)
+	clone.basePath = oracle.basePath
+	return clone
+}
+
+func (oracle *typescriptOracle) deletionVerificationClone(t *testing.T) *typescriptOracle {
+	t.Helper()
+	clone := oracle.clone(t)
+	clone.basePath += "-delete"
+	return clone
 }
 
 type capturedOracleMail struct {
@@ -189,7 +200,7 @@ func (oracle *typescriptOracle) request(
 		}
 		payload = bytes.NewReader(encoded)
 	}
-	request, err := http.NewRequest(method, oracle.baseURL.String()+"/api/auth"+path, payload)
+	request, err := http.NewRequest(method, oracle.baseURL.String()+oracle.basePath+path, payload)
 	if err != nil {
 		t.Fatal(err)
 	}

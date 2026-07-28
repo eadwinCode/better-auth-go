@@ -366,7 +366,12 @@ the application can perform an explicit backfill migration.
 Email change and user deletion are disabled until
 `Config.User.ChangeEmailEnabled` and `Config.User.DeleteUserEnabled` are set.
 The former verifies the new inbox with a single-use token; credential-user
-deletion requires password reauthentication.
+deletion requires password reauthentication. Setting
+`Config.User.SendDeleteAccountVerification` makes deletion send an
+`account-deletion` mail with a single-use callback token instead. Applications
+may use `Config.User.BeforeDelete` and `Config.User.AfterDelete` for lifecycle
+work; the before hook can stop deletion, while the after hook runs only after
+the account and authentication records have been durably removed.
 
 ## Password migration
 

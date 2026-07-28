@@ -221,7 +221,8 @@ func (s *Server) resolvePluginRoute(
 	if isCoreRoute(path) {
 		expected := http.MethodPost
 		if path == "/get-session" || path == "/list-sessions" ||
-			path == "/list-accounts" || path == "/verify-email" {
+			path == "/list-accounts" || path == "/verify-email" ||
+			path == "/delete-user/callback" {
 			expected = http.MethodGet
 		}
 		return compiledEndpoint{}, nil, true, []string{expected}, true, false

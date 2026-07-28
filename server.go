@@ -93,6 +93,8 @@ func (s *Server) serveCoreHTTP(w http.ResponseWriter, r *http.Request) {
 		handler = s.postOnly(s.handleChangeEmail)
 	case "/delete-user":
 		handler = s.postOnly(s.handleDeleteUser)
+	case "/delete-user/callback":
+		handler = s.getOnly(s.handleDeleteUserCallback)
 	case "/change-password":
 		handler = s.postOnly(s.handleChangePassword)
 	case "/list-accounts":

@@ -261,6 +261,174 @@ func TestBetterAuthV1625EmailChangeAndDeletionCompatibility(t *testing.T) {
 	}
 }
 
+func TestBetterAuthV1625VerifiedDeletionCompatibility(t *testing.T) {
+	oracle := newTypeScriptOracle(t).deletionVerificationClone(t)
+	oracle.clearMail(t)
+	const (
+		password   = "Correct-Horse-123!"
+		goCallback = "https://app.example.com/account-deleted"
+	)
+	tsCallback := oracle.origin + "/account-deleted"
+	goClient, goMailer := newBlackBoxServerConfig(t, func(config *betterauth.Config) {
+		config.AllowedRedirectURLs = []string{goCallback}
+		config.User.DeleteUserEnabled = true
+		config.User.SendDeleteAccountVerification = true
+	})
+	email := uniqueCompatibilityEmail("verified-deletion")
+	signupCompatibilityUser(t, goClient, oracle, email, "Verified Deletion", password)
+
+	for implementation, result := range map[string]oracleResponse{
+		"Go": goResponse(goClient.request(t, http.MethodPost, "/delete-user", map[string]any{
+			"callbackURL": goCallback,
+		}, true)),
+		"TypeScript": oracle.request(t, http.MethodPost, "/delete-user", map[string]any{
+			"callbackURL": tsCallback,
+		}, ""),
+	} {
+		if result.status != http.StatusOK {
+			t.Fatalf("%s deletion-verification request status=%d body=%s",
+				implementation, result.status, result.body)
+		}
+		body := decodeObject(t, result.body)
+		if body["success"] != true || body["message"] != "Verification email sent" {
+			t.Fatalf("%s deletion-verification response mismatch: %#v", implementation, body)
+		}
+	}
+	goMail := goMailer.last()
+	tsMail := oracle.latestMail(t, "account-deletion", email)
+	for implementation, action := range map[string]string{
+		"Go": goMail.ActionURL, "TypeScript": tsMail.URL,
+	} {
+		parsed, err := url.Parse(action)
+		if err != nil {
+			t.Fatalf("%s deletion action URL: %v", implementation, err)
+		}
+		if !strings.HasSuffix(parsed.Path, "/delete-user/callback") ||
+			parsed.Query().Get("token") == "" ||
+			parsed.Query().Get("callbackURL") == "" {
+			t.Fatalf("%s deletion action mismatch: %s", implementation, parsed)
+		}
+	}
+
+	assertCode(
+		t,
+		http.StatusNotFound,
+		"INVALID_TOKEN",
+		"Invalid token",
+		map[string]oracleResponse{
+			"Go": goResponse(goClient.request(
+				t, http.MethodGet, "/delete-user/callback?token=invalid-token-long-enough", nil, false,
+			)),
+			"TypeScript": oracle.request(
+				t, http.MethodGet, "/delete-user/callback?token=invalid-token-long-enough", nil, "",
+			),
+		},
+	)
+
+	goAction, err := url.Parse(goMail.ActionURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tsAction, err := url.Parse(tsMail.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goResult := goResponse(goClient.request(
+		t,
+		http.MethodGet,
+		strings.TrimPrefix(goAction.Path, "/api/auth")+"?"+goAction.RawQuery,
+		nil,
+		false,
+	))
+	tsResult := oracle.request(
+		t,
+		http.MethodGet,
+		strings.TrimPrefix(tsAction.Path, oracle.basePath)+"?"+tsAction.RawQuery,
+		nil,
+		"",
+	)
+	for implementation, result := range map[string]struct {
+		response oracleResponse
+		callback string
+	}{
+		"Go":         {goResult, goCallback},
+		"TypeScript": {tsResult, tsCallback},
+	} {
+		if result.response.status != http.StatusFound ||
+			result.response.header.Get("Location") != result.callback {
+			t.Fatalf("%s verified deletion callback mismatch: status=%d location=%q body=%s",
+				implementation,
+				result.response.status,
+				result.response.header.Get("Location"),
+				result.response.body,
+			)
+		}
+	}
+	for implementation, result := range map[string]oracleResponse{
+		"Go":         goResponse(goClient.request(t, http.MethodGet, "/get-session", nil, false)),
+		"TypeScript": oracle.request(t, http.MethodGet, "/get-session", nil, ""),
+	} {
+		if strings.TrimSpace(string(result.body)) != "null" {
+			t.Fatalf("%s verified deletion left a session: %s", implementation, result.body)
+		}
+	}
+
+	goTokenClient, goTokenMailer := newBlackBoxServerConfig(t, func(config *betterauth.Config) {
+		config.User.DeleteUserEnabled = true
+		config.User.SendDeleteAccountVerification = true
+	})
+	tsTokenClient := newTypeScriptOracle(t).deletionVerificationClone(t)
+	tokenEmail := uniqueCompatibilityEmail("token-deletion")
+	signupCompatibilityUser(
+		t, goTokenClient, tsTokenClient, tokenEmail, "Token Deletion", password,
+	)
+	for implementation, result := range map[string]oracleResponse{
+		"Go": goResponse(goTokenClient.request(
+			t, http.MethodPost, "/delete-user", map[string]any{}, true,
+		)),
+		"TypeScript": tsTokenClient.request(
+			t, http.MethodPost, "/delete-user", map[string]any{}, "",
+		),
+	} {
+		if result.status != http.StatusOK {
+			t.Fatalf("%s token deletion request status=%d body=%s",
+				implementation, result.status, result.body)
+		}
+	}
+	goTokenMail := goTokenMailer.last()
+	tsTokenMail := tsTokenClient.latestMail(t, "account-deletion", tokenEmail)
+	for implementation, action := range map[string]string{
+		"Go": goTokenMail.ActionURL, "TypeScript": tsTokenMail.URL,
+	} {
+		parsed, err := url.Parse(action)
+		if err != nil {
+			t.Fatalf("%s default deletion action URL: %v", implementation, err)
+		}
+		if parsed.Query().Get("callbackURL") != "/" {
+			t.Fatalf("%s default deletion callback mismatch: %s", implementation, parsed)
+		}
+	}
+	goToken := goTokenMail.Token
+	tsToken := tsTokenMail.Token
+	for implementation, result := range map[string]oracleResponse{
+		"Go": goResponse(goTokenClient.request(t, http.MethodPost, "/delete-user", map[string]any{
+			"token": goToken,
+		}, true)),
+		"TypeScript": tsTokenClient.request(t, http.MethodPost, "/delete-user", map[string]any{
+			"token": tsToken,
+		}, ""),
+	} {
+		if result.status != http.StatusOK {
+			t.Fatalf("%s token-authorized deletion status=%d body=%s",
+				implementation, result.status, result.body)
+		}
+		body := decodeObject(t, result.body)
+		if body["success"] != true || body["message"] != "User deleted" {
+			t.Fatalf("%s token-authorized deletion response mismatch: %#v", implementation, body)
+		}
+	}
+}
+
 func linkCompatibilityProvider(
 	t *testing.T,
 	goClient *testClient,
