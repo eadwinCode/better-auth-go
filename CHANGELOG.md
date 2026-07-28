@@ -38,6 +38,10 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 - SCIM 2.0 security and construction foundation with a hash-only provider
   schema, bounded bearer/filter parsing, organization authorization ports,
   standard metadata endpoints, and unsafe-method plugin routing.
+- Complete SCIM 2.0 connection and User provisioning runtime with one-time
+  hash-only bearer issuance and rotation, ownership and tenant isolation,
+  bounded list/filter/PUT/PATCH operations, session-revoking deactivation,
+  tenant-safe deprovisioning, durable audits, and black-box security fixtures.
 - Better Auth v1.6 email/password options for disabled signup, automatic
   sign-in, required email verification, and password-reset session revocation.
 - Enumeration-safe synthetic duplicate-signup responses when verification is

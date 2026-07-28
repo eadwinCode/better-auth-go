@@ -11,6 +11,7 @@ import (
 	"time"
 
 	betterauth "github.com/eadwinCode/better-auth-go"
+	"github.com/eadwinCode/better-auth-go/social"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -71,7 +72,10 @@ func normalizeConfig(config Config) (Config, error) {
 	if config.MaxPageSize == 0 {
 		config.MaxPageSize = 200
 	}
-	if config.ProviderLimit < 1 || config.ProviderLimit > 10_000 ||
+	if config.TokenTTL < 0 || config.TokenTTL > 365*24*time.Hour {
+		return config, errors.New("scim: token TTL is out of bounds")
+	}
+	if config.ProviderLimit < 1 || config.ProviderLimit > 1000 ||
 		config.MaxBearerBytes < 128 || config.MaxBearerBytes > 16<<10 ||
 		config.MaxFilterBytes < 128 || config.MaxFilterBytes > 16<<10 ||
 		config.MaxFilterClauses < 1 || config.MaxFilterClauses > 100 ||
@@ -97,6 +101,7 @@ func normalizeConfig(config Config) (Config, error) {
 	reserved := []string{
 		"credential", "email-otp", "magic-link", "phone-number", "anonymous", "siwe",
 	}
+	reserved = append(reserved, social.SupportedProviders...)
 	for _, providerID := range config.ReservedProviderIDs {
 		providerID = strings.ToLower(strings.TrimSpace(providerID))
 		if !validIdentifier(providerID, 128) {
@@ -151,6 +156,12 @@ func normalizeConfig(config Config) (Config, error) {
 		config.LinkExistingUsers.Allow == nil {
 		return config, errors.New(
 			"scim: existing-user linking requires at least one explicit constraint",
+		)
+	}
+	if config.LinkExistingUsers.RequireExistingOrgMembership &&
+		config.OrganizationAuthorizer == nil {
+		return config, errors.New(
+			"scim: organization authorizer is required for membership-constrained linking",
 		)
 	}
 	config.Schema = cloneModelSchema(config.Schema)

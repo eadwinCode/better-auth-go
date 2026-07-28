@@ -225,11 +225,12 @@ signed assertion correlation and replay protection, domain verification,
 provisioning hooks, and bounded SAML logout are implemented. Deterministic OIDC
 and locally signed SAML black-box protocol fixtures pass.
 
-SCIM is specified in ADR 0008. Its provider schema, hash-only bearer boundary,
-bounded filter parser, standard metadata resources, and required plugin HTTP
-method/origin primitives are implemented as an independent foundation. User
-provisioning and connection-management routes remain release-gated until the
-black-box RFC 7644 matrix passes.
+SCIM is specified in ADR 0008. Its connection-management and complete User
+provisioning runtime are implemented with hash-only bearer credentials,
+bounded filters and PATCH operations, standard metadata, ownership isolation,
+session-revoking deactivation, and tenant-safe deprovisioning. The committed
+black-box RFC 7644 security matrix passes; pinned TypeScript and live directory
+interoperability remain release certification evidence.
 
 ## Passkey plugin endpoint map
 

@@ -145,6 +145,8 @@ jobs:
       - run: go test -run=^$ -fuzz=FuzzCanonicalRoles -fuzztime=10s ./plugin/organization
       - run: go test -run=^$ -fuzz=FuzzParseBearerToken -fuzztime=10s ./plugin/scim
       - run: go test -run=^$ -fuzz=FuzzParseFilter -fuzztime=10s ./plugin/scim
+      - run: go test -run=^$ -fuzz=FuzzPatchOperations -fuzztime=10s ./plugin/scim
+      - run: go test -run=^$ -fuzz=FuzzSCIMUserJSON -fuzztime=10s ./plugin/scim
 
   static:
     runs-on: ubuntu-latest

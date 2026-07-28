@@ -1,56 +1,114 @@
 # SCIM 2.0 provisioning
 
-The `plugin/scim` package is the isolated inbound directory-provisioning
-integration aligned with `@better-auth/scim` v1.6.25, RFC 7643, and RFC 7644.
+The `plugin/scim` package is an inbound directory-provisioning service aligned
+with `@better-auth/scim` v1.6.25, RFC 7643, and RFC 7644. It is independent of
+the SSO plugin and mounts through the same standard `net/http` handler as the
+core authentication server.
 
-## Current foundation
+## Implemented contract
 
-The current branch implements:
+Management routes, relative to the configured authentication base path:
 
-- adapter-independent `scimProvider` schema with unique provider IDs and
-  hash-only bearer credentials;
-- personal ownership and organization authorization/provisioning ports;
-- bounded provider, role, linking, bearer, filter, patch, and pagination
-  configuration;
-- Better Auth-compatible bearer token wire parsing with constant-time stored
-  hash comparison;
-- collision-safe default connection fixtures that accept only pre-hashed
-  tokens;
-- bounded SCIM equality-filter parsing that maps only allowlisted paths to
-  logical adapter fields;
-- standard ServiceProviderConfig, Schema, and ResourceType endpoints using
-  `application/scim+json`;
-- plugin-kernel PUT, PATCH, and DELETE support with trusted-origin enforcement
-  for every unsafe method;
-- explicit standards-path and bearer-origin exceptions without bypassing
-  middleware, validation, hooks, or rate limiting.
+- `POST /scim/generate-token`
+- `GET /scim/list-provider-connections`
+- `GET /scim/get-provider-connection`
+- `POST /scim/delete-provider-connection`
 
-Connection management and User provisioning endpoints remain release-gated on
-this branch. Applications must not treat the metadata/schema foundation as a
-complete SCIM service.
+SCIM routes:
+
+- `POST|GET /scim/v2/Users`
+- `GET|PUT|PATCH|DELETE /scim/v2/Users/:userId`
+- `GET /scim/v2/ServiceProviderConfig`
+- `GET /scim/v2/Schemas`
+- `GET /scim/v2/Schemas/:schemaId`
+- `GET /scim/v2/ResourceTypes`
+- `GET /scim/v2/ResourceTypes/:resourceTypeId`
+
+The runtime includes bounded pagination and equality filters, User resource
+mapping, PUT replacement, bounded `add`/`replace`/`remove` PATCH operations,
+deactivation with session revocation, personal and organization-safe
+deprovisioning, lifecycle hooks, and durable audit events.
 
 ## Construction
 
 ```go
 scimPlugin, err := scim.New(scim.Config{
 	ProviderOwnership: true,
+	CanGenerateToken: func(
+		ctx *betterauth.HookContext,
+		providerID string,
+		organizationID string,
+	) (bool, error) {
+		return applicationPolicyAllows(ctx, providerID, organizationID), nil
+	},
 })
 if err != nil {
 	log.Fatal(err)
 }
 ```
 
-Organization-scoped default connections require an `OrganizationAuthorizer`.
-Raw default tokens are rejected; deterministic fixtures must supply
-`betterauth.HashToken(secret)`.
+Add the resulting plugin to `betterauth.Config.Plugins`. Token generation is a
+fresh-session mutation and requires trusted origin plus the core double-submit
+CSRF token.
 
-## Protocol boundary
+Organization-scoped connections additionally require an
+`OrganizationAuthorizer`. The port owns organization role checks and bounded
+membership provisioning/removal without coupling SCIM to a particular
+organization plugin implementation. Membership mutation callbacks receive a
+request copy whose `Database` is the active provisioning transaction and must
+use that adapter for their writes. Implement `OrganizationRoleAuthorizer` when
+the port should receive the normalized `RequiredRoles` list directly; the base
+port remains available when the application already encapsulates that policy.
 
-The eventual `/scim/v2/Users` routes authenticate with a SCIM bearer token, not
-a browser session. Those endpoints explicitly skip browser origin checks while
-still running token middleware, validators, hooks, rate limits, and response
-hooks. Session-authenticated management routes continue to require trusted
-origin, CSRF, and a fresh session.
+## Bearer and ownership boundary
 
-See [ADR 0008](./adr/0008-scim-provisioning.md) for the full token, ownership,
-linking, deactivation, deprovisioning, and cross-tenant security contract.
+Raw bearer tokens are returned once. Persistence stores only a fixed SHA-256
+hash of the random secret. Rotation replaces the hash atomically and invalidates
+the previous token; connection deletion invalidates the token immediately.
+
+`/scim/v2/Users` accepts `application/scim+json` and `application/json`.
+Protocol routes use bearer authentication and are the only unsafe SCIM routes
+allowed to skip browser-origin checks. Their middleware, endpoint validators,
+rate limits, hooks, request-size limit, and response hooks still run.
+
+Every managed User must have a core account row for the authenticated SCIM
+provider. A matching global email is never enough to grant management access.
+Existing-user linking is disabled by default and fails closed unless explicit
+domain, membership, or application policy is configured.
+
+Organization deprovisioning removes only that membership and SCIM account link;
+it never deletes the global user. Personal deprovisioning deletes the global
+user only when the SCIM identity is the user's sole account.
+
+## Deterministic fixtures
+
+`DefaultConnections` exists for migration and protocol fixtures. It accepts
+only pre-hashed secrets:
+
+```go
+secret := "fixture-secret-with-sufficient-entropy"
+raw := base64.RawURLEncoding.EncodeToString([]byte(secret + ":directory"))
+plugin, _ := scim.New(scim.Config{
+	DefaultConnections: []scim.DefaultConnection{{
+		ProviderID: "directory",
+		TokenHash:  betterauth.HashToken(secret),
+	}},
+})
+```
+
+Applications should use the management route for production token issuance.
+The token encoder remains package-private; external tests should capture the
+one-time value returned by `POST /scim/generate-token`.
+
+## Verification
+
+Committed tests cover connection issuance/rotation/deletion, owner isolation,
+hash-only storage, bearer failure equivalence, media types, complete User
+lifecycle, filters, pagination, PUT/PATCH, deactivation/session revocation,
+organization-safe deprovisioning, audit durability, and fuzz targets for
+bearer, filter, and patch parsing.
+
+Live enterprise-directory interoperability and a pinned TypeScript differential
+suite remain release-operator certification evidence, not missing runtime
+features. See [ADR 0008](./adr/0008-scim-provisioning.md) for the security
+contract.

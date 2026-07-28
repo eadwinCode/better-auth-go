@@ -33,8 +33,12 @@ func TestNewContributesHashOnlyProviderSchemaAndMetadataEndpoints(t *testing.T) 
 	if !model.Fields["providerId"].Unique || !model.Fields["tokenHash"].Unique {
 		t.Fatal("provider id and token hash must be unique")
 	}
-	if len(plugin.Endpoints) != 5 {
-		t.Fatalf("metadata endpoints = %d", len(plugin.Endpoints))
+	accountIndexes := plugin.Schema[betterauth.ModelAccount].Indexes
+	if len(accountIndexes) != 1 || !accountIndexes[0].Unique {
+		t.Fatal("SCIM account identities require a unique provider/account index")
+	}
+	if len(plugin.Endpoints) != 15 {
+		t.Fatalf("SCIM endpoints = %d", len(plugin.Endpoints))
 	}
 }
 
@@ -42,6 +46,7 @@ func TestNewRejectsRawOrReservedDefaultConnections(t *testing.T) {
 	t.Parallel()
 	for _, connection := range []DefaultConnection{
 		{ProviderID: "credential", TokenHash: betterauth.HashToken("secret")},
+		{ProviderID: "google", TokenHash: betterauth.HashToken("secret")},
 		{ProviderID: "directory", TokenHash: "raw-token"},
 	} {
 		if _, err := New(Config{
@@ -71,6 +76,13 @@ func TestExistingUserLinkingRequiresExplicitConstraint(t *testing.T) {
 		LinkExistingUsers: ExistingUserLinkPolicy{Enabled: true},
 	}); err == nil {
 		t.Fatal("unconstrained existing-user linking was accepted")
+	}
+	if _, err := New(Config{
+		LinkExistingUsers: ExistingUserLinkPolicy{
+			Enabled: true, RequireExistingOrgMembership: true,
+		},
+	}); err == nil {
+		t.Fatal("membership-constrained linking without an authorizer was accepted")
 	}
 	if _, err := New(Config{
 		LinkExistingUsers: ExistingUserLinkPolicy{
