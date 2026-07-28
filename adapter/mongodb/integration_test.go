@@ -39,3 +39,56 @@ func TestConformance(t *testing.T) {
 		return adapter
 	})
 }
+
+func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
+	uri := os.Getenv("MONGODB_URI")
+	if uri == "" {
+		t.Skip("MONGODB_URI is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	client, err := mongo.Connect(options.Client().ApplyURI(uri))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Ping(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
+	databaseName := "better_auth_go_upgrade_" + time.Now().UTC().Format("20060102150405.000000000")
+	database := client.Database(databaseName)
+	t.Cleanup(func() { _ = database.Drop(context.Background()) })
+	adapter, err := mongodb.New(mongodb.Config{Database: database})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptertest.SeedReleaseBaseline(t, adapter)
+	current := betterauth.CoreSchema()
+	if err := adapter.EnsureIndexes(t.Context(), current); err != nil {
+		t.Fatalf("upgrade current indexes: %v", err)
+	}
+	if err := adapter.EnsureIndexes(t.Context(), current); err != nil {
+		t.Fatalf("idempotent current indexes: %v", err)
+	}
+	adaptertest.AssertReleaseUpgrade(t, adapter)
+	for collection, expected := range map[string]string{
+		betterauth.ModelSession: "user_sessions",
+		betterauth.ModelAccount: "user_accounts",
+	} {
+		specifications, err := database.Collection(collection).Indexes().ListSpecifications(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		names := make([]string, 0, len(specifications))
+		for _, specification := range specifications {
+			names = append(names, specification.Name)
+			if specification.Name == expected {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("current MongoDB index %q missing from %s: %v", expected, collection, names)
+		}
+	}
+}

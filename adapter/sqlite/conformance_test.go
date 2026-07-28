@@ -99,6 +99,54 @@ func TestMappedSchemaMigration(t *testing.T) {
 	}
 }
 
+func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
+	t.Parallel()
+	database, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "release-upgrade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	adapter, err := sqliteadapter.New(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := adaptertest.LegacyCoreSchema()
+	if err := adapter.Migrate(t.Context(), legacy); err != nil {
+		t.Fatal(err)
+	}
+	configured, err := adapter.WithSchema(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptertest.SeedReleaseBaseline(t, configured)
+
+	current := betterauth.CoreSchema()
+	if err := adapter.Migrate(t.Context(), current); err != nil {
+		t.Fatalf("upgrade current schema: %v", err)
+	}
+	if err := adapter.Migrate(t.Context(), current); err != nil {
+		t.Fatalf("idempotent current migration: %v", err)
+	}
+	configured, err = adapter.WithSchema(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptertest.AssertReleaseUpgrade(t, configured)
+	for _, expected := range []string{"session_userId_index", "account_userId_index"} {
+		var found int
+		if err := database.QueryRowContext(
+			t.Context(),
+			"SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?",
+			expected,
+		).Scan(&found); err != nil {
+			t.Fatal(err)
+		}
+		if found != 1 {
+			t.Fatalf("current index %q was not created", expected)
+		}
+	}
+}
+
 func conformanceSchema() betterauth.Schema {
 	return betterauth.Schema{
 		"conformance": {Fields: map[string]betterauth.FieldSchema{

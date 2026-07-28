@@ -85,6 +85,49 @@ func TestMappedSchemaMigration(t *testing.T) {
 	}
 }
 
+func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
+	database := databaseForTest(t)
+	adapter, err := postgresql.New(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := adaptertest.LegacyCoreSchema()
+	if err := adapter.Migrate(t.Context(), legacy); err != nil {
+		t.Fatal(err)
+	}
+	configured, err := adapter.WithSchema(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptertest.SeedReleaseBaseline(t, configured)
+
+	current := betterauth.CoreSchema()
+	if err := adapter.Migrate(t.Context(), current); err != nil {
+		t.Fatalf("upgrade current schema: %v", err)
+	}
+	if err := adapter.Migrate(t.Context(), current); err != nil {
+		t.Fatalf("idempotent current migration: %v", err)
+	}
+	configured, err = adapter.WithSchema(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptertest.AssertReleaseUpgrade(t, configured)
+	for _, expected := range []string{"session_userId_index", "account_userId_index"} {
+		var found int
+		if err := database.QueryRowContext(
+			t.Context(),
+			"SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = $1",
+			expected,
+		).Scan(&found); err != nil {
+			t.Fatal(err)
+		}
+		if found != 1 {
+			t.Fatalf("current index %q was not created", expected)
+		}
+	}
+}
+
 func databaseForTest(t *testing.T) *sql.DB {
 	t.Helper()
 	dsn := os.Getenv("POSTGRES_DSN")
