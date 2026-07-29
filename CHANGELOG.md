@@ -4,6 +4,8 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-29
+
 ### Added
 
 - Server plugin kernel with initialization, dependencies, dynamic endpoints,
@@ -91,4 +93,5 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 - Session listing now requires a fresh session, and reports the upstream
   `SESSION_NOT_FRESH` error when freshness has expired.
 
-[Unreleased]: https://github.com/eadwinCode/better-auth-go/commits/main
+[Unreleased]: https://github.com/eadwinCode/better-auth-go/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/eadwinCode/better-auth-go/releases/tag/v1.0.0
