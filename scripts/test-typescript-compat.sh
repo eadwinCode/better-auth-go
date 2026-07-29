@@ -65,5 +65,5 @@ fi
   cd "${repository_root}"
   BETTER_AUTH_TS_URL="${oracle_url}" \
   BETTER_AUTH_TS_CONTROL_SECRET="${BETTER_AUTH_TEST_CONTROL_SECRET}" \
-    go test -count=1 -run '^TestBetterAuthV1625' .
+    go test -count=1 -run '^TestBetterAuthV1625' ./compat
 )
