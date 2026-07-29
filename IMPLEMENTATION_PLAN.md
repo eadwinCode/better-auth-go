@@ -379,3 +379,33 @@ Exit criteria:
   every successful transition remains capped, rotated, and audited;
 - all pinned v1.6.25 differential, unit, black-box, race, fuzz, vet, static,
   vulnerability, and available adapter checks pass.
+
+## Phase 17: Request-pipeline and policy certification
+
+1. Add ADR 0017 and freeze the Better Auth v1.6.25 trusted-origin and shared
+   request-pipeline contract.
+2. Add bounded wildcard origin compilation plus an optional request-scoped
+   trusted-origin resolver whose output is immutable and isolated per request.
+3. Certify origin/CSRF enforcement, request and response limits, endpoint
+   validators, request/response hooks, middleware, database hooks, and
+   rate-limit failure behavior without weakening mandatory security headers.
+4. Complete session refresh/revocation and provider-token failure,
+   persistence, ownership, redaction, and concurrency evidence.
+5. Extend the pinned TypeScript oracle where equivalent public HTTP behavior
+   exists and record every intentional Go security difference.
+6. Update the progress and compatibility registers, run all release-relevant
+   checks, and publish the work as PR #21.
+
+Exit criteria:
+
+- wildcard origins cannot match attacker suffixes or public suffixes;
+- dynamic origins are validated, resolved once, and cannot bleed across
+  concurrent requests;
+- origin, validation, and limiter failures occur before endpoint mutation;
+- after/onResponse hooks cannot remove mandatory response security headers;
+- database-hook failures roll back the surrounding transaction;
+- session rotation and revocation have one-winner, ownership-bound evidence;
+- provider refresh preserves encrypted credentials and never returns refresh
+  tokens;
+- all unit, differential, race, fuzz, adapter, static, vulnerability, and
+  upstream-contract checks pass.
