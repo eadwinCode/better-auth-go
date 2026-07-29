@@ -345,3 +345,37 @@ Exit criteria:
 - filters and PATCH paths cannot become arbitrary adapter queries;
 - management authorization is target-scoped and cannot cross owners or tenants;
 - SSO remains an independent plugin.
+
+## Phase 16: Core OAuth, session, and admin partial closure
+
+1. Persist allowlisted OAuth success, error, and new-user destinations plus
+   signup intent inside single-use state.
+2. Make callback errors state-bound and sanitized, certify GET/POST replay,
+   and route new users independently from returning users.
+3. Implement the Better Auth v1.6.25 account-linking controls for enabled,
+   implicit-linking, trusted-provider, local-verification, different-email,
+   unlink-last-account, and profile-update policy.
+4. Make same-user explicit links idempotent, reject cross-user provider
+   identity collisions with stable public errors, and enforce global provider
+   identity uniqueness in every first-party adapter.
+5. Add a dedicated TypeScript differential matrix for session retrieval,
+   sign-out, callback failures/replay, linking collisions, and bounded
+   impersonation options.
+6. Add immutable admin selection options around the existing authorization
+   port while preserving one-hour sessions, rotation, and durable audits.
+7. Update compatibility/progress evidence and run every release-relevant local
+   gate before opening PR #20.
+
+Exit criteria:
+
+- a callback destination can only come from consumed, allowlisted state;
+- OAuth state and provider identities have exactly one winner under replay or
+  concurrent collision;
+- implicit linking requires verified provider and local identity evidence by
+  default;
+- sign-out clears the browser cookie, revokes the session, remains safely
+  repeatable, and cannot bypass trusted-origin/CSRF enforcement;
+- administrator selection and admin-target impersonation fail closed while
+  every successful transition remains capped, rotated, and audited;
+- all pinned v1.6.25 differential, unit, black-box, race, fuzz, vet, static,
+  vulnerability, and available adapter checks pass.
