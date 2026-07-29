@@ -249,14 +249,15 @@ release because provider payloads and policies can change independently.
   future security ADR.
 - Adapter fallbacks may not weaken an enabled feature's required atomicity.
 
-## Not yet in the initial release gate
+## Experimental packages outside the first v1 stability gate
 
-Feature plugins outside the requested initial scope—such as username, magic
-links, anonymous users, SSO, SCIM, and API keys—use the server
-kernel tracked in
+Feature plugins outside the stable core scope—such as username, magic links,
+anonymous users, SSO, SCIM, and API keys—use the server kernel tracked in
 [the plugin compatibility checklist](./plugin-kernel.md). Their full endpoint
 implementations are tracked in the [feature gap register](./missing-features.md)
-as separate parity milestones.
+as separate parity milestones. Existing packages below `plugin/` are
+experimental and outside the first v1 compatibility guarantee until a
+promotion ADR records their complete evidence.
 
 Passkeys/WebAuthn are specified in ADR 0004 and implemented as the first
 dedicated high-risk plugin PR.
@@ -279,7 +280,7 @@ provisioning runtime are implemented with hash-only bearer credentials,
 bounded filters and PATCH operations, standard metadata, ownership isolation,
 session-revoking deactivation, and tenant-safe deprovisioning. The committed
 black-box RFC 7644 security matrix passes; pinned TypeScript and live directory
-interoperability remain release certification evidence.
+interoperability remain promotion evidence.
 
 ## Passkey plugin endpoint map
 

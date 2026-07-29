@@ -2,23 +2,76 @@ name: Release
 
 on:
   push:
-    tags: ["v*.*.*"]
+    tags:
+      - "v*.*.*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  certify:
+    uses: ./.github/workflows/release-certification.yml
+    with:
+      module-ref: ${{ github.ref_name }}
+
+  publish:
+    name: Publish versioned and attested source artifacts
+    needs: certify
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.5"
           cache: true
-      - run: go test ./...
-      - run: go vet ./...
-      - name: Create semantic GitHub release
+      - name: Validate tag and build source archives
+        id: release-version
+        run: |
+          plain_version="${GITHUB_REF_NAME#v}"
+          echo "plain_version=${plain_version}" >>"${GITHUB_OUTPUT}"
+          scripts/build-release-artifacts.sh "${GITHUB_REF_NAME}" dist
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          file: dist/better-auth-go_${{ steps.release-version.outputs.plain_version }}_source.tar.gz
+          format: spdx-json
+          output-file: dist/better-auth-go_${{ steps.release-version.outputs.plain_version }}_sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Generate release checksums
+        run: scripts/write-release-checksums.sh "${GITHUB_REF_NAME}" dist
+      - name: Attest archive and SBOM provenance
+        uses: actions/attest@v4
+        with:
+          subject-checksums: dist/better-auth-go_${{ steps.release-version.outputs.plain_version }}_checksums.txt
+      - name: Attest checksum provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/better-auth-go_${{ steps.release-version.outputs.plain_version }}_checksums.txt
+      - name: Preserve workflow artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: better-auth-go_${{ steps.release-version.outputs.plain_version }}_release
+          path: dist/
+          if-no-files-found: error
+      - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" --generate-notes --verify-tag
+        run: |
+          release_flags=(--latest)
+          if [[ "${GITHUB_REF_NAME}" == *-rc.* ]]; then
+            release_flags=(--prerelease --latest=false)
+          fi
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --fail-on-no-commits \
+            --generate-notes \
+            "${release_flags[@]}"

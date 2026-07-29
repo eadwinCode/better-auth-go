@@ -78,7 +78,9 @@ Only an existing tag matching `vMAJOR.MINOR.PATCH` or
 - generates a Sigstore-backed signed GitHub build-provenance attestation for
   the archives and checksum file;
 - creates a GitHub prerelease for `-rc.N` tags and a normal release otherwise;
-- uploads the archives, checksums, and SBOM as immutable release inputs.
+- uploads the archives, checksums, and SBOM before publishing the GitHub
+  release; repository immutable-release protection should be enabled so the
+  published tag and assets cannot later be replaced.
 
 Consumers verify archive checksums locally and provenance with
 `gh attestation verify ... --repo eadwinCode/better-auth-go`.

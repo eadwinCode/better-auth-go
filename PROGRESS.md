@@ -22,13 +22,16 @@ this release.
 
 ## Current release decision
 
-**Not production-stable as a complete Better Auth 1.6.25 replacement.**
+**Not production-stable until an exact release-candidate tag passes and its
+artifacts are verified.**
 
-The current core is suitable for controlled evaluation, and the repository's
-ordinary test suite is green. Production parity remains blocked by the
-complete cross-runtime HTTP matrix, live provider and enterprise
-interoperability certification, release-candidate evidence, and the remaining
-1.6.25 plugin backlog.
+The first v1 stability boundary is intentionally narrower than a complete
+Better Auth 1.6.25 replacement: it covers the core server, first-party
+MongoDB/PostgreSQL/SQLite adapters, social-provider presets, and generic
+OAuth/OIDC consumer. Feature packages below `plugin/`, including SSO and SCIM,
+are experimental until separately promoted. The branch suite may prove the
+release machinery, but only the tag run proves exact-tag installation,
+publication, and signed provenance.
 
 ## Evidence snapshot
 
@@ -50,7 +53,10 @@ Last updated: 2026-07-29
 | SQLite adapter conformance | `go test -count=1 ./adapter/sqlite` | Pass as part of full suite |
 | MongoDB adapter conformance | `MONGODB_URI=... go test -count=1 ./adapter/mongodb` | Pass on MongoDB 8 single-node replica set |
 | PostgreSQL adapter conformance | `POSTGRES_DSN=... go test -count=1 ./adapter/postgresql` | Pass on PostgreSQL 17 |
-| Release workflow | `.github/workflows/release.yml` | Partial; does not run all certification gates |
+| Workflow contract | `go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/*.yml` | Pass |
+| Release archive contract | `scripts/test-release-artifacts.sh` | Pass; semantic-name, archive-root, Git-metadata and checksum checks |
+| External-module install | `scripts/test-install-module.sh 766ee5b` | Pass without `replace`; candidate commit runs in PR CI and exact-tag evidence requires the RC tag |
+| Release workflow | `.github/workflows/release.yml` and reusable `.github/workflows/release-certification.yml` | Implemented; tag-trigger publication evidence pending |
 
 Update this table with the date and exact command whenever evidence is rerun.
 Do not convert a pending or skipped integration test into a pass.
@@ -92,7 +98,7 @@ contract differences must be listed below.
 | Trusted origins and CSRF | Present | Exact/wildcard/dynamic origin differential plus malicious-suffix, resolver failure/panic, CSRF and concurrent tenant-isolation evidence pass | Certified with the documented HTTPS and double-submit differences |
 | `onRequest`, `onResponse`, route and database hooks | Present | Go lifecycle ordering, early/error response, rollback, panic containment and race tests pass | Certified for the pinned server/plugin contract |
 | Rate-limiter hook | Present | Core/plugin denial, error, panic, bounded retry metadata and no-write failure evidence pass | Certified injected-port contract; no built-in storage implementation |
-| Versioned public API and release metadata | Pre-1.0 development version | No release candidate | Partial |
+| Versioned public API and release metadata | v1 stable/experimental boundary documented; semantic tag and attested artifact workflow present | No release-candidate tag yet | Partial pending exact-tag run |
 
 Core completion requires a differential matrix for every pinned route and
 enabled option, including success, validation, authorization, replay, and
@@ -113,15 +119,15 @@ failure behavior.
 Live provider tests are release certification, not ordinary pull-request tests.
 They must never log provider credentials or returned tokens.
 
-### High-risk plugins already started
+### Experimental feature plugins
 
 | Plugin | Implementation | Status |
 | --- | --- | --- |
-| Passkey/WebAuthn | Full Go ceremony and adapter tests present | Partial pending TypeScript/browser differential certification |
-| Two-factor authentication | TOTP, delivered OTP, backup codes and trusted devices present | Partial pending TypeScript differential certification |
-| Organizations | Runtime, membership, invitations, teams, roles and tests present | Partial pending TypeScript differential certification |
-| SSO | Provider management, OIDC/PKCE/JWKS, domain verification, signed SAML ACS/metadata/replay protection and SLO are implemented | Runtime complete; deterministic OIDC and signed SAML black-box fixtures pass |
-| SCIM | Connection management, hash-only bearer authentication, metadata and complete User CRUD/list/filter/PUT/PATCH runtime | Implemented; black-box security matrix passes, pending pinned TypeScript/live-directory certification |
+| Passkey/WebAuthn | Full Go ceremony and adapter tests present | Experimental; outside the first v1 stability guarantee |
+| Two-factor authentication | TOTP, delivered OTP, backup codes and trusted devices present | Experimental; outside the first v1 stability guarantee |
+| Organizations | Runtime, membership, invitations, teams, roles and tests present | Experimental; outside the first v1 stability guarantee |
+| SSO | Provider management, OIDC/PKCE/JWKS, domain verification, signed SAML ACS/metadata/replay protection and SLO are implemented | Experimental; deterministic suites pass, but pinned/live interoperability promotion gates remain |
+| SCIM | Connection management, hash-only bearer authentication, metadata and complete User CRUD/list/filter/PUT/PATCH runtime | Experimental; deterministic suites pass, but pinned/live directory promotion gates remain |
 
 ### Exact pinned v1.6.25 plugin inventory
 
@@ -145,9 +151,10 @@ The pinned monorepo also publishes seven server-plugin packages:
 - `@better-auth/sso`;
 - `@better-auth/stripe`.
 
-Passkey, two-factor, organizations, SSO, and SCIM have Go implementations.
-Everything else above remains missing or partial unless its capability matrix
-says otherwise. TypeScript adapters, Expo/Electron clients,
+Passkey, two-factor, organizations, SSO, and SCIM have experimental Go
+implementations outside the first v1 guarantee. Everything else above remains
+missing or partial unless its capability matrix says otherwise. TypeScript
+adapters, Expo/Electron clients,
 telemetry internals and Redis secondary storage are not feature-plugin parity
 items; their server-side concepts are handled through the Go adapter, hook and
 storage contracts where applicable.
@@ -213,22 +220,28 @@ entry in this table and a compatibility decision.
    tests.
 3. Complete TypeScript 1.6.25 differential endpoint and option matrix.
 4. All 35 social-provider fixtures and generic OAuth/OIDC fixtures (present).
-5. Selected live provider sandbox tests.
-6. Passkey tests in supported browsers.
-7. SSO OIDC/SAML and SCIM RFC fixtures (present), plus live enterprise
-   interoperability.
-8. Dependency vulnerability scan and review of any accepted finding.
-9. Install-from-tag test in a separate example module.
-10. Upgrade test from the previous release database schema.
+5. Selected live social-provider sandbox tests or an explicitly approved
+   provider-operated-risk decision.
+6. Dependency vulnerability scan and review of any accepted finding.
+7. Install-from-tag test in a separate example module.
+8. Versioned archive/checksum/SBOM publication and signed provenance
+   verification.
+9. Upgrade test from the previous release database schema.
+
+Browser passkey, pinned SSO/SCIM differential, and live enterprise
+interoperability are plugin-promotion gates rather than first-v1 release gates
+while those packages remain experimental.
 
 ## Recommended work order
 
-1. Certify SSO and SCIM against pinned deterministic fixtures, then collect
-   release-operator evidence against selected live enterprise systems.
-2. Implement and certify the remaining exports from the pinned 1.6.25 plugin
-   inventory in small, security-reviewed pull requests.
-3. Run `v1.0.0-rc.1`; publish `v1.0.0` only after every release gate above is
-   green or explicitly marked as an approved deliberate difference.
+1. Merge the release-candidate infrastructure and tag `v1.0.0-rc.1`.
+2. Verify the exact-tag external-module install, GitHub release assets,
+   checksums, SBOM, and signed provenance; then complete an application upgrade
+   and restore drill during the candidate soak.
+3. Publish `v1.0.0` only after every stable-boundary release gate is green or
+   explicitly recorded as an approved provider-operated risk.
+4. Promote SSO, SCIM, and other experimental plugins independently after their
+   pinned and live interoperability gates pass.
 
 ## Maintenance rule
 

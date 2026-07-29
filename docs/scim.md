@@ -1,5 +1,10 @@
 # SCIM 2.0 provisioning
 
+> **Experimental:** `plugin/scim` is not included in the better-auth-go v1
+> compatibility or production-support guarantee. Pin an exact version and run
+> interoperability tests against every directory before deployment. See
+> [Versioning and stability](./versioning.md).
+
 The `plugin/scim` package is an inbound directory-provisioning service aligned
 with `@better-auth/scim` v1.6.25, RFC 7643, and RFC 7644. It is independent of
 the SSO plugin and mounts through the same standard `net/http` handler as the
@@ -109,6 +114,6 @@ organization-safe deprovisioning, audit durability, and fuzz targets for
 bearer, filter, and patch parsing.
 
 Live enterprise-directory interoperability and a pinned TypeScript differential
-suite remain release-operator certification evidence, not missing runtime
-features. See [ADR 0008](./adr/0008-scim-provisioning.md) for the security
-contract.
+suite remain promotion gates. Until they pass, the package remains experimental
+even though its deterministic security suite is part of release-candidate CI.
+See [ADR 0008](./adr/0008-scim-provisioning.md) for the security contract.

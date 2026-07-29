@@ -1,0 +1,196 @@
+name: Release certification
+
+on:
+  workflow_call:
+    inputs:
+      module-ref:
+        description: Commit or semantic tag installed by the external-module check
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      module-ref:
+        description: Commit or semantic tag installed by the external-module check
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Clean checkout, test, vet, race, static, vulnerability
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - name: Format
+        run: test -z "$(gofmt -l .)"
+      - name: Unit and black-box tests
+        run: go test -count=1 ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Race detector
+        run: go test -race -count=1 ./...
+      - name: Staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...
+      - name: Vulnerability scan
+        uses: golang/govulncheck-action@v1
+        with:
+          go-package: ./...
+      - name: Checkout remains clean
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+  fuzz:
+    name: Fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - run: go test -run=^$ -fuzz=FuzzArgon2idParser -fuzztime=10s .
+      - run: go test -run=^$ -fuzz=FuzzSessionCookieParsing -fuzztime=10s .
+      - run: go test -run=^$ -fuzz=FuzzAESGCMTokenCipherOpen -fuzztime=10s .
+      - run: go test -run=^$ -fuzz=FuzzPluginPathMatching -fuzztime=10s .
+      - run: go test -run=^$ -fuzz=FuzzTrustedOriginPolicy -fuzztime=10s .
+      - run: go test -run=^$ -fuzz=FuzzChallengeHandle -fuzztime=10s ./plugin/passkey
+      - run: go test -run=^$ -fuzz=FuzzTwoFactorCookieValue -fuzztime=10s ./plugin/twofactor
+      - run: go test -run=^$ -fuzz=FuzzCanonicalRoles -fuzztime=10s ./plugin/organization
+      - run: go test -run=^$ -fuzz=FuzzParseBearerToken -fuzztime=10s ./plugin/scim
+      - run: go test -run=^$ -fuzz=FuzzParseFilter -fuzztime=10s ./plugin/scim
+      - run: go test -run=^$ -fuzz=FuzzPatchOperations -fuzztime=10s ./plugin/scim
+      - run: go test -run=^$ -fuzz=FuzzSCIMUserJSON -fuzztime=10s ./plugin/scim
+
+  typescript:
+    name: Better Auth 1.6.25 differential
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - name: Install pinned TypeScript oracle
+        working-directory: compat/typescript-oracle
+        run: bun install --frozen-lockfile
+      - name: Run pinned differential suite
+        run: scripts/test-typescript-compat.sh
+
+  adapter-migrations:
+    name: Real SQLite, PostgreSQL, and MongoDB migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: betterauth
+          POSTGRES_PASSWORD: betterauth-test-only
+          POSTGRES_DB: betterauth
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U betterauth -d betterauth"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - name: Start MongoDB 8 replica set
+        run: |
+          docker run --rm -d --name better-auth-go-mongo-release \
+            -p 27017:27017 mongo:8 --replSet rs0 --bind_ip_all \
+            --oplogSize 128 --wiredTigerCacheSizeGB 0.25
+          for attempt in $(seq 1 90); do
+            if docker exec better-auth-go-mongo-release mongosh --quiet \
+              --eval 'db.runCommand({ ping: 1 }).ok' | grep -q '^1$'; then
+              break
+            fi
+            if [ "$attempt" = "90" ]; then
+              docker logs better-auth-go-mongo-release
+              exit 1
+            fi
+            sleep 1
+          done
+          docker exec better-auth-go-mongo-release mongosh --quiet \
+            --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for attempt in $(seq 1 90); do
+            if docker exec better-auth-go-mongo-release mongosh --quiet \
+              --eval 'db.hello().isWritablePrimary' | grep -q '^true$'; then
+              break
+            fi
+            if [ "$attempt" = "90" ]; then
+              docker logs better-auth-go-mongo-release
+              exit 1
+            fi
+            sleep 1
+          done
+      - name: Run required adapter migrations and conformance
+        env:
+          POSTGRES_DSN: postgres://betterauth:betterauth-test-only@127.0.0.1:5432/betterauth?sslmode=disable
+          MONGODB_URI: mongodb://127.0.0.1:27017/?directConnection=true
+        run: scripts/test-real-adapter-migrations.sh
+      - name: Stop MongoDB
+        if: always()
+        run: docker stop better-auth-go-mongo-release || true
+
+  experimental-enterprise:
+    name: Experimental SSO and SCIM deterministic suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - run: go test -race -count=1 ./plugin/sso ./plugin/scim
+
+  upstream:
+    name: Pinned Better Auth source inventory
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: better-auth/better-auth
+          ref: v1.6.25
+          path: better-auth-repo
+      - name: Verify Better Auth v1.6.25
+        env:
+          BETTER_AUTH_UPSTREAM_DIR: ${{ github.workspace }}/better-auth-repo
+        run: scripts/check-upstream-v1.6.25.sh
+
+  install-module:
+    name: External module install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - name: Install candidate without replace
+        run: scripts/test-install-module.sh "${{ inputs.module-ref }}"
+
+  artifact-contract:
+    name: Versioned release archive contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build and verify candidate artifacts
+        run: scripts/test-release-artifacts.sh
