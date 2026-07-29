@@ -25,8 +25,27 @@ func (compatibilityAdminAuthorizer) CanImpersonate(
 	return nil
 }
 
+type compatibilityAdminRoles struct{}
+
+func (compatibilityAdminRoles) Roles(
+	_ context.Context,
+	user betterauth.User,
+) ([]string, error) {
+	if user.Name == "Admin" {
+		return []string{"admin"}, nil
+	}
+	return []string{"user"}, nil
+}
+
 func managementCompatibilityServer(
 	t *testing.T,
+) (*testClient, *captureMailer) {
+	return managementCompatibilityServerConfig(t, nil)
+}
+
+func managementCompatibilityServerConfig(
+	t *testing.T,
+	configure func(*betterauth.Config),
 ) (*testClient, *captureMailer) {
 	t.Helper()
 	provider := &fakeOAuthProvider{}
@@ -40,10 +59,19 @@ func managementCompatibilityServer(
 		config.User.ChangeEmailEnabled = true
 		config.User.DeleteUserEnabled = true
 		config.Account.AllowLinkingDifferentEmails = true
-		config.AllowedRedirectURLs = []string{"https://app.example.com/linked"}
+		config.AllowedRedirectURLs = []string{
+			"https://app.example.com/linked",
+			"https://app.example.com/oauth-success",
+			"https://app.example.com/oauth-error",
+			"https://app.example.com/oauth-new-user",
+		}
 		config.SocialProviders = map[string]betterauth.OAuthProvider{"test": provider}
 		config.ProviderTokenCipher = cipher
 		config.ImpersonationAuthorizer = compatibilityAdminAuthorizer{}
+		config.Admin.RoleResolver = compatibilityAdminRoles{}
+		if configure != nil {
+			configure(config)
+		}
 	})
 }
 
@@ -709,6 +737,55 @@ func TestBetterAuthV1625ImpersonationCompatibility(t *testing.T) {
 	} {
 		if responseUser(t, result)["email"] != adminEmail {
 			t.Fatalf("%s did not restore the administrator identity: %s", implementation, result.body)
+		}
+	}
+
+	goAdminTarget := &testClient{handler: goAdmin.handler, database: goAdmin.database}
+	tsAdminTarget := oracle.clone(t)
+	goAdminTargetID, tsAdminTargetID := signupCompatibilityUser(
+		t, goAdminTarget, tsAdminTarget, uniqueCompatibilityEmail("admin-target"), "Admin", password,
+	)
+	for implementation, result := range map[string]oracleResponse{
+		"Go": goResponse(goAdmin.request(t, http.MethodPost, "/admin/impersonate-user", map[string]any{
+			"userId": goAdminTargetID,
+		}, true)),
+		"TypeScript": oracle.request(t, http.MethodPost, "/admin/impersonate-user", map[string]any{
+			"userId": tsAdminTargetID,
+		}, ""),
+	} {
+		if result.status != http.StatusForbidden ||
+			decodeObject(t, result.body)["code"] != "YOU_CANNOT_IMPERSONATE_ADMINS" {
+			t.Fatalf("%s admin-target policy mismatch: status=%d body=%s",
+				implementation, result.status, result.body)
+		}
+	}
+}
+
+func TestBetterAuthV1625AllowImpersonatingAdminsCompatibility(t *testing.T) {
+	oracle := newTypeScriptOracle(t).adminImpersonationClone(t)
+	tsTarget := oracle.clone(t)
+	goAdmin, _ := managementCompatibilityServerConfig(t, func(config *betterauth.Config) {
+		config.Admin.AllowImpersonatingAdmins = true
+	})
+	goTarget := &testClient{handler: goAdmin.handler, database: goAdmin.database}
+	const password = "Correct-Horse-123!"
+	signupCompatibilityUser(
+		t, goAdmin, oracle, uniqueCompatibilityEmail("allow-admin-actor"), "Admin", password,
+	)
+	goTargetID, tsTargetID := signupCompatibilityUser(
+		t, goTarget, tsTarget, uniqueCompatibilityEmail("allow-admin-target"), "Admin", password,
+	)
+	for implementation, result := range map[string]oracleResponse{
+		"Go": goResponse(goAdmin.request(t, http.MethodPost, "/admin/impersonate-user", map[string]any{
+			"userId": goTargetID,
+		}, true)),
+		"TypeScript": oracle.request(t, http.MethodPost, "/admin/impersonate-user", map[string]any{
+			"userId": tsTargetID,
+		}, ""),
+	} {
+		if result.status != http.StatusOK || responseUser(t, result)["name"] != "Admin" {
+			t.Fatalf("%s allowImpersonatingAdmins mismatch: status=%d body=%s",
+				implementation, result.status, result.body)
 		}
 	}
 }

@@ -3,6 +3,7 @@ package betterauth
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 )
 
@@ -13,6 +14,12 @@ var (
 	ErrConflict = errors.New("betterauth: conflict")
 	// ErrReplay is returned when a single-use value was already consumed.
 	ErrReplay = errors.New("betterauth: replay")
+	// ErrAccountNotLinked is returned when a same-email OAuth identity exists
+	// but the configured implicit-linking policy denies attaching it.
+	ErrAccountNotLinked = errors.New("betterauth: account not linked")
+	// ErrSignUpDisabled is returned when an OAuth provider is allowed to sign
+	// in existing identities but not create a new user for this request.
+	ErrSignUpDisabled = errors.New("betterauth: oauth sign up disabled")
 )
 
 // Clock enables deterministic expiry and audit tests.
@@ -84,6 +91,29 @@ type ImpersonationAuthorizer interface {
 	CanImpersonate(context.Context, User, User) error
 }
 
+// AdminRoleResolver returns application-owned roles for one user. It is
+// invoked per request and must be concurrency-safe; roles are never cached on
+// the shared server.
+type AdminRoleResolver interface {
+	Roles(context.Context, User) ([]string, error)
+}
+
+// TrustedProviderResolver resolves Better Auth v1.6's request-dependent
+// trustedProviders option without retaining request state on the server.
+type TrustedProviderResolver interface {
+	TrustedProviders(context.Context, *http.Request) ([]string, error)
+}
+
+// TrustedProviderResolverFunc adapts a function to TrustedProviderResolver.
+type TrustedProviderResolverFunc func(context.Context, *http.Request) ([]string, error)
+
+func (resolver TrustedProviderResolverFunc) TrustedProviders(
+	ctx context.Context,
+	request *http.Request,
+) ([]string, error) {
+	return resolver(ctx, request)
+}
+
 // PasswordVerifier supports native formats and optional migration bridges.
 type PasswordVerifier interface {
 	Hash(context.Context, string) (string, error)
@@ -99,6 +129,14 @@ type PasswordVerification struct {
 type OAuthProvider interface {
 	AuthorizationURL(state, codeChallenge, nonce, redirectURI string) (string, error)
 	Exchange(context.Context, string, string, string, string) (OAuthResult, error)
+}
+
+// OAuthProviderSignUpPolicy is an optional provider capability matching Better
+// Auth v1.6's per-provider signup controls. Implementations that do not expose
+// it retain the historical behavior of allowing implicit signup.
+type OAuthProviderSignUpPolicy interface {
+	DisableImplicitSignUp() bool
+	DisableSignUp() bool
 }
 
 // OAuthTokenRefresher is implemented by providers that can exchange a refresh
@@ -146,7 +184,7 @@ type authStore interface {
 
 	PutOAuthState(context.Context, OAuthState) error
 	ConsumeOAuthState(context.Context, string, time.Time) (OAuthState, error)
-	UpsertOAuthUser(context.Context, OAuthProfile, ProviderTokens, Session, DomainEvent) (User, Session, bool, error)
+	UpsertOAuthUser(context.Context, OAuthProfile, ProviderTokens, Session, DomainEvent, OAuthUpsertPolicy) (User, Session, bool, error)
 
 	RotateSessionWithAudit(context.Context, string, Session, AuditEvent) (Session, error)
 }
@@ -171,6 +209,16 @@ type ChangePasswordParams struct {
 type StoredOAuthAccount struct {
 	Account OAuthAccount
 	Tokens  ProviderTokens
+}
+
+// OAuthUpsertPolicy is the immutable store policy for an OAuth callback. It is
+// evaluated inside the same transaction that creates or links the account.
+type OAuthUpsertPolicy struct {
+	AllowImplicitLink        bool
+	RequireLocalVerification bool
+	UpdateUserInfoOnLink     bool
+	UpdateAccountOnSignIn    bool
+	AllowSignUp              bool
 }
 
 // NopRateLimiter permits every request.

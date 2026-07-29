@@ -63,6 +63,11 @@ type Options struct {
 	// ValidateEndpoint validates discovery, authorization, token, user-info,
 	// and JWKS URLs before any runtime request can use them.
 	ValidateEndpoint EndpointValidator
+	// DisableImplicitSignUp requires callers to set requestSignUp for a new
+	// account while still allowing returning users to sign in.
+	DisableImplicitSignUp bool
+	// DisableSignUp permanently prevents this provider from creating users.
+	DisableSignUp bool
 
 	oidcDiscovery bool
 }
@@ -119,6 +124,8 @@ type Provider struct {
 	httpClient            *http.Client
 	maxResponseBytes      int64
 	clock                 betterauth.Clock
+	disableImplicitSignUp bool
+	disableSignUp         bool
 }
 
 type systemClock struct{}
@@ -229,9 +236,16 @@ func New(providerID string, options Options) (*Provider, error) {
 		tokenSecretParam: definition.tokenSecretParam, scopeSeparator: definition.scopeSeparator,
 		authorizationFragment: definition.authorizationFragment,
 		authorizationExtra:    extra, mapper: mapper, httpClient: &clientCopy, maxResponseBytes: maxResponse,
-		clock: clock,
+		clock: clock, disableImplicitSignUp: options.DisableImplicitSignUp,
+		disableSignUp: options.DisableSignUp,
 	}, nil
 }
+
+// DisableImplicitSignUp implements betterauth.OAuthProviderSignUpPolicy.
+func (p *Provider) DisableImplicitSignUp() bool { return p.disableImplicitSignUp }
+
+// DisableSignUp implements betterauth.OAuthProviderSignUpPolicy.
+func (p *Provider) DisableSignUp() bool { return p.disableSignUp }
 
 // NewOIDC discovers and validates a generic OpenID Connect provider before
 // constructing an immutable OAuth provider. Issuer is required; explicit

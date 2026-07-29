@@ -23,6 +23,11 @@ const (
 	CodeCredentialNotFound      ErrorCode = "credential_account_not_found"
 	CodeAccountNotFound         ErrorCode = "account_not_found"
 	CodeUnlinkLastAccount       ErrorCode = "failed_to_unlink_last_account"
+	CodeLinkingNotAllowed       ErrorCode = "linking_not_allowed"
+	CodeLinkingDifferentEmails  ErrorCode = "linking_different_emails_not_allowed"
+	CodeAccountLinkedElsewhere  ErrorCode = "account_already_linked_to_different_user"
+	CodeAccountNotLinked        ErrorCode = "account_not_linked"
+	CodeOAuthSignUpDisabled     ErrorCode = "oauth_sign_up_disabled"
 	CodeProviderNotSupported    ErrorCode = "provider_not_supported"
 	CodeTokenRefreshUnsupported ErrorCode = "token_refresh_not_supported"
 	CodeRefreshTokenNotFound    ErrorCode = "refresh_token_not_found"
@@ -31,6 +36,8 @@ const (
 	CodeUserAlreadyExists       ErrorCode = "user_already_exists_use_another_email"
 	CodeUnauthorized            ErrorCode = "unauthorized"
 	CodeForbidden               ErrorCode = "forbidden"
+	CodeCannotImpersonateAdmins ErrorCode = "cannot_impersonate_admins"
+	CodeCannotImpersonateUsers  ErrorCode = "cannot_impersonate_users"
 	CodeSessionNotFresh         ErrorCode = "session_not_fresh"
 	CodeNotFound                ErrorCode = "not_found"
 	CodeConflict                ErrorCode = "conflict"
@@ -130,6 +137,16 @@ func httpErrorCode(code ErrorCode) string {
 		return "ACCOUNT_NOT_FOUND"
 	case CodeUnlinkLastAccount:
 		return "FAILED_TO_UNLINK_LAST_ACCOUNT"
+	case CodeLinkingNotAllowed:
+		return "LINKING_NOT_ALLOWED"
+	case CodeLinkingDifferentEmails:
+		return "LINKING_DIFFERENT_EMAILS_NOT_ALLOWED"
+	case CodeAccountLinkedElsewhere:
+		return "ACCOUNT_ALREADY_LINKED_TO_DIFFERENT_USER"
+	case CodeAccountNotLinked:
+		return "ACCOUNT_NOT_LINKED"
+	case CodeOAuthSignUpDisabled:
+		return "SIGNUP_DISABLED"
 	case CodeProviderNotSupported:
 		return "PROVIDER_NOT_SUPPORTED"
 	case CodeTokenRefreshUnsupported:
@@ -146,6 +163,10 @@ func httpErrorCode(code ErrorCode) string {
 		return "UNAUTHORIZED"
 	case CodeForbidden, CodeInvalidCSRF:
 		return "FORBIDDEN"
+	case CodeCannotImpersonateAdmins:
+		return "YOU_CANNOT_IMPERSONATE_ADMINS"
+	case CodeCannotImpersonateUsers:
+		return "YOU_ARE_NOT_ALLOWED_TO_IMPERSONATE_USERS"
 	case CodeSessionNotFresh:
 		return "SESSION_NOT_FRESH"
 	case CodeNotFound:

@@ -50,6 +50,24 @@ func TestConfigFailsClosed(t *testing.T) {
 		{"delete verification TTL too long", func(config *betterauth.Config) {
 			config.DeleteUserTTL = 7*24*time.Hour + time.Nanosecond
 		}},
+		{"trusted provider is not configured", func(config *betterauth.Config) {
+			config.Account.TrustedProviders = []string{"google"}
+		}},
+		{"admin roles without resolver", func(config *betterauth.Config) {
+			config.Admin.AdminRoles = []string{"admin"}
+		}},
+		{"invalid default admin role", func(config *betterauth.Config) {
+			config.Admin.DefaultRole = "Admin Role"
+		}},
+		{"invalid admin user ID", func(config *betterauth.Config) {
+			config.Admin.AdminUserIDs = []string{""}
+		}},
+		{"static and dynamic trusted providers", func(config *betterauth.Config) {
+			config.Account.TrustedProviders = []string{"test"}
+			config.Account.TrustedProviderResolver = betterauth.TrustedProviderResolverFunc(
+				func(context.Context, *http.Request) ([]string, error) { return []string{"test"}, nil },
+			)
+		}},
 	}
 	for _, test := range tests {
 		test := test

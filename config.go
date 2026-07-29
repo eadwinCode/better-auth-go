@@ -18,6 +18,29 @@ type CookieConfig struct {
 }
 
 type AccountManagementConfig struct {
+	// UpdateAccountOnSignIn controls whether returning-provider sign-in writes
+	// the latest provider tokens. Nil defaults to true.
+	UpdateAccountOnSignIn *bool
+	// LinkingEnabled controls explicit and implicit provider linking. Nil
+	// defaults to true, matching Better Auth v1.6.
+	LinkingEnabled *bool
+	// DisableImplicitLinking prevents a social sign-in from attaching a new
+	// provider identity to an existing same-email user. Explicit link-social
+	// remains available when linking itself is enabled.
+	DisableImplicitLinking bool
+	// TrustedProviders is an immutable allowlist whose configured provider is
+	// accepted as verified identity evidence even when its profile omits an
+	// emailVerified flag.
+	TrustedProviders []string
+	// TrustedProviderResolver is the request-dependent v1.6 alternative to the
+	// static TrustedProviders list. Configuring both fails closed.
+	TrustedProviderResolver TrustedProviderResolver
+	// RequireLocalEmailVerified protects implicit same-email linking. Nil
+	// defaults to true.
+	RequireLocalEmailVerified *bool
+	// UpdateUserInfoOnLink copies non-identity name/image fields from a newly
+	// linked provider profile. Email and verification state are never changed.
+	UpdateUserInfoOnLink bool
 	// AllowUnlinkingAll permits removal of the final sign-in method. The secure
 	// default is false so a user cannot accidentally make their account
 	// unreachable.
@@ -35,6 +58,17 @@ type UserManagementConfig struct {
 	SendDeleteAccountVerification  bool
 	BeforeDelete                   UserDeletionHook
 	AfterDelete                    UserDeletionHook
+}
+
+// AdminConfig provides the Better Auth v1.6 administrator-selection options
+// that govern core impersonation. Full admin CRUD/ban endpoints remain a
+// separate plugin surface.
+type AdminConfig struct {
+	DefaultRole              string
+	AdminRoles               []string
+	AdminUserIDs             []string
+	RoleResolver             AdminRoleResolver
+	AllowImpersonatingAdmins bool
 }
 
 // EmailVerificationConfig controls the Better Auth v1.6 verification
@@ -92,6 +126,7 @@ type Config struct {
 	AllowedRedirectURLs     []string
 	Cookie                  CookieConfig
 	Account                 AccountManagementConfig
+	Admin                   AdminConfig
 	User                    UserManagementConfig
 	EmailPassword           EmailPasswordConfig
 	EmailVerification       EmailVerificationConfig
@@ -190,6 +225,21 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 	if cfg.EmailVerification.SendOnSignUp != nil {
 		sendOnSignUp := *cfg.EmailVerification.SendOnSignUp
 		cfg.EmailVerification.SendOnSignUp = &sendOnSignUp
+	}
+	if cfg.Account.LinkingEnabled != nil {
+		enabled := *cfg.Account.LinkingEnabled
+		cfg.Account.LinkingEnabled = &enabled
+	}
+	if cfg.Account.UpdateAccountOnSignIn != nil {
+		update := *cfg.Account.UpdateAccountOnSignIn
+		cfg.Account.UpdateAccountOnSignIn = &update
+	}
+	if cfg.Account.RequireLocalEmailVerified != nil {
+		required := *cfg.Account.RequireLocalEmailVerified
+		cfg.Account.RequireLocalEmailVerified = &required
+	}
+	if err := normalizeAdminConfig(&cfg.Admin); err != nil {
+		return cfg, nil, nil, err
 	}
 	if len(cfg.TrustedOrigins) == 0 {
 		return cfg, nil, nil, fmt.Errorf("betterauth: at least one trusted origin is required")
@@ -331,12 +381,101 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 			return cfg, nil, nil, fmt.Errorf("betterauth: invalid social provider %q", providerID)
 		}
 	}
+	trustedProviders := make([]string, 0, len(cfg.Account.TrustedProviders))
+	if cfg.Account.TrustedProviderResolver != nil && len(cfg.Account.TrustedProviders) > 0 {
+		return cfg, nil, nil, fmt.Errorf("betterauth: static and request-resolved trusted providers are mutually exclusive")
+	}
+	trustedProviderSet := make(map[string]struct{}, len(cfg.Account.TrustedProviders))
+	for _, raw := range cfg.Account.TrustedProviders {
+		providerID := strings.ToLower(strings.TrimSpace(raw))
+		if !validProviderID(providerID) {
+			return cfg, nil, nil, fmt.Errorf("betterauth: invalid trusted provider %q", raw)
+		}
+		if _, configured := cfg.SocialProviders[providerID]; !configured && providerID != "email-password" {
+			return cfg, nil, nil, fmt.Errorf("betterauth: trusted provider %q is not configured", providerID)
+		}
+		if _, duplicate := trustedProviderSet[providerID]; duplicate {
+			continue
+		}
+		trustedProviderSet[providerID] = struct{}{}
+		trustedProviders = append(trustedProviders, providerID)
+	}
+	cfg.Account.TrustedProviders = trustedProviders
 	cfg.SocialProviders = maps.Clone(cfg.SocialProviders)
 	return cfg, origins, returnTo, nil
 }
 
 func (cfg Config) autoSignInAfterSignUp() bool {
 	return cfg.EmailPassword.AutoSignIn == nil || *cfg.EmailPassword.AutoSignIn
+}
+
+func (cfg Config) accountLinkingEnabled() bool {
+	return cfg.Account.LinkingEnabled == nil || *cfg.Account.LinkingEnabled
+}
+
+func (cfg Config) updateAccountOnSignIn() bool {
+	return cfg.Account.UpdateAccountOnSignIn == nil || *cfg.Account.UpdateAccountOnSignIn
+}
+
+func (cfg Config) requireLocalEmailVerifiedForLinking() bool {
+	return cfg.Account.RequireLocalEmailVerified == nil || *cfg.Account.RequireLocalEmailVerified
+}
+
+func normalizeAdminConfig(config *AdminConfig) error {
+	config.DefaultRole = strings.ToLower(strings.TrimSpace(config.DefaultRole))
+	if config.DefaultRole == "" {
+		config.DefaultRole = "user"
+	}
+	if !validRoleName(config.DefaultRole) {
+		return fmt.Errorf("betterauth: invalid default admin role %q", config.DefaultRole)
+	}
+	roles := make([]string, 0, len(config.AdminRoles))
+	seenRoles := make(map[string]struct{}, len(config.AdminRoles))
+	for _, raw := range config.AdminRoles {
+		role := strings.ToLower(strings.TrimSpace(raw))
+		if !validRoleName(role) {
+			return fmt.Errorf("betterauth: invalid admin role %q", raw)
+		}
+		if _, duplicate := seenRoles[role]; duplicate {
+			continue
+		}
+		seenRoles[role] = struct{}{}
+		roles = append(roles, role)
+	}
+	if config.RoleResolver != nil && len(roles) == 0 {
+		roles = []string{"admin"}
+	}
+	if len(roles) > 0 && config.RoleResolver == nil {
+		return fmt.Errorf("betterauth: admin role resolver is required when admin roles are configured")
+	}
+	config.AdminRoles = roles
+	ids := make([]string, 0, len(config.AdminUserIDs))
+	seenIDs := make(map[string]struct{}, len(config.AdminUserIDs))
+	for _, raw := range config.AdminUserIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" || len(id) > 512 {
+			return fmt.Errorf("betterauth: invalid admin user ID")
+		}
+		if _, duplicate := seenIDs[id]; duplicate {
+			continue
+		}
+		seenIDs[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	config.AdminUserIDs = ids
+	return nil
+}
+
+func validRoleName(value string) bool {
+	if value == "" || len(value) > 64 {
+		return false
+	}
+	for _, char := range value {
+		if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' && char != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func validProviderID(value string) bool {

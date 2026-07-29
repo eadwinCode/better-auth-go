@@ -109,6 +109,50 @@ verification callbacks.
   replacement. Both modes retain callback allowlisting, hash-at-rest
   single-use tokens, and enumeration-resistant destination checks.
 
+## OAuth account-linking and callback contract
+
+`Config.Account` implements the pinned account-linking controls for enabling
+linking, disabling implicit same-email linking, static or request-resolved
+trusted provider IDs, verified local email, different-email explicit links,
+unlinking the final account, and non-identity profile updates. Pointer-valued
+enable/local-verification options preserve the upstream true defaults while
+remaining immutable after `New`.
+The account-level `UpdateAccountOnSignIn` option separately controls whether a
+returning provider refreshes stored provider tokens and also defaults to true.
+
+OAuth success, error and new-user destinations plus `requestSignUp` are stored
+inside single-use hash-at-rest state. Provider identity pairs are globally
+unique. Same-user links are idempotent and refresh tokens; another user's
+identity returns `ACCOUNT_ALREADY_LINKED_TO_DIFFERENT_USER`. Implicit same-email
+linking requires verified provider evidence and, by default, a verified local
+email. Profile updates can copy name/image but never user ID, email, or email
+verification state.
+
+When the migration-only `RequireLocalEmailVerified:false` option is selected,
+verified provider evidence for the exact same normalized email promotes the
+local email to verified after the implicit link, matching v1.6.25. Optional
+name/image profile synchronization remains unable to change identity fields.
+
+The v1.6.25 generic OAuth provider-error branch is a deliberate difference: it
+runs before parsing state, redirects to the global error URL, reflects
+`error_description`, and leaves state reusable. Go consumes and provider-binds
+state before handling every error, redirects only to the state-owned
+allowlisted URL, and emits only a bounded public error code.
+
+## Bounded admin impersonation options
+
+`Config.Admin` adds the v1.6.25 administrator-selection inputs needed by the
+existing impersonation surface: default/admin roles, explicit admin user IDs,
+a request-scoped role resolver, and `AllowImpersonatingAdmins`. The existing
+application authorizer remains mandatory and additive. Role-based selection
+without a resolver fails construction; resolver errors fail the request
+closed. Administrator targets are denied by default. Sessions remain capped at
+one hour, rotated on entry/exit, and paired with durable audits.
+
+User CRUD, roles, bans, arbitrary session administration, and permission
+endpoints belong to the full admin plugin backlog; they are not claimed by the
+bounded core impersonation certification.
+
 The Go password policy measures bytes to place a deterministic upper bound on
 password-hashing work. Better Auth uses JavaScript UTF-16 string length, so
 non-ASCII boundary cases remain an accepted runtime-specific difference.
@@ -194,8 +238,13 @@ release because provider payloads and policies can change independently.
   token hashes.
 - OAuth state and one-time credentials are hashed at rest and consumed
   atomically.
+- Provider-declared OAuth errors consume state before redirect and never
+  reflect an untrusted provider description.
 - Automatic email account linking requires a verified-email assertion and an
   explicit local policy.
+- Anonymous sign-out requires the same trusted-origin/double-submit CSRF
+  evidence as other mutations; after a valid CSRF cookie exists, repeated
+  sign-out is idempotent.
 - Cross-site `SameSite=None` cookie mode is not enabled by default and requires a
   future security ADR.
 - Adapter fallbacks may not weaken an enabled feature's required atomicity.

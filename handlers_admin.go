@@ -1,6 +1,8 @@
 package betterauth
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 )
@@ -32,8 +34,27 @@ func (s *Server) handleImpersonate(w http.ResponseWriter, r *http.Request) error
 	if err != nil || subject.DisabledAt != nil {
 		return publicError(CodeNotFound, "User not found.", http.StatusNotFound, err)
 	}
-	if err := s.cfg.ImpersonationAuthorizer.CanImpersonate(r.Context(), actor, subject); err != nil {
+	actorAdmin, err := s.isConfiguredAdmin(r.Context(), actor)
+	if err != nil {
 		return publicError(CodeForbidden, "Impersonation is not allowed.", http.StatusForbidden, err)
+	}
+	if s.adminSelectionConfigured() && !actorAdmin {
+		return publicError(
+			CodeCannotImpersonateUsers, "Impersonation is not allowed.", http.StatusForbidden, nil,
+		)
+	}
+	if err := s.cfg.ImpersonationAuthorizer.CanImpersonate(r.Context(), actor, subject); err != nil {
+		return publicError(CodeCannotImpersonateUsers, "Impersonation is not allowed.", http.StatusForbidden, err)
+	}
+	subjectAdmin, err := s.isConfiguredAdmin(r.Context(), subject)
+	if err != nil {
+		return publicError(CodeForbidden, "Impersonation is not allowed.", http.StatusForbidden, err)
+	}
+	if subjectAdmin && !s.cfg.Admin.AllowImpersonatingAdmins {
+		return publicError(
+			CodeCannotImpersonateAdmins, "Administrators cannot impersonate other administrators.",
+			http.StatusForbidden, nil,
+		)
 	}
 	session, raw, err := s.newSession(subject.ID, s.cfg.ImpersonationDuration)
 	if err != nil {
@@ -62,6 +83,45 @@ func (s *Server) handleImpersonate(w http.ResponseWriter, r *http.Request) error
 	s.setSessionCookie(w, raw, session.ExpiresAt)
 	writeJSON(w, http.StatusOK, map[string]any{"session": session, "user": subject})
 	return nil
+}
+
+func (s *Server) adminSelectionConfigured() bool {
+	return s.cfg.Admin.RoleResolver != nil || len(s.cfg.Admin.AdminUserIDs) > 0
+}
+
+func (s *Server) isConfiguredAdmin(ctx context.Context, user User) (bool, error) {
+	for _, id := range s.cfg.Admin.AdminUserIDs {
+		if id == user.ID {
+			return true, nil
+		}
+	}
+	if len(s.cfg.Admin.AdminUserIDs) > 0 {
+		// Better Auth v1.6 gives the explicit ID list precedence over role
+		// selection when it is configured.
+		return false, nil
+	}
+	if s.cfg.Admin.RoleResolver == nil {
+		return false, nil
+	}
+	roles, err := s.cfg.Admin.RoleResolver.Roles(ctx, user)
+	if err != nil {
+		return false, err
+	}
+	if len(roles) == 0 {
+		roles = []string{s.cfg.Admin.DefaultRole}
+	}
+	for _, raw := range roles {
+		role := strings.ToLower(strings.TrimSpace(raw))
+		if !validRoleName(role) {
+			return false, errors.New("betterauth: admin role resolver returned an invalid role")
+		}
+		for _, adminRole := range s.cfg.Admin.AdminRoles {
+			if role == adminRole {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func (s *Server) handleStopImpersonating(w http.ResponseWriter, r *http.Request) error {
