@@ -713,7 +713,8 @@ func (s *databaseStore) PutOAuthState(ctx context.Context, state OAuthState) err
 		"metadata": map[string]string{
 			"pkceVerifier": state.PKCEVerifier, "nonce": state.Nonce,
 			"redirectURI": state.RedirectURI, "returnTo": state.ReturnTo,
-			"linkUserId": state.LinkUserID,
+			"errorReturnTo": state.ErrorReturnTo, "newUserReturnTo": state.NewUserReturnTo,
+			"linkUserId": state.LinkUserID, "requestSignUp": fmt.Sprintf("%t", state.RequestSignUp),
 		},
 	}})
 	return err
@@ -742,7 +743,9 @@ func (s *databaseStore) ConsumeOAuthState(ctx context.Context, hash string, now 
 	}
 	return OAuthState{
 		ID: id, Hash: hash, PKCEVerifier: meta["pkceVerifier"], Nonce: meta["nonce"], RedirectURI: meta["redirectURI"],
-		ReturnTo: meta["returnTo"], LinkUserID: meta["linkUserId"], ExpiresAt: expires, CreatedAt: created,
+		ReturnTo: meta["returnTo"], ErrorReturnTo: meta["errorReturnTo"], NewUserReturnTo: meta["newUserReturnTo"],
+		LinkUserID: meta["linkUserId"], RequestSignUp: meta["requestSignUp"] == "true",
+		ExpiresAt: expires, CreatedAt: created,
 	}, nil
 }
 
@@ -752,6 +755,7 @@ func (s *databaseStore) UpsertOAuthUser(
 	tokens ProviderTokens,
 	session Session,
 	event DomainEvent,
+	policy OAuthUpsertPolicy,
 ) (User, Session, bool, error) {
 	var user User
 	var createdSession Session
@@ -776,12 +780,44 @@ func (s *databaseStore) UpsertOAuthUser(
 			if err != nil {
 				return err
 			}
+			if policy.UpdateAccountOnSignIn {
+				accountID, err := recordString(account, "id")
+				if err != nil {
+					return err
+				}
+				if _, err = tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
+					Eq("id", accountID), Eq("userId", user.ID),
+				}, Update: Record{
+					"accessToken": tokens.AccessToken, "refreshToken": tokens.RefreshToken,
+					"idToken": tokens.IDToken, "scope": tokens.Scope,
+					"accessTokenExpiresAt":  nullableTimeValue(tokens.AccessTokenExpiresAt),
+					"refreshTokenExpiresAt": nullableTimeValue(tokens.RefreshTokenExpiresAt),
+					"updatedAt":             session.CreatedAt,
+				}}); err != nil {
+					return err
+				}
+			}
+			if profile.EmailVerified && !user.EmailVerified && profile.Email == user.Email {
+				row, err = tx.Update(ctx, UpdateQuery{Model: ModelUser, Where: []Where{Eq("id", user.ID)}, Update: Record{
+					"emailVerified": true, "updatedAt": session.CreatedAt,
+				}})
+				if err != nil {
+					return err
+				}
+				user, err = userFromRecord(row)
+				if err != nil {
+					return err
+				}
+			}
 		} else {
 			row, findErr := tx.FindOne(ctx, FindOneQuery{Model: ModelUser, Where: []Where{Eq("email", profile.Email)}})
 			if findErr != nil && !errors.Is(findErr, ErrNotFound) {
 				return findErr
 			}
 			if row == nil {
+				if !policy.AllowSignUp {
+					return ErrSignUpDisabled
+				}
 				isNew = true
 				now := session.CreatedAt
 				user = User{
@@ -799,6 +835,9 @@ func (s *databaseStore) UpsertOAuthUser(
 				if err != nil {
 					return err
 				}
+				if !policy.AllowImplicitLink || (policy.RequireLocalVerification && !user.EmailVerified) {
+					return ErrAccountNotLinked
+				}
 				session.UserID = user.ID
 			}
 			accountID := event.ID + ":account"
@@ -812,6 +851,37 @@ func (s *databaseStore) UpsertOAuthUser(
 			}})
 			if err != nil {
 				return err
+			}
+			if !isNew && profile.EmailVerified && !user.EmailVerified && profile.Email == user.Email {
+				row, err = tx.Update(ctx, UpdateQuery{Model: ModelUser, Where: []Where{Eq("id", user.ID)}, Update: Record{
+					"emailVerified": true, "updatedAt": session.CreatedAt,
+				}})
+				if err != nil {
+					return err
+				}
+				user, err = userFromRecord(row)
+				if err != nil {
+					return err
+				}
+			}
+			if !isNew && policy.UpdateUserInfoOnLink {
+				update := Record{"updatedAt": session.CreatedAt}
+				if profile.Name != "" {
+					update["name"] = profile.Name
+				}
+				if profile.ImageURL != "" {
+					update["image"] = profile.ImageURL
+				}
+				if len(update) > 1 {
+					row, err = tx.Update(ctx, UpdateQuery{Model: ModelUser, Where: []Where{Eq("id", user.ID)}, Update: update})
+					if err != nil {
+						return err
+					}
+					user, err = userFromRecord(row)
+					if err != nil {
+						return err
+					}
+				}
 			}
 		}
 		session.UserID = user.ID

@@ -1,5 +1,6 @@
 import {
   auth,
+  adminImpersonationAuth,
   capturedMails,
   database,
   deletionVerificationAuth,
@@ -41,6 +42,23 @@ async function oauthTokenFixture(
       { error: "invalid_grant", error_description: "Invalid refresh token" },
       { status: 400 },
     );
+  }
+  if (body.get("grant_type") === "authorization_code") {
+    const code = String(body.get("code") || "missing");
+    if (code === "invalid-code") {
+      return Response.json(
+        { error: "invalid_grant", error_description: "Invalid code" },
+        { status: 400 },
+      );
+    }
+    return Response.json({
+      access_token: "fixture-access-token:" + code,
+      refresh_token: "fixture-refresh-token",
+      id_token: "fixture-id-token:" + code,
+      token_type: "Bearer",
+      scope: "openid profile",
+      expires_in: 3600,
+    });
   }
   return Response.json({
     access_token: "fixture-refreshed-access-token",
@@ -105,6 +123,12 @@ const server = Bun.serve({
     if (oauthToken) return oauthToken;
     const controlled = await testControl(request, url);
     if (controlled) return controlled;
+    if (
+      url.pathname === referenceConfig.basePath + "-admin-allow" ||
+      url.pathname.startsWith(referenceConfig.basePath + "-admin-allow/")
+    ) {
+      return adminImpersonationAuth.handler(request);
+    }
     if (
       url.pathname === referenceConfig.basePath + "-delete" ||
       url.pathname.startsWith(referenceConfig.basePath + "-delete/")

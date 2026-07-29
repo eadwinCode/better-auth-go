@@ -90,6 +90,13 @@ func (oracle *typescriptOracle) deletionVerificationClone(t *testing.T) *typescr
 	return clone
 }
 
+func (oracle *typescriptOracle) adminImpersonationClone(t *testing.T) *typescriptOracle {
+	t.Helper()
+	clone := oracle.clone(t)
+	clone.basePath += "-admin-allow"
+	return clone
+}
+
 type capturedOracleMail struct {
 	Kind  string `json:"kind"`
 	Email string `json:"email"`

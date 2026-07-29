@@ -16,7 +16,12 @@ export const database = new Database(referenceConfig.databasePath, {
   create: true,
 });
 
-const createAuth = (basePath: string, verifyAccountDeletion: boolean) => betterAuth({
+const createAuth = (
+  basePath: string,
+  verifyAccountDeletion: boolean,
+  allowImpersonatingAdmins = false,
+) =>
+  betterAuth({
   appName: "better-auth-go compatibility oracle",
   secret: referenceConfig.secret,
   baseURL: referenceConfig.baseURL,
@@ -100,6 +105,7 @@ const createAuth = (basePath: string, verifyAccountDeletion: boolean) => betterA
   plugins: [
     admin({
       impersonationSessionDuration: 60 * 60,
+      allowImpersonatingAdmins,
     }),
     genericOAuth({
       config: [
@@ -112,22 +118,33 @@ const createAuth = (basePath: string, verifyAccountDeletion: boolean) => betterA
           tokenUrl: referenceConfig.baseURL + "/__better_auth_test/oauth/token",
           authentication: "post",
           scopes: ["openid", "profile"],
-          async getUserInfo() {
+          async getUserInfo(tokens) {
+            const fixtureCode = tokens.accessToken?.startsWith(
+              "fixture-access-token:",
+            )
+              ? tokens.accessToken.slice("fixture-access-token:".length)
+              : "default";
+            const identity = fixtureCode.replace(/[^a-zA-Z0-9_-]/g, "-");
             return {
-              id: "test-provider-user",
-              email: "provider-fixture@example.com",
+              id: "test-provider-user-" + identity,
+              email: "provider-" + identity.toLowerCase() + "@example.com",
               emailVerified: true,
-              name: "Provider Fixture",
+              name: "Provider Fixture " + identity,
             };
           },
         },
       ],
     }),
   ],
-});
+  });
 
 export const auth = createAuth(referenceConfig.basePath, false);
 export const deletionVerificationAuth = createAuth(
   referenceConfig.basePath + "-delete",
+  true,
+);
+export const adminImpersonationAuth = createAuth(
+  referenceConfig.basePath + "-admin-allow",
+  false,
   true,
 );

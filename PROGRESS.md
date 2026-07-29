@@ -32,14 +32,14 @@ interoperability certification, release-candidate evidence, and the remaining
 
 ## Evidence snapshot
 
-Last updated: 2026-07-28
+Last updated: 2026-07-29
 
 | Gate | Command or evidence | Result |
 | --- | --- | --- |
 | Go unit and black-box tests | `go test -count=1 ./...` | Pass |
 | TypeScript oracle type check | `bun run typecheck` in `compat/typescript-oracle` | Pass |
 | TypeScript oracle migration | `scripts/test-typescript-compat.sh` isolated SQLite setup | Pass |
-| Go/TypeScript core characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback, multi-session, email change, direct/emailed deletion, account linking/unlinking, provider-token and impersonation suites |
+| Go/TypeScript core characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback, multi-session, email change, direct/emailed deletion, OAuth callback/error/replay/new-user, linking collision/options, provider-token, sign-out/session and impersonation-option suites |
 | Pinned upstream source inventory | `scripts/check-upstream-v1.6.25.sh` | Pass at tag commit `07a646e` |
 | Formatting | `test -z "$(gofmt -l .)"` | Pass |
 | Vet | `go vet ./...` | Pass |
@@ -80,14 +80,14 @@ contract differences must be listed below.
 | Capability | Implementation | Cross-runtime HTTP evidence | Status |
 | --- | --- | --- | --- |
 | Email/password sign-up and sign-in | Present, including v1.6 lifecycle options and callbacks | Default lifecycle, bounds and duplicate errors differential; send-on-signup/signin, existing-user callback and option/security matrix in Go | Certified for the pinned core option contract |
-| Sign-out and session retrieval | Present | Lifecycle characterization added | Partial |
+| Sign-out and session retrieval | Present | Anonymous/authenticated retrieval, authenticated/repeated sign-out, cookie clearing and post-sign-out differential; Go origin/CSRF failures asserted | Certified for the pinned core option contract |
 | Session refresh and revocation | Present | Session list/update and single/other/all revocation differential; refresh is Go-only rotation | Partial |
 | User update, email change, deletion | Present | User update, both change-email modes, enumeration resistance, direct password deletion, emailed deletion callback, replay/ownership and resulting state tests pass | Certified for the pinned core option contract |
 | Password change and recovery | Present | Change-password plus request/reset/callback/invalid/replay differential; callback ordering, concurrency and revocation Go tests | Certified for the pinned core option contract |
 | Email verification | Present | Send/verify/resend/state differential plus send modes, before/after callbacks and auto-sign-in lifecycle tests | Certified for the pinned core option contract |
-| Account list/link/unlink | Present | Public link flow, listing, unlink success/missing/final-account errors differential pass | Partial pending remaining linking options/collisions |
+| Account list/link/unlink | Present | Public link flow, listing/unlink, verified local implicit linking, enable/disable, trusted providers, different-email, profile update, requestSignUp, same/cross-user and concurrent collision tests pass | Certified for the pinned core option contract |
 | Provider access/refresh tokens | Present | Safe read/refresh fields, local provider refresh, persistence and refresh-token redaction differential pass | Partial pending provider-specific fixtures |
-| Admin impersonation | Bounded implementation present | Authorization, one-hour session, active identity and stop/restore differential; durable Go audit tests pass | Partial pending remaining admin-plugin options |
+| Admin impersonation | Bounded implementation present | Authorization, admin roles/IDs, admin-target default/opt-in, one-hour session, active identity and stop/restore differential; durable Go audit tests pass | Certified for the bounded core impersonation contract; full admin plugin remains separate |
 | Request validators and size limits | Present | Go failure tests | Partial |
 | Trusted origins and CSRF | Present | Cross-runtime origin characterization added | Partial |
 | `onRequest`, `onResponse`, route and database hooks | Present | Go ordering/rollback/race tests | Partial |
@@ -103,9 +103,9 @@ failure behavior.
 | Capability | Status | Remaining evidence |
 | --- | --- | --- |
 | 35 provider presets | Certified deterministic matrix | Live credential runs remain release-operator evidence |
-| Authorization code, state and PKCE | Partial | Differential callback/error/replay matrix |
+| Authorization code, state and PKCE | Certified | Callback success/error/new-user, state/provider binding, replay, PKCE and sanitized-error matrix pass; pinned generic-OAuth weakness is a documented difference |
 | OIDC nonce and ID-token verification | Certified | Issuer, audience, nonce, expiry, RS256, deterministic clock and JWKS rotation fixtures pass |
-| Verified-email linking | Partial | Cross-runtime linking and collision matrix |
+| Verified-email linking | Certified | Explicit/implicit, local verification, trusted-provider evidence, same-user refresh, cross-user and concurrent collision matrix pass |
 | Refresh and revocation | Partial | Generic refresh is certified; provider-specific revocation remains provider-dependent |
 | Generic OAuth/OIDC consumer API | Certified | Discovery, custom mapping, all client-auth modes, refresh, redirect, response-bound, error-redaction and SSRF fixtures pass |
 | Live provider interoperability | Missing release evidence | Selected sandbox-provider runs with secrets supplied by CI or release operator |
@@ -186,6 +186,8 @@ closed before the stable release:
 | Session/account management responses | Upstream names and session tokens | stable IDs and token redaction | Deliberate security difference; remaining shapes need review |
 | Verification token replay | A valid signed token returns success after the account is verified | hashed token is consumed once; replay returns `INVALID_TOKEN` | Deliberate security difference |
 | CSRF model | trusted-origin/cookie behavior from upstream | trusted origin plus explicit double-submit token for authenticated mutations | Deliberate security difference |
+| Anonymous sign-out | Returns success without an existing session/CSRF cookie | Requires a valid double-submit CSRF cookie; repeated sign-out is idempotent after one is issued | Deliberate CSRF security difference |
+| Generic OAuth provider error | Redirects to global error URL before state parsing, reflects `error_description`, and leaves state reusable | Consumes valid state first, uses only its allowlisted error URL, emits a bounded code, and never reflects provider descriptions | Deliberate provider-error and replay hardening |
 | Same-email change error | Returns only `message` for this `BAD_REQUEST` | Always returns structured `code` and `message` | Deliberate structured-error guarantee |
 | Provider refresh response | Returns the provider refresh token | Omits refresh tokens while returning safe access/ID-token metadata | Deliberate credential-redaction guarantee |
 | Impersonation session preservation | Stores and restores the original signed admin session cookie | Revokes/rotates on entry and creates a new actor session on exit, with durable audit events | Deliberate fixation-protection and audit guarantee |

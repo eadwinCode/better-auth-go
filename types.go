@@ -154,15 +154,18 @@ type OneTimeToken struct {
 
 // OAuthState is a purpose-specific single-use authorization transaction.
 type OAuthState struct {
-	ID           string
-	Hash         string
-	PKCEVerifier string
-	Nonce        string
-	RedirectURI  string
-	ReturnTo     string
-	LinkUserID   string
-	ExpiresAt    time.Time
-	CreatedAt    time.Time
+	ID              string
+	Hash            string
+	PKCEVerifier    string
+	Nonce           string
+	RedirectURI     string
+	ReturnTo        string
+	ErrorReturnTo   string
+	NewUserReturnTo string
+	LinkUserID      string
+	RequestSignUp   bool
+	ExpiresAt       time.Time
+	CreatedAt       time.Time
 }
 
 // Mail contains a transactional authentication message. Implementations should

@@ -51,8 +51,10 @@ layer rather than a plugin.
 
 ### Authorization and identity management
 
-- full admin user-management parity beyond the existing bounded impersonation
-  flow;
+- full admin user-management parity beyond the certified bounded impersonation
+  flow (administrator role/ID selection, admin-target policy, duration,
+  rotation and audit are complete; user CRUD, bans and session administration
+  remain);
 - organizations, members, invitations, teams, roles, and permissions —
   implemented in the dedicated ADR 0006 runtime PR;
 - SSO with OIDC and SAML — runtime implemented; pinned/live enterprise

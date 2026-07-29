@@ -311,7 +311,13 @@ func (s *Server) authenticatePluginOAuth(
 		},
 	}
 	user, created, isNew, err := s.store.UpsertOAuthUser(
-		r.Context(), profile, encryptedTokens, session, event,
+		r.Context(), profile, encryptedTokens, session, event, OAuthUpsertPolicy{
+			AllowImplicitLink:        s.cfg.accountLinkingEnabled() && !s.cfg.Account.DisableImplicitLinking,
+			RequireLocalVerification: s.cfg.requireLocalEmailVerifiedForLinking(),
+			UpdateUserInfoOnLink:     s.cfg.Account.UpdateUserInfoOnLink,
+			UpdateAccountOnSignIn:    s.cfg.updateAccountOnSignIn(),
+			AllowSignUp:              true,
+		},
 	)
 	if err != nil {
 		if errors.Is(err, ErrConflict) {

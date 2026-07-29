@@ -18,15 +18,26 @@ import (
 )
 
 type fakeOAuthProvider struct {
-	mu        sync.Mutex
-	challenge string
-	nonce     string
+	mu                    sync.Mutex
+	challenges            map[string]string
+	profile               betterauth.OAuthProfile
+	tokens                betterauth.ProviderTokens
+	disableImplicitSignUp bool
+	disableSignUp         bool
 }
+
+func (provider *fakeOAuthProvider) DisableImplicitSignUp() bool {
+	return provider.disableImplicitSignUp
+}
+
+func (provider *fakeOAuthProvider) DisableSignUp() bool { return provider.disableSignUp }
 
 func (provider *fakeOAuthProvider) AuthorizationURL(state, challenge, nonce, redirectURI string) (string, error) {
 	provider.mu.Lock()
-	provider.challenge = challenge
-	provider.nonce = nonce
+	if provider.challenges == nil {
+		provider.challenges = map[string]string{}
+	}
+	provider.challenges[nonce] = challenge
 	provider.mu.Unlock()
 	destination := &url.URL{Scheme: "https", Host: "provider.example", Path: "/authorize"}
 	query := destination.Query()
@@ -46,25 +57,38 @@ func (provider *fakeOAuthProvider) Exchange(
 	redirectURI string,
 ) (betterauth.OAuthResult, error) {
 	provider.mu.Lock()
-	challenge := provider.challenge
-	expectedNonce := provider.nonce
+	challenge := provider.challenges[nonce]
+	profile := provider.profile
+	tokens := provider.tokens
 	provider.mu.Unlock()
 	sum := sha256.Sum256([]byte(verifier))
-	if code != "valid-code" || challenge != base64.RawURLEncoding.EncodeToString(sum[:]) || verifier == "" || nonce != expectedNonce ||
+	if code != "valid-code" || challenge != base64.RawURLEncoding.EncodeToString(sum[:]) || verifier == "" || nonce == "" ||
 		redirectURI != "https://auth.example.com/api/auth/callback/test" {
 		return betterauth.OAuthResult{}, betterauth.ErrReplay
 	}
-	return betterauth.OAuthResult{
-		Profile: betterauth.OAuthProfile{
+	if profile.ProviderAccountID == "" {
+		profile = betterauth.OAuthProfile{
 			ProviderAccountID: "provider-user-1", Email: "oauth@example.com",
 			EmailVerified: true, Name: "OAuth User",
-		},
-		Tokens: betterauth.ProviderTokens{
+		}
+	}
+	if tokens.AccessToken == "" {
+		tokens = betterauth.ProviderTokens{
 			AccessToken: "plain-access-token", RefreshToken: "plain-refresh-token",
 			IDToken: "plain-id-token", Scope: "openid profile",
 			AccessTokenExpiresAt: time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC),
-		},
+		}
+	}
+	return betterauth.OAuthResult{
+		Profile: profile,
+		Tokens:  tokens,
 	}, nil
+}
+
+func (provider *fakeOAuthProvider) setTokens(tokens betterauth.ProviderTokens) {
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	provider.tokens = tokens
 }
 
 func (provider *fakeOAuthProvider) Refresh(

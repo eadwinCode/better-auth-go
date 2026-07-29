@@ -98,6 +98,9 @@ func CoreSchema() Schema {
 				"createdAt":             {Type: FieldDate, Required: true},
 				"updatedAt":             {Type: FieldDate, Required: true},
 			},
+			Indexes: []IndexSchema{{
+				Name: "account_provider_account_unique", Fields: []string{"providerId", "accountId"}, Unique: true,
+			}},
 		},
 		ModelVerification: {
 			Fields: map[string]FieldSchema{

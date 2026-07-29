@@ -122,12 +122,6 @@ func (instance *runtime) plugin() betterauth.Plugin {
 
 func baseSchema() betterauth.Schema {
 	return betterauth.Schema{
-		betterauth.ModelAccount: {
-			Indexes: []betterauth.IndexSchema{{
-				Name: "scim_account_provider_identity", Fields: []string{"providerId", "accountId"},
-				Unique: true,
-			}},
-		},
 		ModelSCIMProvider: {
 			Fields: map[string]betterauth.FieldSchema{
 				"id": {
