@@ -59,10 +59,11 @@ layer rather than a plugin.
   remain);
 - organizations, members, invitations, teams, roles, and permissions —
   implemented in the dedicated ADR 0006 runtime PR;
-- SSO with OIDC and SAML — runtime implemented; pinned/live enterprise
-  certification remains;
+- SSO with OIDC and SAML — experimental runtime implemented; pinned/live
+  enterprise certification is required before v1-stable promotion;
 - SCIM provisioning — connection management and User CRUD/list/filter/PUT/PATCH
-  runtime implemented; TypeScript/live-directory certification remains.
+  experimental runtime implemented; TypeScript/live-directory certification is
+  required before v1-stable promotion.
 
 ### API and tokens
 

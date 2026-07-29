@@ -1,5 +1,10 @@
 # Enterprise SSO
 
+> **Experimental:** `plugin/sso` is not included in the better-auth-go v1
+> compatibility or production-support guarantee. Pin an exact version and run
+> interoperability tests against every configured IdP before deployment. See
+> [Versioning and stability](./versioning.md).
+
 The `plugin/sso` package is the isolated enterprise SSO integration for Better
 Auth v1.6.25-shaped OIDC, OAuth 2.0, and SAML providers.
 

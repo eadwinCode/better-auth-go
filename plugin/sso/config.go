@@ -1,5 +1,9 @@
 // Package sso provides Better Auth-shaped OIDC, OAuth 2.0, and SAML enterprise
 // single sign-on.
+//
+// Stability: Experimental. This package is tested but is outside the
+// better-auth-go v1 compatibility guarantee pending pinned differential and
+// live enterprise interoperability certification.
 package sso
 
 import (

@@ -1,5 +1,9 @@
 // Package scim provides an inbound Better Auth-shaped SCIM 2.0 provisioning
 // service.
+//
+// Stability: Experimental. This package is tested but is outside the
+// better-auth-go v1 compatibility guarantee pending pinned differential and
+// live enterprise-directory interoperability certification.
 package scim
 
 import (

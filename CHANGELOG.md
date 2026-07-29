@@ -57,8 +57,20 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 - Request-pipeline certification for validator, hook, response-bound and
   rate-limiter failure handling, plus session/provider-token rotation and
   concurrency evidence.
+- A reusable clean-checkout release-candidate workflow covering Go quality,
+  race, vulnerability, fuzz, Better Auth 1.6.25 differential, real database
+  migration, external-module installation, and artifact-contract gates.
+- Semantic-tag release archives, checksums, an SPDX SBOM, and Sigstore-backed
+  GitHub provenance attestations.
+- Production operations and versioning guides covering the v1 boundary,
+  deployment, backup/restore, proxy/cookie policy, key rotation, upgrades,
+  rollback, and release verification.
 
 ### Changed
+
+- SSO, SCIM, and the other feature-plugin packages are explicitly experimental
+  and outside the first v1 compatibility guarantee pending their own promotion
+  evidence.
 
 - Core user/session HTTP JSON now uses Better Auth v1.6 camelCase fields and a
   nullable `image` value.

@@ -28,8 +28,11 @@ using native Go security defaults:
 - an opt-in Better Auth-shaped 2FA plugin with encrypted TOTP/backup material,
   delivered OTP, trusted devices, shared attempt budgets, and durable lockout.
 
-The project is pre-1.0. Review the compatibility matrix and changelog before
-upgrading.
+The project is preparing its first v1 release candidate. The v1 stability
+guarantee covers the core server and first-party MongoDB, PostgreSQL, and SQLite
+adapters. Packages below `plugin/`, including SSO and SCIM, remain experimental
+and outside that guarantee. Review [Versioning and stability](./docs/versioning.md),
+the compatibility matrix, and the changelog before upgrading.
 
 The pinned cross-runtime suite is reproducible from this repository:
 
@@ -45,6 +48,9 @@ scripts/test-typescript-compat.sh
 ```bash
 go get github.com/eadwinCode/better-auth-go
 ```
+
+Production deployments should pin an exact released tag. The release workflow
+tests installation from an external module without a local `replace` directive.
 
 ## Minimal server
 
@@ -452,16 +458,22 @@ before deploying. Important operational requirements:
 - treat mail links, OAuth codes, cookies, and raw tokens as secrets;
 - consume outbox events idempotently.
 
+The complete deployment, backup/restore, proxy/cookie, key-rotation, and upgrade
+runbook is in [Production operations](./docs/production-operations.md).
+
 ## Compatibility and roadmap
 
 - [Better Auth v1.6 compatibility matrix](./docs/compatibility/better-auth-v1.6.md)
 - [Better Auth v1.6.25 production progress](./PROGRESS.md)
+- [Versioning and stability](./docs/versioning.md)
+- [Production operations](./docs/production-operations.md)
 - [Implementation plan](./IMPLEMENTATION_PLAN.md)
 - [Architecture decision record](./docs/adr/0001-auth-server-architecture.md)
 - [Plugin-kernel decision record](./docs/adr/0002-plugin-kernel.md)
 - [Management, validation, and SQL decision record](./docs/adr/0003-core-management-validation-and-sql.md)
 - [Passkey/WebAuthn decision record](./docs/adr/0004-passkeys-webauthn.md)
 - [Two-factor authentication decision record](./docs/adr/0005-two-factor-authentication.md)
+- [v1 release-candidate decision record](./docs/adr/0018-v1-release-candidate.md)
 - [Organizations decision record](./docs/adr/0006-organizations.md)
 - [Organizations integration guide](./docs/organizations.md)
 - [Enterprise SSO decision record](./docs/adr/0007-enterprise-sso.md)
@@ -470,10 +482,10 @@ before deploying. Important operational requirements:
 - [SCIM integration status](./docs/scim.md)
 - [Changelog](./CHANGELOG.md)
 
-The server plugin kernel, passkeys, two-factor authentication, organizations,
-enterprise SSO, and SCIM are implemented. Username, magic links, API keys, and
-other feature plugins remain separate compatibility milestones with their own
-threat models.
+The stable server plugin kernel and experimental passkey, two-factor,
+organization, enterprise SSO, and SCIM feature packages are implemented.
+Username, magic links, API keys, and other feature plugins remain separate
+compatibility milestones with their own threat models.
 
 ## License
 

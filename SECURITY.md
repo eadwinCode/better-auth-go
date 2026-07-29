@@ -5,6 +5,9 @@
 Until the first stable release, only the latest tagged minor release receives
 security fixes. After v1.0, the current major release and the previous major
 release will receive coordinated fixes according to published release notes.
+The v1 compatibility promise applies only to the stable boundary documented in
+`docs/versioning.md`. Experimental plugin packages still receive security
+triage on the latest release, but may require breaking fixes before promotion.
 
 ## Reporting a vulnerability
 
@@ -69,3 +72,6 @@ credit.
 8. Redact request bodies, cookies, authorization headers, query tokens, and mail
    objects from logs and traces.
 9. Run `go test -race ./...` and `govulncheck ./...` for every release.
+10. Follow the backup, restore-drill, proxy, cookie, secret-rotation, migration,
+    rollback, and artifact-verification procedures in
+    [`docs/production-operations.md`](./docs/production-operations.md).
