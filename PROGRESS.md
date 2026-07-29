@@ -22,16 +22,17 @@ this release.
 
 ## Current release decision
 
-**Not production-stable until an exact release-candidate tag passes and its
-artifacts are verified.**
+**The stable v1 boundary is approved for `v1.0.0` promotion.**
 
 The first v1 stability boundary is intentionally narrower than a complete
 Better Auth 1.6.25 replacement: it covers the core server, first-party
 MongoDB/PostgreSQL/SQLite adapters, social-provider presets, and generic
 OAuth/OIDC consumer. Feature packages below `plugin/`, including SSO and SCIM,
-are experimental until separately promoted. The branch suite may prove the
-release machinery, but only the tag run proves exact-tag installation,
-publication, and signed provenance.
+are experimental until separately promoted. The exact `v1.0.0-rc.1` tag passed
+the release matrix, its published artifacts and provenance were independently
+verified, and the public module was exercised in an isolated Clevixbase
+checkout. The final production claim begins only after the exact `v1.0.0` tag
+repeats that certification and publishes successfully.
 
 ## Evidence snapshot
 
@@ -55,8 +56,10 @@ Last updated: 2026-07-29
 | PostgreSQL adapter conformance | `POSTGRES_DSN=... go test -count=1 ./adapter/postgresql` | Pass on PostgreSQL 17 |
 | Workflow contract | `go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/*.yml` | Pass |
 | Release archive contract | `scripts/test-release-artifacts.sh` | Pass; semantic-name, archive-root, Git-metadata and checksum checks |
-| External-module install | `scripts/test-install-module.sh 766ee5b` | Pass without `replace`; candidate commit runs in PR CI and exact-tag evidence requires the RC tag |
-| Release workflow | `.github/workflows/release.yml` and reusable `.github/workflows/release-certification.yml` | Implemented; tag-trigger publication evidence pending |
+| External-module install | `scripts/test-install-module.sh v1.0.0-rc.1` in release run `30439405590` | Pass without `replace`; resolved the exact public tag |
+| Release workflow | `v1.0.0-rc.1` run `30439405590` | Pass; exact-tag certification and prerelease publication completed |
+| Published artifact integrity | RC archives, SBOM, checksums, and GitHub attestations | Pass; every SHA-256 checksum and repository identity attestation verified after download |
+| Real consumer | Clevixbase commit `cd77b7af`, isolated checkout with `v1.0.0-rc.1` and no `replace` | Pass; mounted SQLite signup/session/sign-out flow under `-race`, full `go test ./...`, and `go vet ./...` |
 
 Update this table with the date and exact command whenever evidence is rerun.
 Do not convert a pending or skipped integration test into a pass.
@@ -98,7 +101,7 @@ contract differences must be listed below.
 | Trusted origins and CSRF | Present | Exact/wildcard/dynamic origin differential plus malicious-suffix, resolver failure/panic, CSRF and concurrent tenant-isolation evidence pass | Certified with the documented HTTPS and double-submit differences |
 | `onRequest`, `onResponse`, route and database hooks | Present | Go lifecycle ordering, early/error response, rollback, panic containment and race tests pass | Certified for the pinned server/plugin contract |
 | Rate-limiter hook | Present | Core/plugin denial, error, panic, bounded retry metadata and no-write failure evidence pass | Certified injected-port contract; no built-in storage implementation |
-| Versioned public API and release metadata | v1 stable/experimental boundary documented; semantic tag and attested artifact workflow present | No release-candidate tag yet | Partial pending exact-tag run |
+| Versioned public API and release metadata | v1 stable/experimental boundary documented; semantic tag and attested artifact workflow present | RC exact-tag install, publication, checksum, attestation, and real-consumer evidence pass | Certified for stable promotion; final tag run pending |
 
 Core completion requires a differential matrix for every pinned route and
 enabled option, including success, validation, authorization, replay, and
@@ -234,14 +237,13 @@ while those packages remain experimental.
 
 ## Recommended work order
 
-1. Merge the release-candidate infrastructure and tag `v1.0.0-rc.1`.
-2. Verify the exact-tag external-module install, GitHub release assets,
-   checksums, SBOM, and signed provenance; then complete an application upgrade
-   and restore drill during the candidate soak.
-3. Publish `v1.0.0` only after every stable-boundary release gate is green or
-   explicitly recorded as an approved provider-operated risk.
-4. Promote SSO, SCIM, and other experimental plugins independently after their
-   pinned and live interoperability gates pass.
+1. Merge the stable-promotion record and tag its merge commit as `v1.0.0`.
+2. Require the exact stable tag to repeat every certification gate and publish
+   versioned, checksummed, SBOM-backed, attested artifacts.
+3. Verify the stable assets and module tag independently after publication.
+4. Maintain the stable v1 boundary through patch/minor releases; promote SSO,
+   SCIM, and other experimental plugins only through their independent ADR and
+   interoperability gates.
 
 ## Maintenance rule
 

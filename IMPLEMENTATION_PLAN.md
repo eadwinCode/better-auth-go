@@ -443,3 +443,33 @@ Exit criteria:
 - operator documentation covers recovery, rotation, proxy/cookie, migration,
   rollback, and verification procedures;
 - the candidate branch is clean and all local and GitHub release gates pass.
+
+## Phase 19: v1 stable promotion
+
+1. Publish `v1.0.0-rc.1` from the merged release-candidate commit and require
+   the exact tag to pass the reusable certification workflow.
+2. Download the published archives, checksum file, and SPDX SBOM; verify every
+   checksum and GitHub provenance attestation against this repository.
+3. Install the public candidate tag without a local `replace` in an isolated
+   checkout of a real consuming application.
+4. Mount the standard handler in that application, migrate a real SQLite
+   database, and exercise signup, session retrieval, CSRF-protected sign-out,
+   secure host-only cookies, and post-sign-out revocation under the race
+   detector.
+5. Run the consuming application's full Go test and vet suites with its pinned
+   non-Go workspace dependencies installed.
+6. Record the candidate evidence in the changelog and progress register, merge
+   it through ordinary pull-request CI, then publish `v1.0.0`.
+7. Independently verify the stable tag, release metadata, checksums, SBOM, and
+   attestations after publication.
+
+Exit criteria:
+
+- the candidate and stable tags each resolve to a commit on `main`;
+- the candidate has no release-blocking security, migration, race, or public
+  contract defect;
+- the real consumer resolves exactly `v1.0.0-rc.1` without `replace`;
+- the consumer's mounted auth lifecycle and full Go validation pass;
+- the stable release cannot publish unless its exact-tag certification passes;
+- all `plugin/` packages remain explicitly outside the first v1 stability
+  guarantee.
