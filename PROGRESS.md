@@ -45,8 +45,8 @@ Last updated: 2026-07-29
 | Vet | `go vet ./...` | Pass |
 | Race detector | `go test -race -count=1 ./...` | Pass |
 | Staticcheck | `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` | Pass |
-| Vulnerability scan | `govulncheck ./...` | Pass; no called vulnerabilities |
-| Fuzz smoke matrix | Eleven 10-second targets from `.github/workflows/ci.yml` | Pass |
+| Vulnerability scan | `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` | Pass; no called vulnerabilities |
+| Fuzz smoke matrix | Twelve 10-second targets from `.github/workflows/ci.yml` | Pass |
 | SQLite adapter conformance | `go test -count=1 ./adapter/sqlite` | Pass as part of full suite |
 | MongoDB adapter conformance | `MONGODB_URI=... go test -count=1 ./adapter/mongodb` | Pass on MongoDB 8 single-node replica set |
 | PostgreSQL adapter conformance | `POSTGRES_DSN=... go test -count=1 ./adapter/postgresql` | Pass on PostgreSQL 17 |
@@ -81,17 +81,17 @@ contract differences must be listed below.
 | --- | --- | --- | --- |
 | Email/password sign-up and sign-in | Present, including v1.6 lifecycle options and callbacks | Default lifecycle, bounds and duplicate errors differential; send-on-signup/signin, existing-user callback and option/security matrix in Go | Certified for the pinned core option contract |
 | Sign-out and session retrieval | Present | Anonymous/authenticated retrieval, authenticated/repeated sign-out, cookie clearing and post-sign-out differential; Go origin/CSRF failures asserted | Certified for the pinned core option contract |
-| Session refresh and revocation | Present | Session list/update and single/other/all revocation differential; refresh is Go-only rotation | Partial |
+| Session refresh and revocation | Present | Session list/update and single/other/all revocation differential; Go-only refresh has one-winner rotation, replacement-session, ownership, replay and race evidence | Certified for the pinned management contract plus the documented Go rotation extension |
 | User update, email change, deletion | Present | User update, both change-email modes, enumeration resistance, direct password deletion, emailed deletion callback, replay/ownership and resulting state tests pass | Certified for the pinned core option contract |
 | Password change and recovery | Present | Change-password plus request/reset/callback/invalid/replay differential; callback ordering, concurrency and revocation Go tests | Certified for the pinned core option contract |
 | Email verification | Present | Send/verify/resend/state differential plus send modes, before/after callbacks and auto-sign-in lifecycle tests | Certified for the pinned core option contract |
 | Account list/link/unlink | Present | Public link flow, listing/unlink, verified local implicit linking, enable/disable, trusted providers, different-email, profile update, requestSignUp, same/cross-user and concurrent collision tests pass | Certified for the pinned core option contract |
-| Provider access/refresh tokens | Present | Safe read/refresh fields, local provider refresh, persistence and refresh-token redaction differential pass | Partial pending provider-specific fixtures |
+| Provider access/refresh tokens | Present | Safe read/refresh fields, local provider refresh, persistence and refresh-token redaction differential; Go missing/unsupported/expired/failure, automatic-refresh, encrypted-persistence and one-winner concurrency evidence pass | Certified for configured providers; live provider behavior remains release-operator evidence |
 | Admin impersonation | Bounded implementation present | Authorization, admin roles/IDs, admin-target default/opt-in, one-hour session, active identity and stop/restore differential; durable Go audit tests pass | Certified for the bounded core impersonation contract; full admin plugin remains separate |
-| Request validators and size limits | Present | Go failure tests | Partial |
-| Trusted origins and CSRF | Present | Cross-runtime origin characterization added | Partial |
-| `onRequest`, `onResponse`, route and database hooks | Present | Go ordering/rollback/race tests | Partial |
-| Rate-limiter hook | Present | Go plugin test | Partial |
+| Request validators and size limits | Present | Go malformed, unknown-field, panic, oversized-request and oversized-response failure matrix passes | Certified for the pinned server/plugin contract |
+| Trusted origins and CSRF | Present | Exact/wildcard/dynamic origin differential plus malicious-suffix, resolver failure/panic, CSRF and concurrent tenant-isolation evidence pass | Certified with the documented HTTPS and double-submit differences |
+| `onRequest`, `onResponse`, route and database hooks | Present | Go lifecycle ordering, early/error response, rollback, panic containment and race tests pass | Certified for the pinned server/plugin contract |
+| Rate-limiter hook | Present | Core/plugin denial, error, panic, bounded retry metadata and no-write failure evidence pass | Certified injected-port contract; no built-in storage implementation |
 | Versioned public API and release metadata | Pre-1.0 development version | No release candidate | Partial |
 
 Core completion requires a differential matrix for every pinned route and
@@ -223,7 +223,8 @@ entry in this table and a compatibility decision.
 
 ## Recommended work order
 
-1. Certify SSO and SCIM against pinned and live enterprise fixtures.
+1. Certify SSO and SCIM against pinned deterministic fixtures, then collect
+   release-operator evidence against selected live enterprise systems.
 2. Implement and certify the remaining exports from the pinned 1.6.25 plugin
    inventory in small, security-reviewed pull requests.
 3. Run `v1.0.0-rc.1`; publish `v1.0.0` only after every release gate above is

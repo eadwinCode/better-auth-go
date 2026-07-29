@@ -113,6 +113,7 @@ type Config struct {
 	BasePath                string
 	PublicURL               string
 	TrustedOrigins          []string
+	TrustedOriginResolver   TrustedOriginResolver
 	Database                DatabaseAdapter
 	Schema                  Schema
 	Mailer                  Mailer
@@ -152,59 +153,59 @@ type systemClock struct{}
 
 func (systemClock) Now() time.Time { return time.Now().UTC() }
 
-func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}, error) {
+func (cfg Config) normalized() (Config, trustedOriginPolicy, map[string]struct{}, error) {
 	plugins, err := compilePlugins(cfg.Plugins)
 	if err != nil {
-		return cfg, nil, nil, err
+		return cfg, trustedOriginPolicy{}, nil, err
 	}
 	cfg.Plugins = plugins
 	if cfg.Database == nil {
-		return cfg, nil, nil, fmt.Errorf("betterauth: database adapter is required")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: database adapter is required")
 	}
 	if !cfg.Database.Capabilities().Transactions {
-		return cfg, nil, nil, fmt.Errorf("betterauth: enabled core flows require database transactions")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: enabled core flows require database transactions")
 	}
 	if cfg.BasePath == "" {
 		cfg.BasePath = "/api/auth"
 	}
 	cfg.BasePath = cleanAbsolutePath(cfg.BasePath)
 	if cfg.BasePath == "/" {
-		return cfg, nil, nil, fmt.Errorf("betterauth: base path may not be root")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: base path may not be root")
 	}
 	if cfg.PublicURL == "" {
-		return cfg, nil, nil, fmt.Errorf("betterauth: public URL is required")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: public URL is required")
 	}
 	publicURL, err := validateHTTPSURL(cfg.PublicURL, false)
 	if err != nil {
-		return cfg, nil, nil, fmt.Errorf("betterauth: public URL: %w", err)
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: public URL: %w", err)
 	}
 	cfg.PublicURL = strings.TrimSuffix(publicURL.String(), "/")
 	cfg.Schema, cfg.TrustedOrigins, err = initializePlugins(cfg, cfg.Plugins)
 	if err != nil {
-		return cfg, nil, nil, err
+		return cfg, trustedOriginPolicy{}, nil, err
 	}
 	if err := validateSchema(cfg.Schema); err != nil {
-		return cfg, nil, nil, err
+		return cfg, trustedOriginPolicy{}, nil, err
 	}
 	if configurable, ok := cfg.Database.(SchemaConfigurableAdapter); ok {
 		cfg.Database, err = configurable.WithSchema(cfg.Schema)
 		if err != nil {
-			return cfg, nil, nil, fmt.Errorf("betterauth: configure database schema: %w", err)
+			return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: configure database schema: %w", err)
 		}
 	}
 	cfg.Database, err = WrapDatabaseAdapter(cfg.Database, cfg.Schema)
 	if err != nil {
-		return cfg, nil, nil, err
+		return cfg, trustedOriginPolicy{}, nil, err
 	}
 	cfg.Database, err = wrapDatabaseHooks(cfg.Database, cfg.Plugins)
 	if err != nil {
-		return cfg, nil, nil, err
+		return cfg, trustedOriginPolicy{}, nil, err
 	}
 	if cfg.Mailer == nil {
-		return cfg, nil, nil, fmt.Errorf("betterauth: mailer is required")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: mailer is required")
 	}
 	if cfg.ImpersonationAuthorizer == nil {
-		return cfg, nil, nil, fmt.Errorf("betterauth: impersonation authorizer is required")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: impersonation authorizer is required")
 	}
 	if cfg.RateLimiter == nil {
 		cfg.RateLimiter = NopRateLimiter{}
@@ -239,22 +240,21 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 		cfg.Account.RequireLocalEmailVerified = &required
 	}
 	if err := normalizeAdminConfig(&cfg.Admin); err != nil {
-		return cfg, nil, nil, err
+		return cfg, trustedOriginPolicy{}, nil, err
 	}
-	if len(cfg.TrustedOrigins) == 0 {
-		return cfg, nil, nil, fmt.Errorf("betterauth: at least one trusted origin is required")
+	if len(cfg.TrustedOrigins) == 0 && cfg.TrustedOriginResolver == nil {
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf(
+			"betterauth: at least one trusted origin or a trusted-origin resolver is required",
+		)
 	}
-	origins := make(map[string]struct{}, len(cfg.TrustedOrigins))
-	normalizedOrigins := make([]string, 0, len(cfg.TrustedOrigins))
-	for _, raw := range cfg.TrustedOrigins {
-		origin, err := normalizeOrigin(raw)
-		if err != nil {
-			return cfg, nil, nil, fmt.Errorf("betterauth: trusted origin %q: %w", raw, err)
-		}
-		origins[origin] = struct{}{}
-		normalizedOrigins = append(normalizedOrigins, origin)
+	origins, err := compileTrustedOriginPolicy(cfg.TrustedOrigins)
+	if err != nil {
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf(
+			"betterauth: trusted origins: %w",
+			err,
+		)
 	}
-	cfg.TrustedOrigins = normalizedOrigins
+	cfg.TrustedOrigins = append([]string(nil), origins.values...)
 
 	if cfg.Cookie.Name == "" {
 		cfg.Cookie.Name = "__Host-better_auth_session"
@@ -263,38 +263,38 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 		cfg.Cookie.CSRFName = "__Host-better_auth_csrf"
 	}
 	if !strings.HasPrefix(cfg.Cookie.Name, "__Host-") || !strings.HasPrefix(cfg.Cookie.CSRFName, "__Host-") {
-		return cfg, nil, nil, fmt.Errorf("betterauth: cookie names must use the __Host- prefix")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: cookie names must use the __Host- prefix")
 	}
 	if cfg.Cookie.Path == "" {
 		cfg.Cookie.Path = "/"
 	}
 	if cfg.Cookie.Path != "/" {
-		return cfg, nil, nil, fmt.Errorf("betterauth: __Host- cookies require path /")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: __Host- cookies require path /")
 	}
 	if cfg.Cookie.SameSite == 0 {
 		cfg.Cookie.SameSite = http.SameSiteLaxMode
 	}
 	if cfg.Cookie.SameSite != http.SameSiteLaxMode && cfg.Cookie.SameSite != http.SameSiteStrictMode {
-		return cfg, nil, nil, fmt.Errorf("betterauth: SameSite must be Lax or Strict")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: SameSite must be Lax or Strict")
 	}
 
 	if cfg.SessionDuration == 0 {
 		cfg.SessionDuration = 30 * 24 * time.Hour
 	}
 	if cfg.SessionDuration < 5*time.Minute || cfg.SessionDuration > 365*24*time.Hour {
-		return cfg, nil, nil, fmt.Errorf("betterauth: session duration is out of bounds")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: session duration is out of bounds")
 	}
 	if cfg.SessionFreshAge == 0 {
 		cfg.SessionFreshAge = 24 * time.Hour
 	}
 	if cfg.SessionFreshAge < time.Minute || cfg.SessionFreshAge > 30*24*time.Hour {
-		return cfg, nil, nil, fmt.Errorf("betterauth: session fresh age is out of bounds")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: session fresh age is out of bounds")
 	}
 	if cfg.ImpersonationDuration == 0 {
 		cfg.ImpersonationDuration = time.Hour
 	}
 	if cfg.ImpersonationDuration <= 0 || cfg.ImpersonationDuration > time.Hour {
-		return cfg, nil, nil, fmt.Errorf("betterauth: impersonation duration must not exceed one hour")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: impersonation duration must not exceed one hour")
 	}
 	if cfg.PasswordResetTTL == 0 {
 		cfg.PasswordResetTTL = time.Hour
@@ -312,7 +312,7 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 		cfg.ProviderTimeout = 15 * time.Second
 	}
 	if cfg.ProviderTimeout < time.Second || cfg.ProviderTimeout > time.Minute {
-		return cfg, nil, nil, fmt.Errorf("betterauth: provider timeout is out of bounds")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: provider timeout is out of bounds")
 	}
 	for name, value := range map[string]time.Duration{
 		"password reset TTL":     cfg.PasswordResetTTL,
@@ -321,11 +321,11 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 		"OAuth state TTL":        cfg.OAuthStateTTL,
 	} {
 		if value < time.Minute || value > 7*24*time.Hour {
-			return cfg, nil, nil, fmt.Errorf("betterauth: %s is out of bounds", name)
+			return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: %s is out of bounds", name)
 		}
 	}
 	if cfg.User.SendDeleteAccountVerification && !cfg.User.DeleteUserEnabled {
-		return cfg, nil, nil, fmt.Errorf(
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf(
 			"betterauth: delete verification requires user deletion to be enabled",
 		)
 	}
@@ -333,13 +333,13 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 		cfg.MaxRequestBytes = 64 << 10
 	}
 	if cfg.MaxRequestBytes < 1024 || cfg.MaxRequestBytes > 1<<20 {
-		return cfg, nil, nil, fmt.Errorf("betterauth: max request bytes is out of bounds")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: max request bytes is out of bounds")
 	}
 	if cfg.MaxResponseBytes == 0 {
 		cfg.MaxResponseBytes = 1 << 20
 	}
 	if cfg.MaxResponseBytes < 1024 || cfg.MaxResponseBytes > 16<<20 {
-		return cfg, nil, nil, fmt.Errorf("betterauth: max response bytes is out of bounds")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: max response bytes is out of bounds")
 	}
 	if cfg.MinPasswordBytes == 0 {
 		cfg.MinPasswordBytes = 8
@@ -348,28 +348,28 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 		cfg.MaxPasswordBytes = 128
 	}
 	if cfg.MinPasswordBytes < 8 || cfg.MaxPasswordBytes < cfg.MinPasswordBytes || cfg.MaxPasswordBytes > 1<<20 {
-		return cfg, nil, nil, fmt.Errorf("betterauth: password length policy is invalid")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: password length policy is invalid")
 	}
 	if cfg.Passwords == nil {
 		argon, err := NewArgon2idVerifier(DefaultArgon2Params(), cfg.MaxPasswordBytes)
 		if err != nil {
-			return cfg, nil, nil, err
+			return cfg, trustedOriginPolicy{}, nil, err
 		}
 		cfg.Passwords = argon
 	}
 
 	returnTo := map[string]struct{}{}
 	if len(cfg.SocialProviders) > 0 && len(cfg.AllowedRedirectURLs) == 0 {
-		return cfg, nil, nil, fmt.Errorf("betterauth: allowed redirect URLs are required when social providers are configured")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: allowed redirect URLs are required when social providers are configured")
 	}
 	if len(cfg.SocialProviders) > 0 && cfg.ProviderTokenCipher == nil {
-		return cfg, nil, nil, fmt.Errorf("betterauth: provider token cipher is required when social providers are configured")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: provider token cipher is required when social providers are configured")
 	}
 	normalizedReturns := make([]string, 0, len(cfg.AllowedRedirectURLs))
 	for _, raw := range cfg.AllowedRedirectURLs {
 		value, err := validateHTTPSURL(raw, true)
 		if err != nil {
-			return cfg, nil, nil, fmt.Errorf("betterauth: allowed redirect URL %q: %w", raw, err)
+			return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: allowed redirect URL %q: %w", raw, err)
 		}
 		canonical := value.String()
 		returnTo[canonical] = struct{}{}
@@ -378,21 +378,21 @@ func (cfg Config) normalized() (Config, map[string]struct{}, map[string]struct{}
 	cfg.AllowedRedirectURLs = normalizedReturns
 	for providerID, provider := range cfg.SocialProviders {
 		if provider == nil || !validProviderID(providerID) {
-			return cfg, nil, nil, fmt.Errorf("betterauth: invalid social provider %q", providerID)
+			return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: invalid social provider %q", providerID)
 		}
 	}
 	trustedProviders := make([]string, 0, len(cfg.Account.TrustedProviders))
 	if cfg.Account.TrustedProviderResolver != nil && len(cfg.Account.TrustedProviders) > 0 {
-		return cfg, nil, nil, fmt.Errorf("betterauth: static and request-resolved trusted providers are mutually exclusive")
+		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: static and request-resolved trusted providers are mutually exclusive")
 	}
 	trustedProviderSet := make(map[string]struct{}, len(cfg.Account.TrustedProviders))
 	for _, raw := range cfg.Account.TrustedProviders {
 		providerID := strings.ToLower(strings.TrimSpace(raw))
 		if !validProviderID(providerID) {
-			return cfg, nil, nil, fmt.Errorf("betterauth: invalid trusted provider %q", raw)
+			return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: invalid trusted provider %q", raw)
 		}
 		if _, configured := cfg.SocialProviders[providerID]; !configured && providerID != "email-password" {
-			return cfg, nil, nil, fmt.Errorf("betterauth: trusted provider %q is not configured", providerID)
+			return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: trusted provider %q is not configured", providerID)
 		}
 		if _, duplicate := trustedProviderSet[providerID]; duplicate {
 			continue
@@ -495,17 +495,6 @@ func cleanAbsolutePath(value string) string {
 		value = "/" + value
 	}
 	return strings.TrimSuffix(path.Clean(value), "/")
-}
-
-func normalizeOrigin(raw string) (string, error) {
-	u, err := validateHTTPSURL(raw, false)
-	if err != nil {
-		return "", err
-	}
-	if u.Path != "" && u.Path != "/" {
-		return "", fmt.Errorf("origin must not contain a path")
-	}
-	return u.Scheme + "://" + u.Host, nil
 }
 
 func validateHTTPSURL(raw string, allowPath bool) (*url.URL, error) {

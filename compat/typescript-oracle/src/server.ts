@@ -4,6 +4,8 @@ import {
   capturedMails,
   database,
   deletionVerificationAuth,
+  dynamicOriginsAuth,
+  wildcardOriginsAuth,
 } from "./auth.ts";
 import { betterAuthVersion, referenceConfig } from "./config.ts";
 
@@ -134,6 +136,18 @@ const server = Bun.serve({
       url.pathname.startsWith(referenceConfig.basePath + "-delete/")
     ) {
       return deletionVerificationAuth.handler(request);
+    }
+    if (
+      url.pathname === referenceConfig.basePath + "-origin-wildcard" ||
+      url.pathname.startsWith(referenceConfig.basePath + "-origin-wildcard/")
+    ) {
+      return wildcardOriginsAuth.handler(request);
+    }
+    if (
+      url.pathname === referenceConfig.basePath + "-origin-dynamic" ||
+      url.pathname.startsWith(referenceConfig.basePath + "-origin-dynamic/")
+    ) {
+      return dynamicOriginsAuth.handler(request);
     }
     return auth.handler(request);
   },

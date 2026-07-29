@@ -51,6 +51,12 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 - Canonical `POST /request-password-reset` and
   `GET /reset-password/{token}` callback routes with redirect allowlist
   enforcement; the previous `/forget-password` path remains an alias.
+- A bounded request-scoped `TrustedOriginResolver`, compiled HTTPS hostname
+  wildcard policies, malicious-suffix/public-suffix defenses, and concurrent
+  tenant-isolation coverage.
+- Request-pipeline certification for validator, hook, response-bound and
+  rate-limiter failure handling, plus session/provider-token rotation and
+  concurrency evidence.
 
 ### Changed
 

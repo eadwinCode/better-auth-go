@@ -37,7 +37,9 @@ func TestConfigFailsClosed(t *testing.T) {
 		{"missing database", func(config *betterauth.Config) { config.Database = nil }},
 		{"missing mailer", func(config *betterauth.Config) { config.Mailer = nil }},
 		{"missing authorizer", func(config *betterauth.Config) { config.ImpersonationAuthorizer = nil }},
-		{"wildcard origin", func(config *betterauth.Config) { config.TrustedOrigins = []string{"https://*.example.com"} }},
+		{"public suffix wildcard", func(config *betterauth.Config) {
+			config.TrustedOrigins = []string{"https://*.co.uk"}
+		}},
 		{"insecure origin", func(config *betterauth.Config) { config.TrustedOrigins = []string{"http://app.example.com"} }},
 		{"same site none", func(config *betterauth.Config) { config.Cookie.SameSite = http.SameSiteNoneMode }},
 		{"non-host cookie", func(config *betterauth.Config) { config.Cookie.Name = "session" }},

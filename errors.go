@@ -97,6 +97,9 @@ func writeError(w http.ResponseWriter, requestID string, err error) {
 		if seconds < 1 {
 			seconds = 1
 		}
+		if seconds > 24*60*60 {
+			seconds = 24 * 60 * 60
+		}
 		w.Header().Set("Retry-After", strconv.Itoa(seconds))
 	}
 	response := map[string]any{

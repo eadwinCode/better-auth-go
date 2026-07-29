@@ -199,6 +199,18 @@ func (oracle *typescriptOracle) request(
 	origin string,
 ) oracleResponse {
 	t.Helper()
+	return oracle.requestWithHeaders(t, method, path, body, origin, nil)
+}
+
+func (oracle *typescriptOracle) requestWithHeaders(
+	t *testing.T,
+	method string,
+	path string,
+	body any,
+	origin string,
+	headers http.Header,
+) oracleResponse {
+	t.Helper()
 	var payload io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -210,6 +222,9 @@ func (oracle *typescriptOracle) request(
 	request, err := http.NewRequest(method, oracle.baseURL.String()+oracle.basePath+path, payload)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if headers != nil {
+		request.Header = headers.Clone()
 	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")

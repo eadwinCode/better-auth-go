@@ -250,6 +250,10 @@ func (s *Server) newHookContext(
 	path string,
 	params map[string]string,
 ) (*HookContext, bool, error) {
+	trustedOrigins, err := s.resolveTrustedOrigins(r)
+	if err != nil {
+		return nil, false, err
+	}
 	context := &HookContext{
 		Context: r.Context(), Request: r, Path: path, Params: maps.Clone(params),
 		Headers: r.Header.Clone(), Query: cloneValues(r.URL.Query()),
@@ -257,16 +261,11 @@ func (s *Server) newHookContext(
 		GenerateToken: s.cfg.Tokens.Token,
 		BaseURL:       s.cfg.PublicURL + s.cfg.BasePath, Schema: cloneSchema(s.cfg.Schema),
 		Cookies: s.cfg.Cookie, Passwords: s.cfg.Passwords,
-		TrustedOrigins:  slices.Clone(s.cfg.TrustedOrigins),
+		TrustedOrigins:  slices.Clone(trustedOrigins.values),
 		SessionFreshAge: s.cfg.SessionFreshAge,
 		BackgroundTasks: s.cfg.BackgroundTasks,
 		IsTrustedOrigin: func(raw string) bool {
-			origin, err := normalizeOrigin(raw)
-			if err != nil {
-				return false
-			}
-			_, ok := s.trustedOrigins[origin]
-			return ok
+			return trustedOrigins.matches(raw)
 		},
 		ValidateCSRF: func() error {
 			return s.requireCSRF(r)
@@ -392,7 +391,7 @@ func (s *Server) runPluginRateLimits(context *HookContext) error {
 				return err
 			}
 		}
-		decision, err := s.cfg.RateLimiter.Allow(context.Context, RateLimitRequest{
+		decision, err := callRateLimiter(s.cfg.RateLimiter, context.Context, RateLimitRequest{
 			Action: compiled.rule.Action, IP: s.remoteIP(context.Request), AccountKey: accountKey,
 			Window: compiled.rule.Window, Max: compiled.rule.Max,
 		})
