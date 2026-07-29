@@ -20,13 +20,17 @@ const createAuth = (
   basePath: string,
   verifyAccountDeletion: boolean,
   allowImpersonatingAdmins = false,
+  trustedOrigins:
+    | string[]
+    | ((request?: Request) => (string | undefined | null)[]) =
+    referenceConfig.trustedOrigins,
 ) =>
   betterAuth({
   appName: "better-auth-go compatibility oracle",
   secret: referenceConfig.secret,
   baseURL: referenceConfig.baseURL,
   basePath,
-  trustedOrigins: referenceConfig.trustedOrigins,
+  trustedOrigins,
   database,
   emailAndPassword: {
     enabled: true,
@@ -147,4 +151,16 @@ export const adminImpersonationAuth = createAuth(
   referenceConfig.basePath + "-admin-allow",
   false,
   true,
+);
+export const wildcardOriginsAuth = createAuth(
+  referenceConfig.basePath + "-origin-wildcard",
+  false,
+  false,
+  ["https://*.example.com"],
+);
+export const dynamicOriginsAuth = createAuth(
+  referenceConfig.basePath + "-origin-dynamic",
+  false,
+  false,
+  (request) => [request?.headers.get("x-tenant-origin")],
 );

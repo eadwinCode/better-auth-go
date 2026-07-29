@@ -17,8 +17,8 @@ using native Go security defaults:
 - Argon2id password hashes and an injected migration verifier for legacy scrypt;
 - opaque 256-bit session tokens with only SHA-256 hashes persisted;
 - host-only `__Host-` Secure HttpOnly SameSite cookies;
-- exact trusted-origin, CSRF, callback allowlist, request-size, and rate-limit
-  enforcement;
+- exact, bounded wildcard, or request-resolved trusted-origin policy; CSRF,
+  callback allowlist, request-size, and rate-limit enforcement;
 - Better Auth-aligned generic database adapters, schema extensions, model/field
   mappings, transactions, atomic consume, and guarded increments;
 - MongoDB, PostgreSQL, SQLite, a public adapter conformance suite, and an
@@ -330,8 +330,12 @@ config.Plugins = []betterauth.Plugin{auditPlugin}
 ```
 
 For state-changing API requests, trusted-origin enforcement runs before plugin
-code. Plugins may contribute exact origins but cannot expand policy from request
-data or remove mandatory no-store/security headers. Protocol endpoints that
+code. Plugins may contribute exact or HTTPS hostname-pattern origins. Applications
+may inject a request-scoped `TrustedOriginResolver` for bounded multi-tenant
+policy; its static and dynamic results are additive, pass the same validation,
+and fail closed on errors or panics. Resolver implementations must not trust
+unvalidated `Host` or forwarding headers. Neither plugins nor response hooks can
+remove mandatory no-store/security headers. Protocol endpoints that
 authenticate without browser credentials may use an explicit construction-time
 origin exception; this does not bypass their middleware, validators, hooks,
 rate limits, or response hooks. Plugin descriptors are copied during `New`;
@@ -345,6 +349,10 @@ Endpoint `BodyValidator` and `QueryValidator` declarations run after
 `OnRequest` and rate limiting but before middleware, before-hooks, and endpoint
 code. `ObjectValidator` is dependency-free; `EndpointValidatorFunc` can bridge
 an application's existing validation package.
+Wildcard origins allow `*` and `?` only in an HTTPS hostname, for example
+`https://*.example.com`; paths, credentials, wildcard ports, IP patterns, and
+public-suffix patterns are rejected. Exact HTTP origins remain restricted to
+loopback development addresses.
 The default background runner waits inline; inject `Config.BackgroundTasks`
 when work should be handed to a durable asynchronous queue.
 
@@ -435,7 +443,8 @@ before deploying. Important operational requirements:
 
 - terminate TLS before requests reach the application;
 - preserve `Secure` and `__Host-` cookie rules;
-- configure exact trusted origins and redirect URLs;
+- prefer exact trusted origins and configure exact redirect URLs; keep any
+  wildcard or request-resolved origin policy tenant-bound and narrow;
 - do not enable proxy-header trust unless a trusted proxy overwrites them;
 - keep provider-token encryption keys outside source control and rotate through
   an application key-ring implementation;

@@ -15,8 +15,8 @@ contract.
 | after hooks and matchers | `Plugin.After` | in this PR |
 | global `onRequest` | `Plugin.OnRequest` | in this PR |
 | global `onResponse` | `Plugin.OnResponse` | in this PR |
-| exact trusted-origin contribution | `Plugin.TrustedOrigins` | in this PR |
-| wildcard/dynamic trusted origins | no unsafe approximation | gap register |
+| exact/wildcard trusted-origin contribution | `Plugin.TrustedOrigins` | certified |
+| request-derived trusted origins | `Config.TrustedOriginResolver` and request-local `HookContext` policy | certified |
 | custom rate-limit rule | `Plugin.RateLimits` | in this PR |
 | database lifecycle hooks | `Plugin.DatabaseHooks` | in this PR |
 | request auth/adapter/cookie context | `HookContext` | in this PR |
@@ -29,7 +29,7 @@ contract.
 
 ## Deliberate Go boundaries
 
-- `Plugin.Init` can contribute schema and trusted origins, but cannot replace
+- `Plugin.Init` can contribute schema and static trusted origins, but cannot replace
   the already validated `Config` or access the application's secret.
 - `HookContext` is capability-scoped and request-local. It does not expose
   shared mutable server state.

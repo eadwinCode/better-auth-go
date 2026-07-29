@@ -15,17 +15,19 @@ and client-contract documentation before its status can become complete.
 | endpoint body/query validation | `EndpointValidator`, `EndpointValidatorFunc`, and strict `ObjectValidator` run before middleware/endpoint code | implemented |
 | endpoint metadata | validators are implemented, but endpoints do not yet declare OpenAPI metadata | add operation IDs, tags, response schemas, and documentation generation |
 | plugin initialization context extension | initialization can add schema and exact origins | add typed, immutable plugin context values without exposing secrets or mutable global state |
-| wildcard trusted origins | rejected fail-closed | add a compiled, IDNA-aware matcher with public-suffix and scheme tests |
-| request-derived trusted origins | not implemented | add a bounded resolver port whose results pass the same validation and cannot weaken static policy |
+| wildcard trusted origins | compiled HTTPS hostname patterns with IDNA, public-suffix, scheme, port and malicious-suffix tests | implemented; custom application schemes remain a documented deliberate difference |
+| request-derived trusted origins | bounded request-scoped `TrustedOriginResolver`; additive results pass the same compiler and fail closed | implemented |
 | direct in-process endpoint invocation | HTTP handler only | decide whether a typed Go service API is useful; hooks must have identical semantics if added |
 | plugin error-code registry | structured errors exist, but plugins have no construction-time registry | add namespaced collision validation and documentation generation |
 | generated client actions and reactive atoms | not a server-library concern | implement in `better-auth-sdk-go` where a Go equivalent is useful |
 | endpoint OpenAPI generation | not implemented | build on endpoint validation/metadata after that contract stabilizes |
 | instrumentation spans for plugin lifecycle | not implemented | add an OpenTelemetry-neutral observer port for endpoints, middleware, hooks, and database operations |
 
-Exact HTTPS origins are the production default today. Wildcards and dynamic
-resolvers remain listed rather than silently approximated because mistakes in
-either feature expand the CSRF trust boundary.
+Exact HTTPS origins remain the preferred production default. Bounded wildcard
+patterns and request-derived origins are available when multi-tenant
+deployments require them; both use the same fail-closed compiler and expand the
+CSRF trust boundary, so applications should keep their policies as narrow as
+possible.
 
 ## Built-in plugin implementation backlog
 

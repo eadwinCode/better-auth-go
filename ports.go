@@ -114,6 +114,23 @@ func (resolver TrustedProviderResolverFunc) TrustedProviders(
 	return resolver(ctx, request)
 }
 
+// TrustedOriginResolver returns additional Better Auth v1.6 trusted-origin
+// policies for one request. Results are bounded, validated, and never retained
+// on the shared server. Implementations must be concurrency-safe.
+type TrustedOriginResolver interface {
+	TrustedOrigins(context.Context, *http.Request) ([]string, error)
+}
+
+// TrustedOriginResolverFunc adapts a function to TrustedOriginResolver.
+type TrustedOriginResolverFunc func(context.Context, *http.Request) ([]string, error)
+
+func (resolver TrustedOriginResolverFunc) TrustedOrigins(
+	ctx context.Context,
+	request *http.Request,
+) ([]string, error) {
+	return resolver(ctx, request)
+}
+
 // PasswordVerifier supports native formats and optional migration bridges.
 type PasswordVerifier interface {
 	Hash(context.Context, string) (string, error)

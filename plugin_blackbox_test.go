@@ -461,7 +461,7 @@ func TestPluginValidationFailsClosed(t *testing.T) {
 				Handler: func(*betterauth.HookContext) (*betterauth.PluginResponse, error) { return nil, nil },
 			}},
 		}}},
-		{"invalid origin", []betterauth.Plugin{{ID: "origin", TrustedOrigins: []string{"https://*.example.com"}}}},
+		{"invalid origin", []betterauth.Plugin{{ID: "origin", TrustedOrigins: []string{"https://*.co.uk"}}}},
 		{"invalid endpoint path", []betterauth.Plugin{{
 			ID: "path", Endpoints: []betterauth.PluginEndpoint{{
 				Path: "/Not-Kebab", Method: http.MethodGet,

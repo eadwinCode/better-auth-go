@@ -55,7 +55,9 @@ credit.
 ## Deployment checklist
 
 1. Serve only over TLS and preserve Secure cookies.
-2. Use exact HTTPS origins and callback URLs; do not use wildcards.
+2. Prefer exact HTTPS origins and exact callback URLs. If tenant-specific
+   origins require a wildcard or `TrustedOriginResolver`, keep the policy
+   narrow and never derive trust from an unvalidated forwarding header.
 3. Store MongoDB and OAuth credentials in a secret manager.
 4. Use independent 32-byte random encryption keys or a domain-separated
    application key-ring implementing `TokenCipher` for provider and 2FA secrets.

@@ -17,7 +17,7 @@ import (
 type Server struct {
 	cfg            Config
 	store          authStore
-	trustedOrigins map[string]struct{}
+	trustedOrigins trustedOriginPolicy
 	allowedReturns map[string]struct{}
 	plugins        pluginRuntime
 	handler        http.Handler
@@ -439,18 +439,18 @@ func (s *Server) checkOrigin(r *http.Request) error {
 	if raw == "" {
 		return publicError(CodeInvalidOrigin, "Invalid origin", http.StatusForbidden, nil)
 	}
-	origin, err := normalizeOrigin(raw)
+	policy, err := s.resolveTrustedOrigins(r)
 	if err != nil {
-		return publicError(CodeInvalidOrigin, "Invalid origin", http.StatusForbidden, err)
+		return err
 	}
-	if _, ok := s.trustedOrigins[origin]; !ok {
+	if !policy.matches(raw) {
 		return publicError(CodeInvalidOrigin, "Invalid origin", http.StatusForbidden, nil)
 	}
 	return nil
 }
 
 func (s *Server) rateLimit(ctx context.Context, r *http.Request, action, accountKey string) error {
-	decision, err := s.cfg.RateLimiter.Allow(ctx, RateLimitRequest{
+	decision, err := callRateLimiter(s.cfg.RateLimiter, ctx, RateLimitRequest{
 		Action:     action,
 		IP:         s.remoteIP(r),
 		AccountKey: accountKey,
@@ -464,6 +464,20 @@ func (s *Server) rateLimit(ctx context.Context, r *http.Request, action, account
 		return result
 	}
 	return nil
+}
+
+func callRateLimiter(
+	limiter RateLimiter,
+	ctx context.Context,
+	request RateLimitRequest,
+) (decision RateLimitDecision, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			decision = RateLimitDecision{}
+			err = errors.New("betterauth: rate limiter panicked")
+		}
+	}()
+	return limiter.Allow(ctx, request)
 }
 
 func (s *Server) remoteIP(r *http.Request) string {
