@@ -275,6 +275,7 @@ func (a *Adapter) EnsureIndexes(ctx context.Context, schema betterauth.Schema) e
 	indexes := make(map[string][]mongo.IndexModel, len(schema))
 	modelNames := make(map[string]string, len(schema))
 	fieldNames := make(map[string]map[string]string, len(schema))
+	providerAccountIndexDeclared := false
 	for logicalModel, model := range schema {
 		storedModel := model.ModelName
 		if storedModel == "" {
@@ -306,6 +307,13 @@ func (a *Adapter) EnsureIndexes(ctx context.Context, schema betterauth.Schema) e
 			})
 		}
 		for _, definition := range model.Indexes {
+			if logicalModel == betterauth.ModelAccount &&
+				definition.Unique &&
+				len(definition.Fields) == 2 &&
+				definition.Fields[0] == "providerId" &&
+				definition.Fields[1] == "accountId" {
+				providerAccountIndexDeclared = true
+			}
 			keys := make(bson.D, len(definition.Fields))
 			for position, logicalField := range definition.Fields {
 				keys[position] = bson.E{
@@ -321,7 +329,7 @@ func (a *Adapter) EnsureIndexes(ctx context.Context, schema betterauth.Schema) e
 			})
 		}
 	}
-	addCoreMongoIndexes(indexes, modelNames, fieldNames)
+	addCoreMongoIndexes(indexes, modelNames, fieldNames, providerAccountIndexDeclared)
 	for model, definitions := range indexes {
 		if _, err := a.collection(model).Indexes().CreateMany(a.ctx(ctx), definitions); err != nil {
 			return translateError(err)
@@ -334,6 +342,7 @@ func addCoreMongoIndexes(
 	indexes map[string][]mongo.IndexModel,
 	models map[string]string,
 	fields map[string]map[string]string,
+	providerAccountIndexDeclared bool,
 ) {
 	if model := models[betterauth.ModelSession]; model != "" {
 		indexes[model] = append(indexes[model], mongo.IndexModel{
@@ -347,7 +356,7 @@ func addCoreMongoIndexes(
 			Options: options.Index().SetExpireAfterSeconds(0).SetName("ttl_expires"),
 		})
 	}
-	if model := models[betterauth.ModelAccount]; model != "" {
+	if model := models[betterauth.ModelAccount]; model != "" && !providerAccountIndexDeclared {
 		indexes[model] = append(indexes[model], mongo.IndexModel{
 			Keys: bson.D{
 				{Key: fields[betterauth.ModelAccount]["providerId"], Value: 1},

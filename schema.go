@@ -99,7 +99,7 @@ func CoreSchema() Schema {
 				"updatedAt":             {Type: FieldDate, Required: true},
 			},
 			Indexes: []IndexSchema{{
-				Name: "account_provider_account_unique", Fields: []string{"providerId", "accountId"}, Unique: true,
+				Name: "uniq_provider_account", Fields: []string{"providerId", "accountId"}, Unique: true,
 			}},
 		},
 		ModelVerification: {
