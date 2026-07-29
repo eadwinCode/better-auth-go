@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+// ErrNoSession means the request does not carry a currently valid session.
+// It covers missing or invalid cookies, absent users or sessions, expired or
+// revoked sessions, and disabled users.
+var ErrNoSession = errors.New("betterauth: no session")
+
 type ErrorCode string
 
 const (

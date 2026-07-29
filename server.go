@@ -358,21 +358,55 @@ func (s *Server) authenticatePluginOAuth(
 	}, isNew, nil
 }
 
-func (s *Server) sessionFromRequest(ctx context.Context, r *http.Request) (Session, User, string, error) {
+// ResolveSession resolves the configured session cookie without invoking the
+// HTTP handler or JSON serialization. Missing, invalid, expired, or revoked
+// sessions and disabled users return ErrNoSession. Persistence and context
+// failures are returned distinctly.
+//
+// ResolveSession is safe for concurrent use. It does not mutate the request,
+// rotate the session, refresh cookies, or return the opaque session token.
+func (s *Server) ResolveSession(ctx context.Context, r *http.Request) (SessionResult, error) {
+	result, _, err := s.resolveSession(ctx, r)
+	return result, err
+}
+
+func (s *Server) resolveSession(ctx context.Context, r *http.Request) (SessionResult, string, error) {
+	if ctx == nil {
+		return SessionResult{}, "", errors.New("betterauth: resolve session: nil context")
+	}
+	if r == nil {
+		return SessionResult{}, "", ErrNoSession
+	}
 	cookie, err := r.Cookie(s.cfg.Cookie.Name)
 	if err != nil || cookie.Value == "" || len(cookie.Value) > 2048 {
-		return Session{}, User{}, "", publicError(CodeUnauthorized, "Authentication required.", http.StatusUnauthorized, nil)
+		return SessionResult{}, "", ErrNoSession
 	}
 	hash := HashToken(cookie.Value)
 	session, user, err := s.store.SessionByTokenHash(ctx, hash)
 	if err != nil {
-		return Session{}, User{}, "", publicError(CodeUnauthorized, "Authentication required.", http.StatusUnauthorized, err)
+		if errors.Is(err, ErrNotFound) {
+			return SessionResult{}, "", ErrNoSession
+		}
+		return SessionResult{}, "", fmt.Errorf("betterauth: resolve session: %w", err)
 	}
 	now := s.cfg.Clock.Now().UTC()
 	if session.RevokedAt != nil || !session.ExpiresAt.After(now) || user.DisabledAt != nil {
-		return Session{}, User{}, "", publicError(CodeUnauthorized, "Authentication required.", http.StatusUnauthorized, nil)
+		return SessionResult{}, "", ErrNoSession
 	}
-	return session, user, cookie.Value, nil
+	return SessionResult{Session: session, User: user}, cookie.Value, nil
+}
+
+func (s *Server) sessionFromRequest(ctx context.Context, r *http.Request) (Session, User, string, error) {
+	result, raw, err := s.resolveSession(ctx, r)
+	if err != nil {
+		return Session{}, User{}, "", publicError(
+			CodeUnauthorized,
+			"Authentication required.",
+			http.StatusUnauthorized,
+			err,
+		)
+	}
+	return result.Session, result.User, raw, nil
 }
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, raw string, expires time.Time) {

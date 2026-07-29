@@ -473,3 +473,31 @@ Exit criteria:
 - the stable release cannot publish unless its exact-tag certification passes;
 - all `plugin/` packages remain explicitly outside the first v1 stability
   guarantee.
+
+## Phase 20: In-process session resolution patch
+
+1. Freeze the additive v1.0.1 API in ADR 0019: `ErrNoSession`,
+   `SessionResult`, and `Server.ResolveSession`.
+2. Split the private resolver into a cause-preserving core and a
+   Better Auth-compatible HTTP adapter.
+3. Return `ErrNoSession` for absent, unknown, expired, revoked, and
+   disabled-user sessions while preserving wrapped adapter failures for
+   application availability handling.
+4. Certify the configured cookie name, impersonation metadata, and concurrent
+   read-only resolution without returning the opaque token.
+5. Preserve `GET /get-session`'s `200 null`, protected-route `401`, and
+   idempotent sign-out behavior without serializing resolver causes.
+6. Update the public API guide, README, and changelog, then run the complete
+   patch-release certification and publish v1.0.1.
+
+Exit criteria:
+
+- applications resolve a session in-process without HTTP or JSON loopback;
+- `errors.Is(err, ErrNoSession)` covers every authentication-invalid state;
+- infrastructure and context failures remain distinguishable and wrapped;
+- session and user values, including impersonation fields, match the existing
+  public types;
+- resolution is safe under concurrent use and the race detector;
+- the v1.0.0 API and HTTP behavior remain compatible;
+- v1.0.1 passes exact-tag certification and publishes signed, versioned
+  artifacts.

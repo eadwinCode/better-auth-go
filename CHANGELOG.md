@@ -4,6 +4,25 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-29
+
+### Added
+
+- `ErrNoSession`, `SessionResult`, and
+  `Server.ResolveSession(context.Context, *http.Request)` for concurrency-safe,
+  in-process resolution of the configured session cookie without HTTP or JSON
+  loopback.
+- Public resolver coverage for absent and invalid cookies, expired and revoked
+  sessions, disabled users, configured cookie names, impersonation metadata,
+  concurrent access, and adapter-failure distinction.
+
+### Changed
+
+- Internal session resolution now preserves adapter and database failures for
+  in-process callers while the existing HTTP endpoints continue returning
+  Better Auth-compatible generic `401` or `200 null` responses without
+  serializing causes.
+
 ## [1.0.0] - 2026-07-29
 
 ### Added
@@ -93,5 +112,6 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 - Session listing now requires a fresh session, and reports the upstream
   `SESSION_NOT_FRESH` error when freshness has expired.
 
-[Unreleased]: https://github.com/eadwinCode/better-auth-go/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/eadwinCode/better-auth-go/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/eadwinCode/better-auth-go/releases/tag/v1.0.1
 [1.0.0]: https://github.com/eadwinCode/better-auth-go/releases/tag/v1.0.0
