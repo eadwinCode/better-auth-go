@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 
 	betterauth "github.com/eadwinCode/better-auth-go"
@@ -21,9 +22,19 @@ func compileServer(config betterauth.Config) (http.Handler, error) {
 	return server.Handler(), nil
 }
 
+func compileSessionResolver(
+	ctx context.Context,
+	server *betterauth.Server,
+	request *http.Request,
+) (betterauth.SessionResult, error) {
+	return server.ResolveSession(ctx, request)
+}
+
 func main() {
 	_ = mongodb.Config{}
 	_, _ = postgresql.New(nil)
 	_, _ = sqlite.New(nil)
 	_, _ = compileServer(betterauth.Config{})
+	_ = compileSessionResolver
+	_ = betterauth.ErrNoSession
 }

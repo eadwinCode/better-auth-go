@@ -16,6 +16,8 @@ using native Go security defaults:
 - authorization-gated, one-hour maximum admin impersonation with durable audit;
 - Argon2id password hashes and an injected migration verifier for legacy scrypt;
 - opaque 256-bit session tokens with only SHA-256 hashes persisted;
+- concurrency-safe in-process session resolution for application handlers,
+  without HTTP or JSON loopback;
 - host-only `__Host-` Secure HttpOnly SameSite cookies;
 - exact, bounded wildcard, or request-resolved trusted-origin policy; CSRF,
   callback allowlist, request-size, and rate-limit enforcement;
@@ -28,11 +30,11 @@ using native Go security defaults:
 - an opt-in Better Auth-shaped 2FA plugin with encrypted TOTP/backup material,
   delivered OTP, trusted devices, shared attempt budgets, and durable lockout.
 
-The project is preparing its first v1 release candidate. The v1 stability
-guarantee covers the core server and first-party MongoDB, PostgreSQL, and SQLite
-adapters. Packages below `plugin/`, including SSO and SCIM, remain experimental
-and outside that guarantee. Review [Versioning and stability](./docs/versioning.md),
-the compatibility matrix, and the changelog before upgrading.
+The v1 stability guarantee covers the core server and first-party MongoDB,
+PostgreSQL, and SQLite adapters. Packages below `plugin/`, including SSO and
+SCIM, remain experimental and outside that guarantee. Review
+[Versioning and stability](./docs/versioning.md), the compatibility matrix, and
+the changelog before upgrading.
 
 The pinned cross-runtime suite is reproducible from this repository:
 
@@ -123,6 +125,33 @@ mux.Handle("/api/auth/", auth.Handler())
 
 Set `Config.BasePath` to mount elsewhere. Route paths do not contain an extra Go
 specific version segment.
+
+## Resolving sessions in application handlers
+
+Use `ResolveSession` when an application route needs the current identity
+without an HTTP/JSON call back into the auth handler:
+
+```go
+result, err := auth.ResolveSession(r.Context(), r)
+switch {
+case errors.Is(err, betterauth.ErrNoSession):
+	http.Error(w, "authentication required", http.StatusUnauthorized)
+	return
+case err != nil:
+	http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	return
+}
+user := result.User
+session := result.Session
+```
+
+The method uses the configured session-cookie name and is safe for concurrent
+requests. Missing, invalid, expired, or revoked sessions and disabled users
+match `ErrNoSession`; database and adapter failures remain distinct. It is a
+read-only resolver and does not run HTTP hooks, CSRF/origin policy, rotate
+sessions, set cookies, or return the raw token. See
+[In-process session resolution](./docs/session-resolution.md) for the full API
+and error contract.
 
 ## Email and password options
 
@@ -466,6 +495,7 @@ runbook is in [Production operations](./docs/production-operations.md).
 - [Better Auth v1.6 compatibility matrix](./docs/compatibility/better-auth-v1.6.md)
 - [Better Auth v1.6.25 production progress](./PROGRESS.md)
 - [Versioning and stability](./docs/versioning.md)
+- [In-process session resolution](./docs/session-resolution.md)
 - [Production operations](./docs/production-operations.md)
 - [Implementation plan](./IMPLEMENTATION_PLAN.md)
 - [Architecture decision record](./docs/adr/0001-auth-server-architecture.md)
@@ -474,6 +504,7 @@ runbook is in [Production operations](./docs/production-operations.md).
 - [Passkey/WebAuthn decision record](./docs/adr/0004-passkeys-webauthn.md)
 - [Two-factor authentication decision record](./docs/adr/0005-two-factor-authentication.md)
 - [v1 release-candidate decision record](./docs/adr/0018-v1-release-candidate.md)
+- [In-process session-resolution decision record](./docs/adr/0019-in-process-session-resolution.md)
 - [Organizations decision record](./docs/adr/0006-organizations.md)
 - [Organizations integration guide](./docs/organizations.md)
 - [Enterprise SSO decision record](./docs/adr/0007-enterprise-sso.md)

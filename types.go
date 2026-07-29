@@ -52,6 +52,13 @@ type Session struct {
 	ImpersonationID string     `json:"impersonationId,omitempty"`
 }
 
+// SessionResult is an authenticated session and its owning user as resolved
+// from an incoming request.
+type SessionResult struct {
+	Session Session `json:"session"`
+	User    User    `json:"user"`
+}
+
 // PasswordCredential contains a user's encoded password hash.
 type PasswordCredential struct {
 	UserID       string
