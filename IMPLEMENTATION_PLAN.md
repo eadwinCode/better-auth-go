@@ -409,3 +409,37 @@ Exit criteria:
   tokens;
 - all unit, differential, race, fuzz, adapter, static, vulnerability, and
   upstream-contract checks pass.
+
+## Phase 18: v1 release-candidate certification
+
+1. Freeze the v1 stability boundary in ADR 0018. Keep SSO, SCIM, and the other
+   feature-plugin packages experimental until their separate promotion gates
+   pass.
+2. Add one reusable clean-checkout certification workflow for test, vet, race,
+   static analysis, vulnerability analysis, every fuzz target, the pinned
+   TypeScript differential suite, and upstream inventory.
+3. Require real SQLite, PostgreSQL 17, and MongoDB 8 replica-set migration and
+   conformance tests without silent skips.
+4. Add an external-module install check that uses a candidate commit during
+   pull requests and the exact semantic tag during releases.
+5. Replace the minimal tag workflow with a semantic-tag-validated,
+   certification-dependent release that produces versioned archives,
+   checksums, an SPDX SBOM, and signed GitHub provenance attestations.
+6. Document deployment, backup/restore, cookie and proxy policy, secret/key
+   rotation, schema upgrades, rollback boundaries, and artifact verification.
+7. Run the complete release-candidate matrix locally where possible, publish
+   one draft PR, and require every GitHub gate to pass.
+
+Exit criteria:
+
+- no experimental feature package is implied to be inside the v1 stability
+  guarantee;
+- the release workflow cannot publish before the reusable certification
+  workflow succeeds for the exact tag;
+- required database integration tests cannot pass by skipping;
+- an external module compiles against the candidate ref without a local
+  `replace`;
+- archives and checksums are version-named and covered by signed provenance;
+- operator documentation covers recovery, rotation, proxy/cookie, migration,
+  rollback, and verification procedures;
+- the candidate branch is clean and all local and GitHub release gates pass.
