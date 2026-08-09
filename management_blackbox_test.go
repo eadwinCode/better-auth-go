@@ -2,6 +2,7 @@ package betterauth_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -176,6 +177,12 @@ func TestVerifiedEmailChangeAndUserDeletion(t *testing.T) {
 	if signup.Code != http.StatusOK {
 		t.Fatal(signup.Body.String())
 	}
+	second := &testClient{handler: client.handler, database: client.database}
+	if signIn := second.request(t, http.MethodPost, "/sign-in/email", map[string]any{
+		"email": "original@example.com", "password": "correct horse battery staple",
+	}, false); signIn.Code != http.StatusOK {
+		t.Fatalf("second sign-in: %d %s", signIn.Code, signIn.Body.String())
+	}
 	change := client.request(t, http.MethodPost, "/change-email", map[string]any{
 		"newEmail": "changed@example.com", "callbackURL": "https://app.example.com/settings",
 	}, true)
@@ -214,5 +221,15 @@ func TestVerifiedEmailChangeAndUserDeletion(t *testing.T) {
 	session = client.request(t, http.MethodGet, "/get-session", nil, false)
 	if session.Body.String() != "null\n" {
 		t.Fatalf("deleted user session remained valid: %s", session.Body.String())
+	}
+	if session = second.request(t, http.MethodGet, "/get-session", nil, false); session.Body.String() != "null\n" {
+		t.Fatalf("deleted user's second session remained valid: %s", session.Body.String())
+	}
+	storedSessions, err := client.database.FindMany(context.Background(), betterauth.FindManyQuery{Model: betterauth.ModelSession})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(storedSessions) != 0 {
+		t.Fatalf("user deletion left %d primary-storage sessions", len(storedSessions))
 	}
 }

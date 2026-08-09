@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const betterAuthV1625 = "1.6.25"
+const betterAuthV1626 = "1.6.26"
 
 type oracleResponse struct {
 	status  int
@@ -35,7 +35,7 @@ func newTypeScriptOracle(t *testing.T) *typescriptOracle {
 	t.Helper()
 	rawURL := strings.TrimRight(strings.TrimSpace(os.Getenv("BETTER_AUTH_TS_URL")), "/")
 	if rawURL == "" {
-		t.Skip("set BETTER_AUTH_TS_URL to run the Better Auth 1.6.25 differential suite")
+		t.Skip("set BETTER_AUTH_TS_URL to run the Better Auth 1.6.26 differential suite")
 	}
 	baseURL, err := url.Parse(rawURL)
 	if err != nil {
@@ -325,11 +325,11 @@ func assertEquivalentUser(
 	}
 }
 
-// TestBetterAuthV1625BlackBoxCompatibility characterizes the common password
-// and session lifecycle against the published Better Auth 1.6.25 HTTP server.
+// TestBetterAuthV1626BlackBoxCompatibility characterizes the common password
+// and session lifecycle against the published Better Auth 1.6.26 HTTP server.
 // Deliberate security differences and unresolved wire-format differences are
 // asserted separately so they cannot disappear into normalization.
-func TestBetterAuthV1625BlackBoxCompatibility(t *testing.T) {
+func TestBetterAuthV1626BlackBoxCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 
 	healthRequest, err := http.NewRequest(http.MethodGet, oracle.baseURL.String()+"/healthz", nil)
@@ -346,7 +346,7 @@ func TestBetterAuthV1625BlackBoxCompatibility(t *testing.T) {
 		t.Fatal(readErr)
 	}
 	health := decodeObject(t, healthBody)
-	if healthResponse.StatusCode != http.StatusOK || health["betterAuthVersion"] != betterAuthV1625 {
+	if healthResponse.StatusCode != http.StatusOK || health["betterAuthVersion"] != betterAuthV1626 {
 		t.Fatalf("unexpected TypeScript oracle: status=%d body=%s", healthResponse.StatusCode, healthBody)
 	}
 

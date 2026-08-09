@@ -4,6 +4,23 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `CreatePlaceholderEmail` and `PlaceholderEmailOptions` for stable,
+  namespaced, non-routable addresses under the reserved
+  `placeholder.invalid` domain.
+- Adapter-conformance coverage for committed and nested transaction-scoped
+  work, plus black-box evidence that user deletion removes all primary-storage
+  sessions.
+- ADR 0020 and feature-gap acceptance criteria for Better Auth v1.6.26 changes
+  whose secondary-storage, email-OTP, JWT, Redis, database-rate-limit storage,
+  and OAuth-proxy components are not yet implemented.
+
+### Changed
+
+- The checked-in TypeScript oracle, upstream source inventory, compatibility
+  tests, and CI labels now pin Better Auth v1.6.26.
+
 ## [1.0.1] - 2026-07-29
 
 ### Added
