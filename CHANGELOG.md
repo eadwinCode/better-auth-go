@@ -4,6 +4,8 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-08-09
+
 ### Added
 
 - `CreatePlaceholderEmail` and `PlaceholderEmailOptions` for stable,
@@ -129,6 +131,7 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 - Session listing now requires a fresh session, and reports the upstream
   `SESSION_NOT_FRESH` error when freshness has expired.
 
-[Unreleased]: https://github.com/eadwinCode/better-auth-go/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/eadwinCode/better-auth-go/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/eadwinCode/better-auth-go/releases/tag/v1.0.2
 [1.0.1]: https://github.com/eadwinCode/better-auth-go/releases/tag/v1.0.1
 [1.0.0]: https://github.com/eadwinCode/better-auth-go/releases/tag/v1.0.0
