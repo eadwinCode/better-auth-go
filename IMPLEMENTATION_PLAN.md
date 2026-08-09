@@ -501,3 +501,29 @@ Exit criteria:
 - the v1.0.0 API and HTTP behavior remain compatible;
 - v1.0.1 passes exact-tag certification and publishes signed, versioned
   artifacts.
+
+## Phase 21: Better Auth v1.6.26 compatibility audit
+
+1. Pin the TypeScript oracle and upstream source inventory to v1.6.26.
+2. Add stable namespaced placeholder emails on the reserved
+   `placeholder.invalid` domain with strict validation tests.
+3. Certify that primary-storage user deletion removes every user session and
+   extend adapter conformance with explicit commit, rollback, and nested
+   transaction-scoped work.
+4. Freeze exact requirements for the absent secondary-storage, email-OTP, JWT,
+   database-rate-limit storage, Redis, and OAuth-proxy components without
+   inventing unsupported architecture.
+5. Exclude TypeScript-only inference and Next.js import changes, update the
+   compatibility evidence, and run all available release gates.
+
+Exit criteria:
+
+- the oracle and upstream inventory resolve exactly v1.6.26 commit `a16b30e`;
+- placeholder emails are deterministic, namespaced, non-routable, and reject
+  invalid components;
+- deletion of a user with multiple primary-storage sessions leaves no session
+  row behind;
+- transactional adapters prove callback-scoped commit, rollback, and nested
+  work without opening a second SQLite transaction;
+- every deferred v1.6.26 fix has an explicit future acceptance contract and is
+  not reported as implemented.

@@ -3,8 +3,8 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 upstream_root="${BETTER_AUTH_UPSTREAM_DIR:-${repository_root}/../better-auth-repo}"
-upstream_tag="v1.6.25"
-expected_commit="07a646ea190167370fbbb60a0fa2c3be3bec5522"
+upstream_tag="v1.6.26"
+expected_commit="a16b30e8437927c08350194000178073b06af8cf"
 
 if [[ ! -d "${upstream_root}/.git" ]]; then
   echo "Better Auth upstream checkout not found at ${upstream_root}" >&2
@@ -97,7 +97,7 @@ while IFS='|' read -r package_directory package_name; do
     "${upstream_tag}:packages/${package_directory}/package.json")"
   actual_name="$(sed -n 's/^[[:space:]]*"name":[[:space:]]*"\([^"]*\)".*/\1/p' <<<"${package_json}" | head -1)"
   actual_version="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' <<<"${package_json}" | head -1)"
-  if [[ "${actual_name}" != "${package_name}" || "${actual_version}" != "1.6.25" ]]; then
+  if [[ "${actual_name}" != "${package_name}" || "${actual_version}" != "1.6.26" ]]; then
     echo "Unexpected pinned package ${package_directory}: ${actual_name}@${actual_version}" >&2
     exit 1
   fi

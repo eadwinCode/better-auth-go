@@ -4,7 +4,8 @@ This is the release-planning register for parity with the TypeScript Better
 Auth server. It is intentionally separate from the plugin-kernel implementation
 checklist so a kernel primitive is not confused with a shipped feature plugin.
 
-Baseline: Better Auth 1.6 documentation as reviewed on 2026-07-28. Every item
+Baseline: Better Auth 1.6.26 documentation and source as reviewed on
+2026-08-09. Every item
 requires black-box HTTP tests, adapter conformance tests, threat-model review,
 and client-contract documentation before its status can become complete.
 
@@ -39,7 +40,11 @@ plugin should be its own package or a small cohesive PR series.
 - two-factor authentication — implemented in the dedicated ADR 0005 PR;
 - passkeys/WebAuthn — implemented in the dedicated ADR 0004 PR;
 - magic link;
-- email OTP;
+- email OTP — missing; v1.6.26 acceptance requires (1) checking account
+  existence only after OTP verification so invalid OTP responses cannot
+  enumerate users, (2) passing `email-verification` to custom generators from
+  sign-up hooks, and (3) validating a reset password before consuming the OTP
+  so corrected-password retries remain possible;
 - phone number;
 - anonymous users;
 - username;
@@ -69,10 +74,30 @@ layer rather than a plugin.
 
 - agent authentication;
 - API keys;
-- JWT issuance and verification;
+- JWT issuance and verification — missing; v1.6.26 JWK reads and writes must
+  use the adapter scoped to the surrounding transaction, avoiding SQLite
+  deadlocks and making PostgreSQL/MySQL key creation commit or roll back with
+  that transaction;
 - bearer authentication;
 - one-time tokens;
-- OAuth proxy.
+- OAuth proxy — missing; v1.6.26 proxy callbacks must preserve and safely parse
+  Apple's `form_post` `user` payload before provider profile mapping.
+
+### Storage compatibility
+
+- Secondary session storage is not implemented. If added, deleting a user must
+  delete every indexed session value and the user's active-session index in
+  addition to any configured database copies. Batch session lookup must skip
+  missing, malformed JSON, and structurally invalid entries without discarding
+  valid sessions from the same request.
+- Database-backed rate-limit storage is not implemented; the injected
+  `RateLimiter` port remains the supported contract. If database cleanup is
+  added, expired-row pruning must be awaited when no background task handler
+  exists and remain best-effort when pruning fails.
+- Redis secondary storage is not implemented. If added, `listKeys` and `clear`
+  must use cursor-based `SCAN`, escape glob metacharacters in the configured
+  prefix, deduplicate list results, never issue an empty `DEL`, and document
+  page-by-page partial failure and concurrent-keyspace semantics.
 
 ### OAuth and OIDC servers
 

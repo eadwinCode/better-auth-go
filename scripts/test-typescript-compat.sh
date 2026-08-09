@@ -25,7 +25,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 oracle_url="http://127.0.0.1:${compatibility_port}"
-export BETTER_AUTH_SECRET="better-auth-go-v1.6.25-compatibility-only-secret"
+export BETTER_AUTH_SECRET="better-auth-go-v1.6.26-compatibility-only-secret"
 export BETTER_AUTH_TEST_CONTROL_SECRET="better-auth-go-test-control-only-secret"
 export BETTER_AUTH_URL="${oracle_url}"
 export BETTER_AUTH_BASE_PATH="/api/auth"
@@ -65,5 +65,5 @@ fi
   cd "${repository_root}"
   BETTER_AUTH_TS_URL="${oracle_url}" \
   BETTER_AUTH_TS_CONTROL_SECRET="${BETTER_AUTH_TEST_CONTROL_SECRET}" \
-    go test -count=1 -run '^TestBetterAuthV1625' ./compat
+    go test -count=1 -run '^TestBetterAuthV1626' ./compat
 )

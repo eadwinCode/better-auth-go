@@ -80,7 +80,7 @@ func assertOAuthRedirect(
 	}
 }
 
-func TestBetterAuthV1625OAuthCallbackErrorReplayAndRedirectCompatibility(t *testing.T) {
+func TestBetterAuthV1626OAuthCallbackErrorReplayAndRedirectCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	goClient, _ := managementCompatibilityServer(t)
 
@@ -104,7 +104,7 @@ func TestBetterAuthV1625OAuthCallbackErrorReplayAndRedirectCompatibility(t *test
 	goError := goResponse(goClient.request(t, http.MethodGet, goErrorPath, nil, false))
 	tsError := oracle.request(t, http.MethodGet, tsErrorPath, nil, "")
 	assertOAuthRedirect(t, "Go", goError, "https://app.example.com/oauth-error", "access_denied")
-	// Better Auth v1.6.25 generic OAuth handles provider errors before parsing
+	// Better Auth v1.6.26 generic OAuth handles provider errors before parsing
 	// state. It therefore uses the global error URL and reflects the provider
 	// description. Go deliberately keeps the stronger state-bound,
 	// description-free contract from ADR 0016.
@@ -155,7 +155,7 @@ func TestBetterAuthV1625OAuthCallbackErrorReplayAndRedirectCompatibility(t *test
 	assertOAuthRedirect(t, "TypeScript", tsReturning, oracle.origin+"/oauth-success", "")
 }
 
-func TestBetterAuthV1625OAuthAccountCollisionCompatibility(t *testing.T) {
+func TestBetterAuthV1626OAuthAccountCollisionCompatibility(t *testing.T) {
 	oracleA := newTypeScriptOracle(t)
 	oracleB := oracleA.clone(t)
 	goA, _ := managementCompatibilityServer(t)
@@ -209,7 +209,7 @@ func TestBetterAuthV1625OAuthAccountCollisionCompatibility(t *testing.T) {
 	)
 }
 
-func TestBetterAuthV1625SessionAndSignOutClosureCompatibility(t *testing.T) {
+func TestBetterAuthV1626SessionAndSignOutClosureCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	goClient, _ := newBlackBoxServer(t)
 	for implementation, response := range map[string]oracleResponse{

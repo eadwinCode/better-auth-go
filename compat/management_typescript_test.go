@@ -129,7 +129,7 @@ func assertCode(
 	}
 }
 
-func TestBetterAuthV1625EmailChangeAndDeletionCompatibility(t *testing.T) {
+func TestBetterAuthV1626EmailChangeAndDeletionCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	oracle.clearMail(t)
 	goClient, goMailer := managementCompatibilityServer(t)
@@ -289,7 +289,7 @@ func TestBetterAuthV1625EmailChangeAndDeletionCompatibility(t *testing.T) {
 	}
 }
 
-func TestBetterAuthV1625VerifiedDeletionCompatibility(t *testing.T) {
+func TestBetterAuthV1626VerifiedDeletionCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t).deletionVerificationClone(t)
 	oracle.clearMail(t)
 	const (
@@ -506,7 +506,7 @@ func linkCompatibilityProvider(
 	}
 }
 
-func TestBetterAuthV1625AccountAndProviderTokenCompatibility(t *testing.T) {
+func TestBetterAuthV1626AccountAndProviderTokenCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	goClient, _ := managementCompatibilityServer(t)
 	email := uniqueCompatibilityEmail("account")
@@ -653,7 +653,7 @@ func TestBetterAuthV1625AccountAndProviderTokenCompatibility(t *testing.T) {
 	)
 }
 
-func TestBetterAuthV1625ImpersonationCompatibility(t *testing.T) {
+func TestBetterAuthV1626ImpersonationCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	tsTarget := oracle.clone(t)
 	goAdmin, _ := managementCompatibilityServer(t)
@@ -761,7 +761,7 @@ func TestBetterAuthV1625ImpersonationCompatibility(t *testing.T) {
 	}
 }
 
-func TestBetterAuthV1625AllowImpersonatingAdminsCompatibility(t *testing.T) {
+func TestBetterAuthV1626AllowImpersonatingAdminsCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t).adminImpersonationClone(t)
 	tsTarget := oracle.clone(t)
 	goAdmin, _ := managementCompatibilityServerConfig(t, func(config *betterauth.Config) {
