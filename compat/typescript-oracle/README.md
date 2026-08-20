@@ -1,6 +1,6 @@
-# Better Auth 1.6.26 TypeScript oracle
+# Better Auth 1.7.0 TypeScript oracle
 
-This test-only Bun server pins the published `better-auth@1.6.26` package for
+This test-only Bun server pins the published `better-auth@1.7.0` package for
 Go-versus-TypeScript HTTP differential tests. It is not a production service.
 
 `scripts/test-typescript-compat.sh` creates an isolated SQLite database, runs

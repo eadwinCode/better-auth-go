@@ -50,8 +50,15 @@ type databaseHookRegistration struct {
 }
 
 type hookedDatabaseAdapter struct {
-	next  DatabaseAdapter
-	hooks []databaseHookRegistration
+	next     DatabaseAdapter
+	hooks    []databaseHookRegistration
+	deferred *[]deferredDatabaseHook
+}
+
+type deferredDatabaseHook struct {
+	ctx          context.Context
+	registration databaseHookRegistration
+	state        *DatabaseHookContext
 }
 
 func wrapDatabaseHooks(adapter DatabaseAdapter, plugins []Plugin) (DatabaseAdapter, error) {
@@ -229,9 +236,31 @@ func (adapter *hookedDatabaseAdapter) IncrementOne(ctx context.Context, query In
 }
 
 func (adapter *hookedDatabaseAdapter) Transaction(ctx context.Context, callback func(DatabaseAdapter) error) error {
-	return adapter.next.Transaction(ctx, func(transaction DatabaseAdapter) error {
-		return callback(&hookedDatabaseAdapter{next: transaction, hooks: adapter.hooks})
+	if adapter.deferred != nil {
+		return adapter.next.Transaction(ctx, func(transaction DatabaseAdapter) error {
+			return callback(&hookedDatabaseAdapter{
+				next: transaction, hooks: adapter.hooks, deferred: adapter.deferred,
+			})
+		})
+	}
+	deferred := make([]deferredDatabaseHook, 0)
+	err := adapter.next.Transaction(ctx, func(transaction DatabaseAdapter) error {
+		return callback(&hookedDatabaseAdapter{
+			next: transaction, hooks: adapter.hooks, deferred: &deferred,
+		})
 	})
+	if err != nil {
+		return err
+	}
+	// The database has committed successfully. From this point an after-hook
+	// failure cannot and must not pretend the transaction rolled back.
+	for _, effect := range deferred {
+		if err := callDatabaseHook(effect.ctx, effect.registration,
+			effect.registration.hook.After, effect.state); err != nil {
+			return fmt.Errorf("betterauth: database committed but after hook failed: %w", err)
+		}
+	}
+	return nil
 }
 
 func (adapter *hookedDatabaseAdapter) before(ctx context.Context, state *DatabaseHookContext) error {
@@ -251,11 +280,25 @@ func (adapter *hookedDatabaseAdapter) after(ctx context.Context, state *Database
 		if !registration.matches(state) || registration.hook.After == nil {
 			continue
 		}
+		if adapter.deferred != nil {
+			*adapter.deferred = append(*adapter.deferred, deferredDatabaseHook{
+				ctx: ctx, registration: registration, state: cloneDatabaseHookContext(state),
+			})
+			continue
+		}
 		if err := callDatabaseHook(ctx, registration, registration.hook.After, state); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func cloneDatabaseHookContext(state *DatabaseHookContext) *DatabaseHookContext {
+	return &DatabaseHookContext{
+		Operation: state.Operation, Model: state.Model, Count: state.Count,
+		Where: slices.Clone(state.Where), Data: clonePluginRecord(state.Data),
+		Increment: clonePluginIncrement(state.Increment), Result: clonePluginRecord(state.Result),
+	}
 }
 
 func (registration databaseHookRegistration) matches(state *DatabaseHookContext) bool {
@@ -276,11 +319,7 @@ func callDatabaseHook(
 			err = fmt.Errorf("betterauth: plugin %q database hook panicked", registration.pluginID)
 		}
 	}()
-	copyState := &DatabaseHookContext{
-		Operation: state.Operation, Model: state.Model, Count: state.Count,
-		Where: slices.Clone(state.Where), Data: clonePluginRecord(state.Data),
-		Increment: clonePluginIncrement(state.Increment), Result: clonePluginRecord(state.Result),
-	}
+	copyState := cloneDatabaseHookContext(state)
 	if err := handler(ctx, copyState); err != nil {
 		return fmt.Errorf("betterauth: plugin %q database hook: %w", registration.pluginID, err)
 	}

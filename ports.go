@@ -162,6 +162,17 @@ type OAuthTokenRefresher interface {
 	Refresh(context.Context, string) (ProviderTokens, error)
 }
 
+type OAuthEndSessionRequest struct {
+	IDToken               string
+	PostLogoutRedirectURI string
+	State                 string
+}
+
+// OAuthEndSessionProvider optionally supports OpenID Connect RP-initiated logout.
+type OAuthEndSessionProvider interface {
+	EndSessionURL(OAuthEndSessionRequest) (string, error)
+}
+
 // authStore is the typed internal persistence contract built over the public
 // generic DatabaseAdapter.
 type authStore interface {
@@ -175,12 +186,14 @@ type authStore interface {
 	UpdateUser(context.Context, string, Record, time.Time) (User, error)
 	ListAccounts(context.Context, string) ([]OAuthAccount, error)
 	UnlinkAccount(context.Context, string, string, string, bool) error
+	UnlinkAccountByID(context.Context, string, string, bool) error
 	DeleteUser(context.Context, string) error
 	ConsumeUserDeletion(context.Context, string, string, time.Time) error
 	ConsumeEmailChange(context.Context, string, time.Time) (User, string, error)
 	ConsumeEmailChangeConfirmation(context.Context, string, time.Time) (User, string, string, error)
 	LinkOAuthAccount(context.Context, string, string, OAuthProfile, ProviderTokens, time.Time) error
 	OAuthAccountTokens(context.Context, string, string, string) (StoredOAuthAccount, error)
+	OAuthAccountTokensByID(context.Context, string, string) (StoredOAuthAccount, error)
 	UpdateOAuthAccountTokens(context.Context, string, string, ProviderTokens, time.Time) error
 
 	CreateSession(context.Context, Session) (Session, error)

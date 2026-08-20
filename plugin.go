@@ -179,6 +179,10 @@ type HookContext struct {
 	IsTrustedOrigin func(string) bool
 	ValidateCSRF    func() error
 	IssueSession    func(string) (*IssuedSession, error)
+	// IssueSessionWithDatabase creates a new session through the supplied
+	// transaction adapter. It is used by plugins that must persist an
+	// authentication credential and its initial session atomically.
+	IssueSessionWithDatabase func(DatabaseAdapter, string) (*IssuedSession, error)
 	// AuthenticateOAuth completes a plugin-owned, externally verified identity
 	// transition through the core account/session store. Plugins must validate
 	// issuer, audience, nonce, signature, and verified email before calling it.

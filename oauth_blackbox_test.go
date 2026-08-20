@@ -26,6 +26,20 @@ type fakeOAuthProvider struct {
 	disableSignUp         bool
 }
 
+type fakeLogoutProvider struct{ *fakeOAuthProvider }
+
+func (*fakeLogoutProvider) EndSessionURL(
+	request betterauth.OAuthEndSessionRequest,
+) (string, error) {
+	destination := &url.URL{Scheme: "https", Host: "provider.example", Path: "/logout"}
+	query := destination.Query()
+	query.Set("id_token_hint", request.IDToken)
+	query.Set("post_logout_redirect_uri", request.PostLogoutRedirectURI)
+	query.Set("state", request.State)
+	destination.RawQuery = query.Encode()
+	return destination.String(), nil
+}
+
 func (provider *fakeOAuthProvider) DisableImplicitSignUp() bool {
 	return provider.disableImplicitSignUp
 }
@@ -68,9 +82,12 @@ func (provider *fakeOAuthProvider) Exchange(
 	}
 	if profile.ProviderAccountID == "" {
 		profile = betterauth.OAuthProfile{
-			ProviderAccountID: "provider-user-1", Email: "oauth@example.com",
+			Issuer: "local:oauth:test", ProviderAccountID: "provider-user-1", Email: "oauth@example.com",
 			EmailVerified: true, Name: "OAuth User",
 		}
+	}
+	if profile.Issuer == "" {
+		profile.Issuer = "local:oauth:test"
 	}
 	if tokens.AccessToken == "" {
 		tokens = betterauth.ProviderTokens{
@@ -108,7 +125,7 @@ func (provider *fakeOAuthProvider) Refresh(
 func TestOAuthStatePKCERedirectAndEncryptedTokens(t *testing.T) {
 	t.Parallel()
 	database := memory.New()
-	provider := &fakeOAuthProvider{}
+	provider := &fakeLogoutProvider{fakeOAuthProvider: &fakeOAuthProvider{}}
 	cipher, err := betterauth.NewAESGCMTokenCipher([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
@@ -126,6 +143,8 @@ func TestOAuthStatePKCERedirectAndEncryptedTokens(t *testing.T) {
 	body := []byte(`{"provider":"test","callbackURL":"https://app.example.com/dashboard","disableRedirect":true}`)
 	request := httptest.NewRequest(http.MethodPost, "https://auth.example.com/api/auth/sign-in/social", bytes.NewReader(body))
 	request.Header.Set("Origin", "https://app.example.com")
+	request.Header.Set("X-Forwarded-Host", "attacker.example")
+	request.Header.Set("X-Forwarded-Proto", "http")
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
@@ -144,6 +163,9 @@ func TestOAuthStatePKCERedirectAndEncryptedTokens(t *testing.T) {
 	state := parsed.Query().Get("state")
 	if state == "" || parsed.Query().Get("code_challenge") == "" || parsed.Query().Get("nonce") == "" {
 		t.Fatalf("incomplete authorization URL: %s", authorization.URL)
+	}
+	if parsed.Query().Get("redirect_uri") != "https://auth.example.com/api/auth/callback/test" {
+		t.Fatalf("forwarded headers changed callback authority: %s", authorization.URL)
 	}
 
 	callback := httptest.NewRequest(
@@ -203,6 +225,28 @@ func TestOAuthStatePKCERedirectAndEncryptedTokens(t *testing.T) {
 	if refreshed.Code != http.StatusOK ||
 		!bytes.Contains(refreshed.Body.Bytes(), []byte(`"accessToken":"refreshed-access-token"`)) {
 		t.Fatalf("refresh-token: %d %s", refreshed.Code, refreshed.Body.String())
+	}
+	signout := client.request(t, http.MethodPost, "/sign-out", map[string]any{
+		"callbackURL":     "https://app.example.com/dashboard",
+		"disableRedirect": true,
+		"state":           "logout-state",
+	}, true)
+	if signout.Code != http.StatusOK {
+		t.Fatalf("RP sign-out: %d %s", signout.Code, signout.Body.String())
+	}
+	var logout struct {
+		URL      string `json:"url"`
+		Redirect bool   `json:"redirect"`
+	}
+	if err = json.Unmarshal(signout.Body.Bytes(), &logout); err != nil {
+		t.Fatal(err)
+	}
+	logoutURL, err := url.Parse(logout.URL)
+	if err != nil || logout.Redirect || logoutURL.Host != "provider.example" ||
+		logoutURL.Query().Get("id_token_hint") != "refreshed-id-token" ||
+		logoutURL.Query().Get("post_logout_redirect_uri") != "https://app.example.com/dashboard" ||
+		logoutURL.Query().Get("state") != "logout-state" {
+		t.Fatalf("unexpected RP logout response: %#v, %v", logout, err)
 	}
 }
 

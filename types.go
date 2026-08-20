@@ -71,6 +71,7 @@ type OAuthAccount struct {
 	ID                string    `json:"id"`
 	UserID            string    `json:"userId"`
 	Provider          string    `json:"providerId"`
+	Issuer            string    `json:"issuer"`
 	ProviderAccountID string    `json:"accountId"`
 	Scope             string    `json:"scope,omitempty"`
 	CreatedAt         time.Time `json:"createdAt"`
@@ -81,6 +82,7 @@ type OAuthAccount struct {
 // creation and linking.
 type OAuthProfile struct {
 	Provider          string
+	Issuer            string
 	ProviderAccountID string
 	Email             string
 	EmailVerified     bool

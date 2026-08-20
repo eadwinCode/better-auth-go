@@ -27,42 +27,47 @@ func TestMongoIndexNamesRemainCompatibleAndNamespacePlugins(t *testing.T) {
 	}
 }
 
-func TestCoreProviderAccountIndexRetainsReleaseCompatibleName(t *testing.T) {
+func TestCoreIssuerAccountIndexMatchesV17Identity(t *testing.T) {
 	t.Parallel()
 	account := betterauth.CoreSchema()[betterauth.ModelAccount]
 	if len(account.Indexes) != 1 {
-		t.Fatalf("core account indexes = %#v, want one provider-account index", account.Indexes)
+		t.Fatalf("core account indexes = %#v, want one issuer-account index", account.Indexes)
 	}
 	index := account.Indexes[0]
-	if index.Name != "uniq_provider_account" ||
+	if index.Name != "account_issuer_accountId_uidx" ||
 		len(index.Fields) != 2 ||
-		index.Fields[0] != "providerId" ||
+		index.Fields[0] != "issuer" ||
 		index.Fields[1] != "accountId" ||
 		!index.Unique {
-		t.Fatalf("provider-account index is not release compatible: %#v", index)
+		t.Fatalf("issuer-account index is not v1.7 compatible: %#v", index)
 	}
 }
 
-func TestCoreProviderAccountIndexFallbackDoesNotDuplicateSchemaIndex(t *testing.T) {
+func TestCoreIssuerAccountIndexFallbackDoesNotDuplicateSchemaIndex(t *testing.T) {
 	t.Parallel()
 	models := map[string]string{betterauth.ModelAccount: betterauth.ModelAccount}
 	fields := map[string]map[string]string{
 		betterauth.ModelAccount: {
-			"providerId": "providerId",
-			"accountId":  "accountId",
+			"issuer":    "issuer",
+			"accountId": "accountId",
 		},
 	}
 	declared := map[string][]mongo.IndexModel{
-		betterauth.ModelAccount: {{Keys: bson.D{{Key: "providerId", Value: 1}, {Key: "accountId", Value: 1}}}},
+		betterauth.ModelAccount: {{Keys: bson.D{{Key: "issuer", Value: 1}, {Key: "accountId", Value: 1}}}},
 	}
-	addCoreMongoIndexes(declared, models, fields, true)
+	addCoreMongoIndexes(declared, models, fields, true, true)
 	if len(declared[betterauth.ModelAccount]) != 1 {
-		t.Fatalf("schema-declared provider-account index was duplicated: %#v", declared)
+		t.Fatalf("schema-declared issuer-account index was duplicated: %#v", declared)
 	}
 
 	legacy := map[string][]mongo.IndexModel{}
-	addCoreMongoIndexes(legacy, models, fields, false)
+	addCoreMongoIndexes(legacy, models, fields, false, true)
 	if len(legacy[betterauth.ModelAccount]) != 1 {
-		t.Fatalf("legacy provider-account fallback missing: %#v", legacy)
+		t.Fatalf("issuer-account fallback missing: %#v", legacy)
+	}
+	staging := map[string][]mongo.IndexModel{}
+	addCoreMongoIndexes(staging, models, fields, false, false)
+	if len(staging[betterauth.ModelAccount]) != 0 {
+		t.Fatalf("staging schema created the final unique index: %#v", staging)
 	}
 }

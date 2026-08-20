@@ -8,6 +8,9 @@ import (
 
 const (
 	ModelSCIMProvider = "scimProvider"
+	// ModelSCIMUser is a directory-owned provisioning binding. It is
+	// deliberately separate from authentication accounts in Better Auth 1.7.
+	ModelSCIMUser = "scimUser"
 
 	SchemaUser         = "urn:ietf:params:scim:schemas:core:2.0:User"
 	SchemaSchema       = "urn:ietf:params:scim:schemas:core:2.0:Schema"
@@ -16,6 +19,18 @@ const (
 	SchemaPatch        = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 	SchemaError        = "urn:ietf:params:scim:api:messages:2.0:Error"
 )
+
+type userBinding struct {
+	ID                string
+	UserID            string
+	Provider          string
+	ProviderAccountID string
+	// OwnsUser is true only when this connection created the global user. Old
+	// or linked bindings default false so deprovisioning fails safe.
+	OwnsUser  bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
 
 type OrganizationAuthorizer interface {
 	AuthorizeSCIMConnection(*betterauth.HookContext, string) error

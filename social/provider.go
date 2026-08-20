@@ -28,6 +28,11 @@ const (
 
 type ProfileMapper func(map[string]any) (betterauth.OAuthProfile, error)
 
+// AccountSubject resolves the immutable provider-side identifier from the raw
+// provider profile. It is required for custom non-OIDC providers; mutable
+// local-user mappings must never choose account identity.
+type AccountSubject func(map[string]any) (string, error)
+
 // EndpointValidator is called for OIDC discovery and every discovered
 // endpoint before a provider is constructed. It lets embedders apply an SSRF
 // policy that is stricter than the generic public-address checks.
@@ -51,10 +56,18 @@ type Options struct {
 	JWKSURL             string
 	TokenAuth           TokenAuthMethod
 	ProfileMapper       ProfileMapper
-	AuthorizationParams map[string]string
-	HTTPClient          *http.Client
-	Timeout             time.Duration
-	MaxResponseBytes    int64
+	AccountSubject      AccountSubject
+	// AccountIssuer overrides the synthetic local:oauth namespace for a
+	// custom non-OIDC provider. It must be a stable application-owned value.
+	AccountIssuer         string
+	AuthorizationParams   map[string]string
+	RefreshTokenParams    map[string]string
+	EndSessionURL         string
+	DisableProviderLogout bool
+	PostLogoutRedirectURI string
+	HTTPClient            *http.Client
+	Timeout               time.Duration
+	MaxResponseBytes      int64
 	// Clock controls token-expiry and OIDC verification time in deterministic
 	// tests. Nil uses the system UTC clock.
 	Clock betterauth.Clock
@@ -95,6 +108,7 @@ type preset struct {
 	authorizationFragment string
 	authorizationExtra    map[string]string
 	mapper                ProfileMapper
+	claimsValidator       func(map[string]any) error
 }
 
 // Provider is immutable after construction and safe for concurrent use.
@@ -120,7 +134,13 @@ type Provider struct {
 	scopeSeparator        string
 	authorizationFragment string
 	authorizationExtra    map[string]string
+	refreshTokenExtra     map[string]string
+	endSessionURL         string
+	disableProviderLogout bool
+	postLogoutRedirectURI string
 	mapper                ProfileMapper
+	accountSubject        AccountSubject
+	accountIssuer         string
 	httpClient            *http.Client
 	maxResponseBytes      int64
 	clock                 betterauth.Clock
@@ -208,9 +228,44 @@ func New(providerID string, options Options) (*Provider, error) {
 	for key, value := range options.AuthorizationParams {
 		extra[key] = value
 	}
+	refreshExtra := cloneMap(options.RefreshTokenParams)
+	for _, protected := range []string{
+		"grant_type", "refresh_token", "client_id", "client_key", "client_secret",
+	} {
+		delete(refreshExtra, protected)
+	}
+	if options.EndSessionURL != "" {
+		if err := validateEndpoint(options.EndSessionURL); err != nil {
+			return nil, fmt.Errorf("social: %s end-session endpoint: %w", definition.id, err)
+		}
+	}
+	if options.PostLogoutRedirectURI != "" {
+		redirect, parseErr := url.Parse(options.PostLogoutRedirectURI)
+		if parseErr != nil || redirect == nil || !redirect.IsAbs() ||
+			redirect.Scheme != "https" || redirect.Host == "" || redirect.User != nil {
+			return nil, fmt.Errorf("social: %s post-logout redirect URI is invalid", definition.id)
+		}
+		options.PostLogoutRedirectURI = redirect.String()
+	}
 	mapper := definition.mapper
 	if options.ProfileMapper != nil {
 		mapper = options.ProfileMapper
+	}
+	accountSubject := options.AccountSubject
+	if accountSubject == nil && !definition.oidc && !isBuiltInProvider(definition.id) {
+		return nil, fmt.Errorf("social: custom provider %q requires AccountSubject", definition.id)
+	}
+	if accountSubject == nil {
+		accountSubject = func(profile map[string]any) (string, error) {
+			return providerAccountSubject(definition.id, profile)
+		}
+	}
+	accountIssuer := strings.TrimSpace(options.AccountIssuer)
+	if accountIssuer == "" && !definition.oidc {
+		accountIssuer, err = betterauth.OAuthAccountIssuer(definition.id)
+		if err != nil {
+			return nil, err
+		}
 	}
 	var verifier *idTokenVerifier
 	if definition.oidc {
@@ -223,6 +278,7 @@ func New(providerID string, options Options) (*Provider, error) {
 		verifier = &idTokenVerifier{
 			client: &clientCopy, jwksURL: definition.jwksURL, issuers: definition.issuers,
 			audience: clientID, maxResponseBytes: maxResponse, clock: clock,
+			claimsValidator: definition.claimsValidator,
 		}
 	}
 	return &Provider{
@@ -235,7 +291,11 @@ func New(providerID string, options Options) (*Provider, error) {
 		userInfoHeaders: cloneMap(definition.userInfoHeaders), tokenMethod: definition.tokenMethod,
 		tokenSecretParam: definition.tokenSecretParam, scopeSeparator: definition.scopeSeparator,
 		authorizationFragment: definition.authorizationFragment,
-		authorizationExtra:    extra, mapper: mapper, httpClient: &clientCopy, maxResponseBytes: maxResponse,
+		authorizationExtra:    extra, refreshTokenExtra: refreshExtra,
+		endSessionURL: options.EndSessionURL, disableProviderLogout: options.DisableProviderLogout,
+		postLogoutRedirectURI: options.PostLogoutRedirectURI,
+		mapper:                mapper, accountSubject: accountSubject,
+		accountIssuer: accountIssuer, httpClient: &clientCopy, maxResponseBytes: maxResponse,
 		clock: clock, disableImplicitSignUp: options.DisableImplicitSignUp,
 		disableSignUp: options.DisableSignUp,
 	}, nil
@@ -288,6 +348,7 @@ func NewOIDC(ctx context.Context, providerID string, options Options) (*Provider
 		ResponseTypesSupported            []string `json:"response_types_supported"`
 		IDTokenSigningAlgorithmsSupported []string `json:"id_token_signing_alg_values_supported"`
 		TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
+		EndSessionEndpoint                string   `json:"end_session_endpoint"`
 	}
 	discoveryURL := issuer + "/.well-known/openid-configuration"
 	if options.DiscoveryURL != "" {
@@ -343,6 +404,9 @@ func NewOIDC(ctx context.Context, providerID string, options Options) (*Provider
 	}
 	if options.JWKSURL == "" {
 		options.JWKSURL = discovery.JWKSURI
+	}
+	if options.EndSessionURL == "" {
+		options.EndSessionURL = discovery.EndSessionEndpoint
 	}
 	if options.TokenAuth == "" {
 		switch {
@@ -424,6 +488,10 @@ func (p *Provider) Exchange(
 		return betterauth.OAuthResult{}, err
 	}
 	var profileData map[string]any
+	var verifiedClaims map[string]any
+	if p.oidcVerifier != nil && token.IDToken == "" {
+		return betterauth.OAuthResult{}, errors.New("social: OIDC provider returned no ID token")
+	}
 	if p.userInfoURL != "" {
 		profileData, err = p.userInfo(ctx, token)
 		if err != nil {
@@ -434,14 +502,16 @@ func (p *Provider) Exchange(
 		if err != nil {
 			return betterauth.OAuthResult{}, err
 		}
+		verifiedClaims = profileData
 	} else {
 		return betterauth.OAuthResult{}, errors.New("social: provider returned no verifiable profile")
 	}
-	if token.IDToken != "" && p.oidcVerifier != nil {
+	if p.oidcVerifier != nil {
 		claims, verifyErr := p.oidcVerifier.Verify(ctx, token.IDToken, nonce)
 		if verifyErr != nil {
 			return betterauth.OAuthResult{}, verifyErr
 		}
+		verifiedClaims = claims
 		for key, value := range claims {
 			if _, exists := profileData[key]; !exists {
 				profileData[key] = value
@@ -453,6 +523,23 @@ func (p *Provider) Exchange(
 		return betterauth.OAuthResult{}, err
 	}
 	profile.Provider = p.id
+	if verifiedClaims != nil {
+		profile.Issuer = stringValue(verifiedClaims["iss"])
+		if p.id == "microsoft" {
+			profile.ProviderAccountID = stringValue(verifiedClaims["oid"])
+		} else {
+			profile.ProviderAccountID = stringValue(verifiedClaims["sub"])
+		}
+	} else {
+		profile.Issuer = p.accountIssuer
+		profile.ProviderAccountID, err = p.accountSubject(profileData)
+		if err != nil {
+			return betterauth.OAuthResult{}, err
+		}
+	}
+	if strings.TrimSpace(profile.Issuer) == "" || strings.TrimSpace(profile.ProviderAccountID) == "" {
+		return betterauth.OAuthResult{}, errors.New("social: provider returned no stable account identity")
+	}
 	tokens := betterauth.ProviderTokens{
 		AccessToken: token.AccessToken, RefreshToken: token.RefreshToken,
 		IDToken: token.IDToken, Scope: token.Scope,
@@ -499,10 +586,12 @@ func (p *Provider) Refresh(ctx context.Context, refreshToken string) (betterauth
 	if strings.TrimSpace(refreshToken) == "" {
 		return betterauth.ProviderTokens{}, errors.New("social: refresh token is required")
 	}
-	form := url.Values{
-		"grant_type":    {"refresh_token"},
-		"refresh_token": {refreshToken},
+	form := make(url.Values, len(p.refreshTokenExtra)+3)
+	for key, value := range p.refreshTokenExtra {
+		form.Set(key, value)
 	}
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", refreshToken)
 	form.Set(p.clientIDParameter(), p.clientID)
 	if p.tokenAuth == TokenAuthBody || p.tokenSecretParam != "" {
 		secretParam := p.tokenSecretParam
@@ -523,6 +612,35 @@ func (p *Provider) Refresh(ctx context.Context, refreshToken string) (betterauth
 		result.AccessTokenExpiresAt = p.clock.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
 	}
 	return result, nil
+}
+
+// EndSessionURL builds a validated OIDC RP-initiated logout URL.
+func (p *Provider) EndSessionURL(request betterauth.OAuthEndSessionRequest) (string, error) {
+	if p.disableProviderLogout || p.endSessionURL == "" {
+		return "", nil
+	}
+	destination, err := url.Parse(p.endSessionURL)
+	if err != nil || destination == nil || !destination.IsAbs() ||
+		destination.Scheme != "https" || destination.Host == "" || destination.User != nil {
+		return "", errors.New("social: invalid end-session endpoint")
+	}
+	query := destination.Query()
+	if request.IDToken != "" {
+		query.Set("id_token_hint", request.IDToken)
+	}
+	redirectURI := request.PostLogoutRedirectURI
+	if redirectURI == "" {
+		redirectURI = p.postLogoutRedirectURI
+	}
+	if redirectURI != "" {
+		query.Set("post_logout_redirect_uri", redirectURI)
+		query.Set("client_id", p.clientID)
+		if request.State != "" {
+			query.Set("state", request.State)
+		}
+	}
+	destination.RawQuery = query.Encode()
+	return destination.String(), nil
 }
 
 func (p *Provider) requestToken(ctx context.Context, form url.Values) (tokenResponse, error) {

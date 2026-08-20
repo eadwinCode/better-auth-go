@@ -45,6 +45,9 @@ func (instance *runtime) plugin() betterauth.Plugin {
 				BodyValidator: betterauth.ObjectValidator{
 					Fields: map[string]betterauth.FieldValidation{
 						"password": password,
+						"method": {
+							Kind: betterauth.ValidationString, Enum: []string{"otp", "totp"},
+						},
 						"issuer": {
 							Kind: betterauth.ValidationString, MaxLength: 128,
 						},
@@ -169,6 +172,18 @@ func (instance *runtime) enable(
 	); err != nil {
 		return nil, err
 	}
+	method := stringBody(context, "method")
+	if method == "" {
+		method = "totp"
+	}
+	if method == "otp" {
+		return instance.enableOTP(context)
+	}
+	if instance.config.DisableTOTP {
+		return nil, betterauth.NewError(
+			betterauth.CodeBadRequest, "TOTP is not configured.", http.StatusBadRequest, nil,
+		)
+	}
 	raw, err := context.GenerateToken(20)
 	if err != nil {
 		return nil, internalError(err)
@@ -241,12 +256,55 @@ func (instance *runtime) enable(
 		issuer = instance.config.Issuer
 	}
 	response, err := betterauth.JSONResponse(http.StatusOK, map[string]any{
+		"method": "totp",
 		"totpURI": totpURI(
 			issuer, context.User.Email, secret,
 			instance.config.TOTPPeriod, instance.config.TOTPDigits,
 		),
 		"backupCodes": codes,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if err := instance.rotateAuthenticatedSession(context, response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+func (instance *runtime) enableOTP(
+	context *betterauth.HookContext,
+) (*betterauth.PluginResponse, error) {
+	if instance.config.DeliverOTP == nil {
+		return nil, betterauth.NewError(
+			betterauth.CodeBadRequest, "OTP is not configured.", http.StatusBadRequest, nil,
+		)
+	}
+	now := context.Clock.Now().UTC()
+	err := context.Database.Transaction(context.Context, func(tx betterauth.DatabaseAdapter) error {
+		updated, updateErr := tx.Update(context.Context, betterauth.UpdateQuery{
+			Model: betterauth.ModelUser,
+			Where: []betterauth.Where{betterauth.Eq("id", context.User.ID)},
+			Update: betterauth.Record{
+				"twoFactorEnabled": true, "updatedAt": now,
+			},
+		})
+		if updateErr != nil || updated == nil {
+			if updateErr == nil {
+				updateErr = betterauth.ErrNotFound
+			}
+			return updateErr
+		}
+		return instance.audit(
+			context, tx, auditEnabled, context.User.ID, map[string]any{"factor": "otp"},
+		)
+	})
+	if err != nil {
+		return nil, internalError(err)
+	}
+	response, err := betterauth.JSONResponse(
+		http.StatusOK, map[string]string{"method": "otp"},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -991,15 +1049,16 @@ func (instance *runtime) interceptCredentialSignIn(
 	if !enabled {
 		return nil
 	}
-	record, err := instance.findTwoFactor(context, signIn.User.ID)
-	if err != nil || !record.Verified {
+	record, recordErr := instance.findTwoFactor(context, signIn.User.ID)
+	hasTOTP := recordErr == nil && record.Verified && !instance.config.DisableTOTP
+	if !hasTOTP && instance.config.DeliverOTP == nil {
 		return errors.New("twofactor: enabled user has no verified configuration")
 	}
 	if instance.acceptTrustedDevice(context, response, signIn.User.ID) {
 		return nil
 	}
 	methods := make([]string, 0, 2)
-	if !instance.config.DisableTOTP {
+	if hasTOTP {
 		methods = append(methods, "totp")
 	}
 	if instance.config.DeliverOTP != nil {

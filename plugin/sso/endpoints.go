@@ -339,7 +339,7 @@ func (instance *runtime) oidcCallback(
 		return nil, providerFailure(errors.New("SSO provider returned an unverified or mismatched email"))
 	}
 	info := UserInfo{
-		ID: result.Profile.ProviderAccountID, Email: result.Profile.Email,
+		ID: result.Profile.ProviderAccountID, Issuer: result.Profile.Issuer, Email: result.Profile.Email,
 		EmailVerified: result.Profile.EmailVerified, Name: result.Profile.Name,
 		Image: result.Profile.ImageURL,
 	}
@@ -362,8 +362,11 @@ func (instance *runtime) completeIdentityWithState(
 	if ctx.AuthenticateOAuth == nil {
 		return nil, internal(errors.New("SSO identity completion is unavailable"))
 	}
+	if strings.TrimSpace(info.Issuer) == "" || strings.TrimSpace(info.ID) == "" {
+		return nil, providerFailure(errors.New("SSO provider returned no protocol identity"))
+	}
 	if instance.config.DisableImplicitSignUp && !state.RequestSignUp {
-		exists, err := ssoIdentityExists(ctx, provider.ProviderID, info.ID, info.Email)
+		exists, err := ssoIdentityExists(ctx, info.Issuer, info.ID, info.Email)
 		if err != nil {
 			return nil, internal(err)
 		}
@@ -372,7 +375,7 @@ func (instance *runtime) completeIdentityWithState(
 		}
 	}
 	issued, isNew, err := ctx.AuthenticateOAuth(betterauth.OAuthProfile{
-		Provider: provider.ProviderID, ProviderAccountID: info.ID,
+		Provider: provider.ProviderID, Issuer: info.Issuer, ProviderAccountID: info.ID,
 		Email: info.Email, EmailVerified: info.EmailVerified,
 		Name: info.Name, ImageURL: info.Image,
 	}, coreTokens)
@@ -427,12 +430,12 @@ func (instance *runtime) completeIdentityWithState(
 
 func ssoIdentityExists(
 	ctx *betterauth.HookContext,
-	providerID, accountID, email string,
+	issuer, accountID, email string,
 ) (bool, error) {
 	account, err := ctx.Database.FindOne(ctx.Context, betterauth.FindOneQuery{
 		Model: betterauth.ModelAccount,
 		Where: []betterauth.Where{
-			betterauth.Eq("providerId", providerID), betterauth.Eq("accountId", accountID),
+			betterauth.Eq("issuer", issuer), betterauth.Eq("accountId", accountID),
 		},
 	})
 	if err == nil && account != nil {

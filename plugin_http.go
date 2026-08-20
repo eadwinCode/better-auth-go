@@ -273,6 +273,9 @@ func (s *Server) newHookContext(
 		IssueSession: func(userID string) (*IssuedSession, error) {
 			return s.issuePluginSession(r, userID)
 		},
+		IssueSessionWithDatabase: func(database DatabaseAdapter, userID string) (*IssuedSession, error) {
+			return s.issuePluginSessionWithDatabase(r, database, userID)
+		},
 		AuthenticateOAuth: func(profile OAuthProfile, tokens ProviderTokens) (*IssuedSession, bool, error) {
 			return s.authenticatePluginOAuth(r, profile, tokens)
 		},

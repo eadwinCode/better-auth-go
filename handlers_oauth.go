@@ -183,7 +183,8 @@ func (s *Server) handleSocialCallback(providerID string) func(http.ResponseWrite
 				"The provider did not return a verified identity.", http.StatusBadGateway, trustErr,
 			)
 		}
-		if err != nil || profile.ProviderAccountID == "" || len(profile.ProviderAccountID) > 512 ||
+		if err != nil || profile.Issuer == "" || len(profile.Issuer) > 2048 ||
+			profile.ProviderAccountID == "" || len(profile.ProviderAccountID) > 512 ||
 			(!profile.EmailVerified && !trustedProvider) {
 			return s.oauthCallbackError(
 				w, state, "unable_to_get_user_info", CodeProviderFailure,

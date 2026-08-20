@@ -4,7 +4,8 @@
 authentication state and exposes a standard `net/http` handler; it is not a
 client SDK and does not require a Node or Bun service.
 
-The public server and adapter contracts track Better Auth TypeScript v1.6 while
+The public server and adapter contracts have a certified Better Auth TypeScript
+v1.6 boundary and an active, security-first v1.7 migration while
 using native Go security defaults:
 
 - Better Auth-compatible core route names under `/api/auth`;
@@ -498,6 +499,7 @@ runbook is in [Production operations](./docs/production-operations.md).
 ## Compatibility and roadmap
 
 - [Better Auth v1.6 compatibility matrix](./docs/compatibility/better-auth-v1.6.md)
+- [Better Auth v1.7 migration contract](./docs/compatibility/better-auth-v1.7.md)
 - [Better Auth v1.6.26 production progress](./PROGRESS.md)
 - [Versioning and stability](./docs/versioning.md)
 - [In-process session resolution](./docs/session-resolution.md)
