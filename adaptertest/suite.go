@@ -165,4 +165,52 @@ func Run(t *testing.T, factory Factory) {
 			t.Fatalf("transaction did not roll back: %#v, %v", record, err)
 		}
 	})
+
+	t.Run("transaction scoped adapter commits", func(t *testing.T) {
+		adapter := factory(t)
+		if !adapter.Capabilities().Transactions {
+			t.Skip("adapter does not advertise transactions")
+		}
+		ctx := context.Background()
+		err := adapter.Transaction(ctx, func(transaction betterauth.DatabaseAdapter) error {
+			_, createErr := transaction.Create(ctx, betterauth.CreateQuery{
+				Model: "transaction", ForceAllowID: true, Data: betterauth.Record{"id": "committed"},
+			})
+			return createErr
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		record, err := adapter.FindOne(ctx, betterauth.FindOneQuery{
+			Model: "transaction", Where: []betterauth.Where{betterauth.Eq("id", "committed")},
+		})
+		if err != nil || record == nil {
+			t.Fatalf("transaction did not commit: %#v, %v", record, err)
+		}
+	})
+
+	t.Run("nested work reuses transaction scoped adapter", func(t *testing.T) {
+		adapter := factory(t)
+		if !adapter.Capabilities().Transactions {
+			t.Skip("adapter does not advertise transactions")
+		}
+		ctx := context.Background()
+		err := adapter.Transaction(ctx, func(transaction betterauth.DatabaseAdapter) error {
+			return transaction.Transaction(ctx, func(nested betterauth.DatabaseAdapter) error {
+				_, createErr := nested.Create(ctx, betterauth.CreateQuery{
+					Model: "transaction", ForceAllowID: true, Data: betterauth.Record{"id": "nested"},
+				})
+				return createErr
+			})
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		record, err := adapter.FindOne(ctx, betterauth.FindOneQuery{
+			Model: "transaction", Where: []betterauth.Where{betterauth.Eq("id", "nested")},
+		})
+		if err != nil || record == nil {
+			t.Fatalf("nested transaction-scoped work did not commit: %#v, %v", record, err)
+		}
+	})
 }

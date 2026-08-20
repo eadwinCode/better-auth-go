@@ -1,7 +1,7 @@
-# Better Auth v1.6.25 Production Progress
+# Better Auth v1.6.26 Production Progress
 
 This file is the release tracker for `better-auth-go`. The compatibility target
-is pinned to **Better Auth TypeScript 1.6.25**. A capability is not production
+is pinned to **Better Auth TypeScript 1.6.26**. A capability is not production
 complete merely because it compiles or has an implementation: it must satisfy
 the HTTP contract, adapter contract, security checks, and test evidence listed
 here.
@@ -11,7 +11,7 @@ Focused Better Auth v1.7.1 security and interoperability behavior is tracked in
 It supplements rather than replaces the broader v1.6.25 production baseline.
 
 The scope is limited to behavior shipped by the pinned Better Auth release.
-Features introduced after 1.6.25 and Go-only product features are not part of
+Features introduced after 1.6.26 and Go-only product features are not part of
 this release.
 
 ## Status vocabulary
@@ -20,7 +20,7 @@ this release.
 | --- | --- |
 | Complete | Implemented and covered by the required release evidence. |
 | Partial | Some implementation or tests exist, but a release gate is open. |
-| Missing | Required v1.6.25 behavior has no implementation. |
+| Missing | Required v1.6.26 behavior has no implementation. |
 | Deliberate difference | Intentional Go security behavior documented and tested separately. |
 | Not applicable | JavaScript/runtime-specific behavior with no server-side Go equivalent. |
 
@@ -29,7 +29,7 @@ this release.
 **`v1.0.0` is production-stable within the declared v1 boundary.**
 
 The first v1 stability boundary is intentionally narrower than a complete
-Better Auth 1.6.25 replacement: it covers the core server, first-party
+Better Auth 1.6.26 replacement: it covers the core server, first-party
 MongoDB/PostgreSQL/SQLite adapters, social-provider presets, and generic
 OAuth/OIDC consumer. Feature packages below `plugin/`, including SSO and SCIM,
 are experimental until separately promoted. The exact `v1.0.0-rc.1` tag passed
@@ -39,9 +39,24 @@ checkout. The exact `v1.0.0` tag then repeated every certification gate,
 published successfully, and passed independent module, checksum, and
 attestation verification.
 
+## v1.6.26 compatibility delta
+
+The v1.6.26 source audit is recorded in ADR 0020. The stable Go core gains the
+namespaced `placeholder.invalid` email utility, primary-storage user deletion
+now has explicit multi-session evidence, and every transactional adapter must
+prove commit, rollback, and nested transaction-scoped work through the public
+conformance suite.
+
+The remaining v1.6.26 fixes apply to components this repository does not ship:
+secondary session storage, email OTP, JWT, database-backed rate-limit storage,
+Redis storage, and OAuth proxy. Their exact acceptance contracts are tracked in
+the feature-gap register. They remain **Missing**, not silently treated as
+parity. JavaScript client inference and Next.js import caching are not
+applicable to the Go server.
+
 ## Evidence snapshot
 
-Last updated: 2026-07-29
+Last updated: 2026-08-09
 
 | Gate | Command or evidence | Result |
 | --- | --- | --- |
@@ -49,7 +64,7 @@ Last updated: 2026-07-29
 | TypeScript oracle type check | `bun run typecheck` in `compat/typescript-oracle` | Pass |
 | TypeScript oracle migration | `scripts/test-typescript-compat.sh` isolated SQLite setup | Pass |
 | Go/TypeScript core characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback, multi-session, email change, direct/emailed deletion, OAuth callback/error/replay/new-user, linking collision/options, provider-token, sign-out/session and impersonation-option suites |
-| Pinned upstream source inventory | `scripts/check-upstream-v1.6.25.sh` | Pass at tag commit `07a646e` |
+| Pinned upstream source inventory | `scripts/check-upstream-v1.6.26.sh` | Pass at tag commit `a16b30e` |
 | Formatting | `test -z "$(gofmt -l .)"` | Pass |
 | Vet | `go vet ./...` | Pass |
 | Race detector | `go test -race -count=1 ./...` | Pass |
@@ -71,9 +86,9 @@ Do not convert a pending or skipped integration test into a pass.
 
 ## Compatibility baseline
 
-- Better Auth package: `better-auth@1.6.25`
-- Better Auth source: tag `v1.6.25`, commit
-  `07a646ea190167370fbbb60a0fa2c3be3bec5522`; sibling checkout
+- Better Auth package: `better-auth@1.6.26`
+- Better Auth source: tag `v1.6.26`, commit
+  `a16b30e8437927c08350194000178073b06af8cf`; sibling checkout
   `../better-auth-repo`, overridable with `BETTER_AUTH_UPSTREAM_DIR`
 - TypeScript HTTP oracle: checked in at `compat/typescript-oracle`; override
   with `BETTER_AUTH_TS_DIR` only when testing another compatible fixture
@@ -137,7 +152,7 @@ They must never log provider credentials or returned tokens.
 | SSO | Provider management, OIDC/PKCE/JWKS, domain verification, signed SAML ACS/metadata/replay protection and SLO are implemented | Experimental; deterministic suites pass, but pinned/live interoperability promotion gates remain |
 | SCIM | Connection management, hash-only bearer authentication, metadata and complete User CRUD/list/filter/PUT/PATCH runtime | Experimental; deterministic suites pass, but pinned/live directory promotion gates remain |
 
-### Exact pinned v1.6.25 plugin inventory
+### Exact pinned v1.6.26 plugin inventory
 
 The local upstream tag exports these 27 plugins from
 `better-auth/plugins`:
@@ -167,9 +182,9 @@ telemetry internals and Redis secondary storage are not feature-plugin parity
 items; their server-side concepts are handled through the Go adapter, hook and
 storage contracts where applicable.
 
-This inventory is enforced by `scripts/check-upstream-v1.6.25.sh`. Agent Auth
+This inventory is enforced by `scripts/check-upstream-v1.6.26.sh`. Agent Auth
 and later payment/analytics integrations are not exported by the pinned tag and
-must not enter the v1.6.25 release scope.
+must not enter the v1.6.26 release scope.
 
 ### Database adapters
 
@@ -190,7 +205,7 @@ These differences are visible in the initial TypeScript-oracle
 characterization and must be either accepted in the compatibility contract or
 closed before the stable release:
 
-| Surface | Better Auth 1.6.25 | Current Go behavior | Decision |
+| Surface | Better Auth 1.6.26 | Current Go behavior | Decision |
 | --- | --- | --- | --- |
 | Successful password response token | Returns a bearer token | Returns `null`; only opaque cookie is issued | Deliberate security difference |
 | Session cookie | Signed Better Auth cookie name/format | `__Host-` opaque token, hash-at-rest | Deliberate security difference |
@@ -226,7 +241,7 @@ entry in this table and a compatibility decision.
 1. All pull-request gates from a clean checkout.
 2. Real MongoDB and PostgreSQL conformance, migrations and concurrent mutation
    tests.
-3. Complete TypeScript 1.6.25 differential endpoint and option matrix.
+3. Complete TypeScript 1.6.26 differential endpoint and option matrix.
 4. All 35 social-provider fixtures and generic OAuth/OIDC fixtures (present).
 5. Selected live social-provider sandbox tests or an explicitly approved
    provider-operated-risk decision.
