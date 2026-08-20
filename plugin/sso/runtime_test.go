@@ -24,9 +24,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beevik/etree"
 	"github.com/crewjam/saml"
 	betterauth "github.com/eadwinCode/better-auth-go"
 	"github.com/eadwinCode/better-auth-go/adapter/memory"
+	dsig "github.com/russellhaering/goxmldsig"
+	"github.com/russellhaering/goxmldsig/etreeutils"
 )
 
 type runtimeClock struct{ now time.Time }
@@ -220,6 +223,201 @@ func TestSAMLDeprecatedAlgorithmsFailClosed(t *testing.T) {
 	if err := validateSAMLAlgorithms(raw, "allow"); err != nil {
 		t.Fatalf("explicit compatibility policy failed: %v", err)
 	}
+}
+
+func TestSAMLRawAssertionSigningPolicyMatrix(t *testing.T) {
+	t.Parallel()
+	key, certificate, certificatePEM := samlCertificate(t)
+	cases := []struct {
+		name           string
+		signResponse   bool
+		signAssertion  bool
+		wantAssertions bool
+		wantError      bool
+	}{
+		{"signed response, unsigned assertion, response policy", true, false, false, false},
+		{"signed response, unsigned assertion, assertion policy", true, false, true, true},
+		{"unsigned response, signed assertion, response policy", false, true, false, false},
+		{"unsigned response, signed assertion, assertion policy", false, true, true, false},
+		{"both signed, assertion policy", true, true, true, false},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			encoded := signedSAMLResponse(
+				t, key, certificate, testCase.signResponse, testCase.signAssertion,
+			)
+			err := validateRawSAMLAssertion(encoded, &SAMLConfig{
+				Certificate: certificatePEM, WantAssertionsSigned: testCase.wantAssertions,
+			})
+			if (err != nil) != testCase.wantError {
+				t.Fatalf("validateRawSAMLAssertion() error = %v, wantError %v", err, testCase.wantError)
+			}
+		})
+	}
+}
+
+func TestSAMLRawAssertionRejectsSignatureWrapping(t *testing.T) {
+	t.Parallel()
+	key, certificate, certificatePEM := samlCertificate(t)
+	encoded := signedSAMLResponse(t, key, certificate, false, true)
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := etree.NewDocument()
+	if err = document.ReadFromBytes(raw); err != nil {
+		t.Fatal(err)
+	}
+	wrapper := document.Root().CreateElement("saml:Advice")
+	wrapper.CreateElement("saml:Assertion").CreateAttr("ID", "_attacker")
+	encoded = encodeXMLDocument(t, document)
+	if err = validateRawSAMLAssertion(encoded, &SAMLConfig{
+		Certificate: certificatePEM, WantAssertionsSigned: true,
+	}); err == nil {
+		t.Fatal("signature-wrapping response was accepted")
+	}
+}
+
+func TestSAMLRawAssertionRejectsMalformedAndForeignSignatureXML(t *testing.T) {
+	t.Parallel()
+	_, _, certificatePEM := samlCertificate(t)
+	malformed := base64.StdEncoding.EncodeToString([]byte(
+		`<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol">`,
+	))
+	if err := validateRawSAMLAssertion(malformed, &SAMLConfig{
+		Certificate: certificatePEM, WantAssertionsSigned: true,
+	}); err == nil {
+		t.Fatal("malformed XML was accepted")
+	}
+	foreignSignature := base64.StdEncoding.EncodeToString([]byte(
+		`<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" xmlns:evil="urn:attacker"><saml:Assertion ID="_a"><evil:Signature/></saml:Assertion></samlp:Response>`,
+	))
+	if err := validateRawSAMLAssertion(foreignSignature, &SAMLConfig{
+		Certificate: certificatePEM, WantAssertionsSigned: true,
+	}); err == nil {
+		t.Fatal("foreign-namespace signature decoy was accepted")
+	}
+}
+
+func TestSAMLMetadataReflectsSigningPolicyAndEnforcesSize(t *testing.T) {
+	t.Parallel()
+	key, _, certificatePEM := samlCertificate(t)
+	for _, wantAssertionsSigned := range []bool{false, true} {
+		config := &SAMLConfig{
+			Issuer: "https://idp.example.com/metadata", EntryPoint: "https://idp.example.com/sso",
+			Certificate: certificatePEM, SPEntityID: "https://auth.example.com/saml/metadata",
+			WantAssertionsSigned: wantAssertionsSigned,
+		}
+		sp, err := serviceProvider("policy", config, "https://auth.example.com/api/auth")
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := marshalSAMLMetadata(sp, config, 1<<20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var metadata saml.EntityDescriptor
+		if err = xml.Unmarshal(body, &metadata); err != nil {
+			t.Fatal(err)
+		}
+		if len(metadata.SPSSODescriptors) != 1 ||
+			metadata.SPSSODescriptors[0].WantAssertionsSigned == nil ||
+			*metadata.SPSSODescriptors[0].WantAssertionsSigned != wantAssertionsSigned ||
+			metadata.SPSSODescriptors[0].AuthnRequestsSigned == nil ||
+			*metadata.SPSSODescriptors[0].AuthnRequestsSigned {
+			t.Fatalf("metadata signing policy mismatch: %s", body)
+		}
+		if _, err = marshalSAMLMetadata(sp, config, 1); err == nil {
+			t.Fatal("oversized SAML metadata was accepted")
+		}
+	}
+	privateKey, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signedConfig := &SAMLConfig{
+		Issuer: "https://idp.example.com/metadata", EntryPoint: "https://idp.example.com/sso",
+		Certificate: certificatePEM, SPEntityID: "https://auth.example.com/saml/metadata",
+		SPPrivateKey: string(pem.EncodeToMemory(&pem.Block{
+			Type: "PRIVATE KEY", Bytes: privateKey,
+		})),
+		AuthnRequestsSigned: true,
+	}
+	sp, err := serviceProvider("signed-policy", signedConfig, "https://auth.example.com/api/auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := marshalSAMLMetadata(sp, signedConfig, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata saml.EntityDescriptor
+	if err = xml.Unmarshal(body, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata.SPSSODescriptors[0].AuthnRequestsSigned == nil ||
+		!*metadata.SPSSODescriptors[0].AuthnRequestsSigned {
+		t.Fatalf("signed-request metadata policy mismatch: %s", body)
+	}
+}
+
+func signedSAMLResponse(
+	t *testing.T,
+	key crypto.Signer,
+	certificate *x509.Certificate,
+	signResponse bool,
+	signAssertion bool,
+) string {
+	t.Helper()
+	document := etree.NewDocument()
+	if err := document.ReadFromString(
+		`<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_response"><saml:Assertion ID="_assertion"><saml:Issuer>https://idp.example.com/metadata</saml:Issuer></saml:Assertion></samlp:Response>`,
+	); err != nil {
+		t.Fatal(err)
+	}
+	context, err := dsig.NewSigningContext(key, [][]byte{certificate.Raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	context.IdAttribute = "ID"
+	if signAssertion {
+		assertion := document.Root().ChildElements()[0]
+		namespaceContext, contextErr := etreeutils.NSBuildParentContext(assertion)
+		if contextErr != nil {
+			t.Fatal(contextErr)
+		}
+		namespaceContext, contextErr = namespaceContext.SubContext(assertion)
+		if contextErr != nil {
+			t.Fatal(contextErr)
+		}
+		detached, contextErr := etreeutils.NSDetatch(namespaceContext, assertion)
+		if contextErr != nil {
+			t.Fatal(contextErr)
+		}
+		signed, signErr := context.SignEnveloped(detached)
+		if signErr != nil {
+			t.Fatal(signErr)
+		}
+		document.Root().RemoveChild(assertion)
+		document.Root().AddChild(signed)
+	}
+	if signResponse {
+		signed, signErr := context.SignEnveloped(document.Root())
+		if signErr != nil {
+			t.Fatal(signErr)
+		}
+		document.SetRoot(signed)
+	}
+	return encodeXMLDocument(t, document)
+}
+
+func encodeXMLDocument(t *testing.T, document *etree.Document) string {
+	t.Helper()
+	raw, err := document.WriteToBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
 }
 
 func samlCertificate(t *testing.T) (*rsa.PrivateKey, *x509.Certificate, string) {

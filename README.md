@@ -500,6 +500,7 @@ runbook is in [Production operations](./docs/production-operations.md).
 
 - [Better Auth v1.6 compatibility matrix](./docs/compatibility/better-auth-v1.6.md)
 - [Better Auth v1.7 migration contract](./docs/compatibility/better-auth-v1.7.md)
+- [Better Auth v1.7.1 security/interoperability overlay](./docs/compatibility/better-auth-v1.7.1.md)
 - [Better Auth v1.6.26 production progress](./PROGRESS.md)
 - [Versioning and stability](./docs/versioning.md)
 - [In-process session resolution](./docs/session-resolution.md)

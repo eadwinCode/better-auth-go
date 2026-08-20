@@ -85,6 +85,11 @@ never enough to grant management access.
 Existing-user linking is disabled by default and fails closed unless explicit
 domain, membership, or application policy is configured.
 
+Ingress accepts exact `true` and `false` string values case-insensitively for
+User `active` and the `primary` field on emails, phone numbers, addresses,
+roles, and entitlements. Values with surrounding whitespace and other truthy
+forms remain invalid.
+
 Organization deprovisioning removes only that optional projection and SCIM binding;
 it never deletes the global user. Personal deprovisioning deletes the global
 user only when that connection originally created it and it has neither another

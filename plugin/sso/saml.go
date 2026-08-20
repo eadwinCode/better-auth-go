@@ -10,14 +10,25 @@ import (
 	"encoding/pem"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/beevik/etree"
 	"github.com/crewjam/saml"
 	betterauth "github.com/eadwinCode/better-auth-go"
+	xrv "github.com/mattermost/xml-roundtrip-validator"
+	dsig "github.com/russellhaering/goxmldsig"
+	"github.com/russellhaering/goxmldsig/etreeutils"
+)
+
+const (
+	samlAssertionNamespace = "urn:oasis:names:tc:SAML:2.0:assertion"
+	samlProtocolNamespace  = "urn:oasis:names:tc:SAML:2.0:protocol"
+	xmlSignatureNamespace  = "http://www.w3.org/2000/09/xmldsig#"
 )
 
 func serviceProvider(
@@ -170,6 +181,11 @@ func (instance *runtime) samlCallback(
 	if err != nil {
 		return nil, providerFailure(err)
 	}
+	if err = validateRawSAMLAssertion(
+		ctx.Request.FormValue("SAMLResponse"), provider.SAML,
+	); err != nil {
+		return nil, invalidState(err)
+	}
 	sp.AllowIDPInitiated = instance.config.SAML.AllowIDPInitiated
 	request := ctx.Request.Clone(ctx.Context)
 	request.URL = cloneURL(&sp.AcsURL)
@@ -193,6 +209,134 @@ func (instance *runtime) samlCallback(
 	return instance.completeIdentityWithState(
 		ctx, provider, userInfo, nil, betterauth.ProviderTokens{}, state,
 	)
+}
+
+// validateRawSAMLAssertion applies the assertion-signing policy to the exact
+// XML received from the IdP. This must run before ParseResponse unmarshals the
+// response: verifying a reconstructed assertion would re-introduce XML
+// signature-wrapping ambiguity.
+func validateRawSAMLAssertion(encoded string, config *SAMLConfig) error {
+	if config == nil || encoded == "" {
+		return errors.New("sso: missing SAML response")
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return errors.New("sso: malformed SAML response")
+	}
+	if err = xrv.Validate(bytes.NewReader(raw)); err != nil {
+		return errors.New("sso: malformed SAML response XML")
+	}
+	document := etree.NewDocument()
+	if err = document.ReadFromBytes(raw); err != nil || document.Root() == nil {
+		return errors.New("sso: malformed SAML response XML")
+	}
+	root := document.Root()
+	if root.Tag != "Response" || root.NamespaceURI() != samlProtocolNamespace {
+		return errors.New("sso: SAML response has an invalid root element")
+	}
+
+	var assertions []*etree.Element
+	var encryptedAssertions []*etree.Element
+	walkElements(root, func(element *etree.Element) {
+		if element.NamespaceURI() != samlAssertionNamespace {
+			return
+		}
+		switch element.Tag {
+		case "Assertion":
+			assertions = append(assertions, element)
+		case "EncryptedAssertion":
+			encryptedAssertions = append(encryptedAssertions, element)
+		}
+	})
+	if len(assertions)+len(encryptedAssertions) != 1 {
+		return errors.New("sso: SAML response must contain exactly one assertion")
+	}
+	if len(encryptedAssertions) != 0 {
+		// Encrypted assertions are not currently wired into serviceProvider. Fail
+		// closed instead of applying a signing policy to unverifiable ciphertext.
+		return errors.New("sso: encrypted SAML assertions are not supported")
+	}
+	assertion := assertions[0]
+	if assertion.Parent() != root {
+		return errors.New("sso: SAML assertion must be a direct response child")
+	}
+
+	var signatures []*etree.Element
+	walkElements(assertion, func(element *etree.Element) {
+		if element.Tag == "Signature" {
+			signatures = append(signatures, element)
+		}
+	})
+	if len(signatures) > 1 {
+		return errors.New("sso: SAML assertion contains multiple signatures")
+	}
+	if len(signatures) == 0 {
+		if config.WantAssertionsSigned {
+			return errors.New("sso: SAML assertion signature is required")
+		}
+		return nil
+	}
+	if signatures[0].Parent() != assertion ||
+		signatures[0].NamespaceURI() != xmlSignatureNamespace {
+		return errors.New("sso: SAML assertion signature is invalid")
+	}
+	assertionID := assertion.SelectAttrValue("ID", "")
+	if assertionID == "" {
+		return errors.New("sso: signed SAML assertion is missing an ID")
+	}
+
+	certificate, err := parseSAMLVerificationCertificate(config.Certificate)
+	if err != nil {
+		return err
+	}
+	namespaceContext, err := etreeutils.NSBuildParentContext(assertion)
+	if err != nil {
+		return fmt.Errorf("sso: prepare SAML assertion signature: %w", err)
+	}
+	namespaceContext, err = namespaceContext.SubContext(assertion)
+	if err != nil {
+		return fmt.Errorf("sso: prepare SAML assertion signature: %w", err)
+	}
+	detached, err := etreeutils.NSDetatch(namespaceContext, assertion)
+	if err != nil {
+		return fmt.Errorf("sso: prepare SAML assertion signature: %w", err)
+	}
+	store := &dsig.MemoryX509CertificateStore{Roots: []*x509.Certificate{certificate}}
+	validation := dsig.NewDefaultValidationContext(store)
+	validation.IdAttribute = "ID"
+	authenticated, err := validation.Validate(detached)
+	if err != nil {
+		return fmt.Errorf("sso: invalid SAML assertion signature: %w", err)
+	}
+	if authenticated.Tag != "Assertion" ||
+		authenticated.NamespaceURI() != samlAssertionNamespace ||
+		authenticated.SelectAttrValue("ID", "") != assertionID {
+		return errors.New("sso: SAML signature authenticated a different assertion")
+	}
+	return nil
+}
+
+func walkElements(root *etree.Element, visit func(*etree.Element)) {
+	visit(root)
+	for _, child := range root.ChildElements() {
+		walkElements(child, visit)
+	}
+}
+
+func parseSAMLVerificationCertificate(value string) (*x509.Certificate, error) {
+	normalized, err := normalizeCertificate(value)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := base64.StdEncoding.DecodeString(normalized)
+	if err != nil {
+		return nil, errors.New("sso: invalid SAML certificate")
+	}
+	certificate, err := x509.ParseCertificate(raw)
+	if err != nil {
+		return nil, errors.New("sso: invalid SAML certificate")
+	}
+	return certificate, nil
 }
 
 func validateSAMLAlgorithms(encoded, policy string) error {
@@ -335,11 +479,10 @@ func (instance *runtime) samlMetadata(
 	if err != nil {
 		return nil, providerFailure(err)
 	}
-	body, err := xml.MarshalIndent(sp.Metadata(), "", "  ")
+	body, err := marshalSAMLMetadata(sp, provider.SAML, instance.config.SAML.MaxMetadataSize)
 	if err != nil {
-		return nil, internal(err)
+		return nil, providerFailure(err)
 	}
-	body = append([]byte(xml.Header), body...)
 	return &betterauth.PluginResponse{
 		Status: http.StatusOK,
 		Headers: http.Header{
@@ -349,6 +492,33 @@ func (instance *runtime) samlMetadata(
 		Body: body,
 	}, nil
 }
+
+func marshalSAMLMetadata(
+	sp *saml.ServiceProvider,
+	config *SAMLConfig,
+	limit int64,
+) ([]byte, error) {
+	if sp == nil || config == nil {
+		return nil, errors.New("sso: missing SAML metadata configuration")
+	}
+	metadata := sp.Metadata()
+	if len(metadata.SPSSODescriptors) != 1 {
+		return nil, errors.New("sso: invalid generated SAML metadata")
+	}
+	metadata.SPSSODescriptors[0].AuthnRequestsSigned = boolPointer(config.AuthnRequestsSigned)
+	metadata.SPSSODescriptors[0].WantAssertionsSigned = boolPointer(config.WantAssertionsSigned)
+	body, err := xml.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	body = append([]byte(xml.Header), body...)
+	if limit <= 0 || int64(len(body)) > limit {
+		return nil, errors.New("sso: generated SAML metadata is too large")
+	}
+	return body, nil
+}
+
+func boolPointer(value bool) *bool { return &value }
 
 func (instance *runtime) initiateSAMLLogout(
 	ctx *betterauth.HookContext,

@@ -197,6 +197,28 @@ func TestSCIMConnectionAndUserLifecycleBlackBox(t *testing.T) {
 	if err != nil || provider == nil {
 		t.Fatalf("provider persistence: %v %#v", err, provider)
 	}
+	connectionID, _ := provider["id"].(string)
+	if connectionID == "" {
+		t.Fatal("provider persistence omitted connection id")
+	}
+	owner, err := database.FindOne(context.Background(), betterauth.FindOneQuery{
+		Model: betterauth.ModelUser,
+		Where: []betterauth.Where{betterauth.Eq("email", "owner@example.com")},
+	})
+	if err != nil || owner == nil {
+		t.Fatalf("owner persistence: %v %#v", err, owner)
+	}
+	now := time.Now().UTC()
+	if _, err = database.Create(context.Background(), betterauth.CreateQuery{
+		Model: betterauth.ModelAccount, ForceAllowID: true,
+		Data: betterauth.Record{
+			"id": "same-public-id-sso-account", "userId": owner["id"],
+			"providerId": "workforce-directory", "accountId": "directory-42",
+			"createdAt": now, "updatedAt": now,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	claims, err := parseBearerToken(tokenBody.Token, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -256,10 +278,19 @@ func TestSCIMConnectionAndUserLifecycleBlackBox(t *testing.T) {
 	create := protocolRequest(
 		t, server.Handler(), http.MethodPost, "/scim/v2/Users",
 		tokenBody.Token, "application/scim+json",
-		UserInput{
-			Schemas: []string{SchemaUser}, UserName: "person@example.com",
-			ExternalID: "directory-42", Name: &Name{GivenName: "Ada", FamilyName: "Lovelace"},
-			Emails: []Email{{Value: "person@example.com", Primary: true}},
+		map[string]any{
+			"schemas": []string{SchemaUser}, "userName": "person@example.com",
+			"externalId": "directory-42", "name": map[string]any{
+				"givenName": "Ada", "familyName": "Lovelace",
+			},
+			"active": "TrUe",
+			"emails": []any{map[string]any{
+				"value": "person@example.com", "primary": "TRUE",
+			}},
+			"phoneNumbers": []any{map[string]any{"value": "+15555550100", "primary": "false"}},
+			"addresses":    []any{map[string]any{"country": "GB", "primary": "FALSE"}},
+			"roles":        []any{map[string]any{"value": "engineer", "primary": "true"}},
+			"entitlements": []any{map[string]any{"value": "app", "primary": "False"}},
 		},
 	)
 	if create.Code != http.StatusCreated {
@@ -271,6 +302,17 @@ func TestSCIMConnectionAndUserLifecycleBlackBox(t *testing.T) {
 	}
 	if created.ID == "" || created.ExternalID != "directory-42" || !created.Active {
 		t.Fatalf("created resource = %#v", created)
+	}
+	scimBinding, err := database.FindOne(context.Background(), betterauth.FindOneQuery{
+		Model: ModelSCIMUser,
+		Where: []betterauth.Where{
+			betterauth.Eq("connectionId", "workforce-directory"),
+			betterauth.Eq("externalId", "directory-42"),
+			betterauth.Eq("userId", created.ID),
+		},
+	})
+	if err != nil || scimBinding == nil || scimBinding["ownsUser"] != true {
+		t.Fatalf("connection-scoped SCIM binding: %v %#v", err, scimBinding)
 	}
 
 	list := protocolRequest(
@@ -294,7 +336,7 @@ func TestSCIMConnectionAndUserLifecycleBlackBox(t *testing.T) {
 		t.Fatalf("replace = %d: %s", replace.Code, replace.Body.String())
 	}
 
-	now := time.Now().UTC()
+	now = time.Now().UTC()
 	if _, err = database.Create(context.Background(), betterauth.CreateQuery{
 		Model: betterauth.ModelSession, ForceAllowID: true,
 		Data: betterauth.Record{

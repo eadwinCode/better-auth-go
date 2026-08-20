@@ -9,6 +9,11 @@ Baseline: Better Auth 1.6.26 documentation and source as reviewed on
 requires black-box HTTP tests, adapter conformance tests, threat-model review,
 and client-contract documentation before its status can become complete.
 
+The focused [Better Auth v1.7.1 security and interoperability overlay](./better-auth-v1.7.1.md)
+supersedes this baseline for SAML verification, SCIM Boolean ingress and account
+namespacing, transaction requirements, and migration safety. The broader 1.7
+plugin redesign remains a separate migration.
+
 ## Server plugin contract gaps
 
 | Capability | Current state | Planned work |
@@ -68,7 +73,9 @@ layer rather than a plugin.
   enterprise certification is required before v1-stable promotion;
 - SCIM provisioning — connection management and User CRUD/list/filter/PUT/PATCH
   experimental runtime implemented; TypeScript/live-directory certification is
-  required before v1-stable promotion.
+  required before v1-stable promotion. Better Auth 1.7 managed connections,
+  server-only credential lifecycle APIs, and terminal dynamic binding are
+  deferred until the 1.7 SCIM connection/credential architecture lands.
 
 ### API and tokens
 
@@ -105,6 +112,10 @@ layer rather than a plugin.
 - OpenID Connect provider;
 - MCP provider authentication;
 - device authorization grant.
+
+When the OAuth authorization/resource server is implemented, its protected
+resource errors must include RFC 6750 `403 insufficient_scope` challenges with
+every missing scope, as required by the v1.7.1 overlay.
 
 ### Security and utilities
 

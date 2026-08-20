@@ -27,14 +27,18 @@ const (
 )
 
 type FieldSchema struct {
-	Type       FieldType
-	Required   bool
-	Unique     bool
-	Index      bool
-	References string
-	Input      bool
-	Returned   bool
-	FieldName  string
+	Type     FieldType
+	Required bool
+	// DefaultValue is a static database default used by schema migration.
+	// Functions and database expressions are intentionally unsupported: adding
+	// a required column to populated data must have a reviewable backfill value.
+	DefaultValue any
+	Unique       bool
+	Index        bool
+	References   string
+	Input        bool
+	Returned     bool
+	FieldName    string
 }
 
 type ModelSchema struct {

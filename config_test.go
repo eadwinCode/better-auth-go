@@ -21,6 +21,12 @@ func (denyImpersonation) CanImpersonate(context.Context, betterauth.User, better
 	return errors.New("denied")
 }
 
+type nonTransactionalAdapter struct{ *memory.Adapter }
+
+func (nonTransactionalAdapter) Capabilities() betterauth.AdapterCapabilities {
+	return betterauth.AdapterCapabilities{}
+}
+
 func validConfig() betterauth.Config {
 	return betterauth.Config{
 		PublicURL: "https://auth.example.com", TrustedOrigins: []string{"https://app.example.com"},
@@ -35,6 +41,9 @@ func TestConfigFailsClosed(t *testing.T) {
 		mutate func(*betterauth.Config)
 	}{
 		{"missing database", func(config *betterauth.Config) { config.Database = nil }},
+		{"database without native transactions", func(config *betterauth.Config) {
+			config.Database = nonTransactionalAdapter{Adapter: memory.New()}
+		}},
 		{"missing mailer", func(config *betterauth.Config) { config.Mailer = nil }},
 		{"missing authorizer", func(config *betterauth.Config) { config.ImpersonationAuthorizer = nil }},
 		{"public suffix wildcard", func(config *betterauth.Config) {

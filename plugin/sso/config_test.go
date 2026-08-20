@@ -97,6 +97,28 @@ func TestNewRejectsInvalidDefaultProviders(t *testing.T) {
 	}
 }
 
+func TestNormalizeProviderPreservesWantAssertionsSigned(t *testing.T) {
+	t.Parallel()
+	for _, wanted := range []bool{false, true} {
+		provider, err := normalizeProvider(ProviderRegistration{
+			ProviderID: "work", Domain: "example.com",
+			SAML: &SAMLConfig{
+				Issuer:               "https://idp.example.com/metadata",
+				EntryPoint:           "https://idp.example.com/sso",
+				Certificate:          "configured-certificate",
+				SPEntityID:           "https://auth.example.com/saml/metadata",
+				WantAssertionsSigned: wanted,
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if provider.SAML.WantAssertionsSigned != wanted {
+			t.Fatalf("WantAssertionsSigned = %v, want %v", provider.SAML.WantAssertionsSigned, wanted)
+		}
+	}
+}
+
 func TestNewRequiresAuthorizerForOrganizationProvider(t *testing.T) {
 	t.Parallel()
 	_, err := New(Config{

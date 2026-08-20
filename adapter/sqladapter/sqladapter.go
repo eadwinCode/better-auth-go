@@ -9,10 +9,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	betterauth "github.com/eadwinCode/better-auth-go"
@@ -43,6 +46,20 @@ type Adapter struct {
 	accountIssuerRequired bool
 	accountIDField        string
 	idFields              map[string]string
+}
+
+// UnsafeMigrationError reports an additive migration that would add a
+// required column without a static default to a populated table.
+type UnsafeMigrationError struct {
+	Model string
+	Field string
+}
+
+func (err *UnsafeMigrationError) Error() string {
+	return fmt.Sprintf(
+		"sqladapter: refusing to add required column %s.%s to a populated table without an explicit default or reviewed backfill",
+		err.Model, err.Field,
+	)
 }
 
 func New(db *sql.DB, dialect Dialect) (*Adapter, error) {
@@ -400,17 +417,55 @@ func (adapter *Adapter) Transaction(ctx context.Context, callback func(betteraut
 
 func (adapter *Adapter) migrate(ctx context.Context) error {
 	models := sortedKeys(adapter.schema)
+	existingByModel := make(map[string]map[string]bool, len(models))
+	// Preflight every model before executing any DDL. A later unsafe change
+	// must not leave earlier tables or columns partially migrated.
 	for _, name := range models {
-		model := adapter.schema[name]
-		fields := sortedKeys(model.Fields)
 		existing, err := adapter.existingColumns(ctx, name)
 		if err != nil {
 			return fmt.Errorf("sqladapter: inspect %s: %w", name, err)
 		}
+		existingByModel[name] = existing
+		if len(existing) == 0 {
+			continue
+		}
+		populated := false
+		for _, field := range sortedKeys(adapter.schema[name].Fields) {
+			definition := adapter.schema[name].Fields[field]
+			if existing[field] || !definition.Required || definition.DefaultValue != nil {
+				continue
+			}
+			if !populated {
+				var marker int
+				err = adapter.queryRow(
+					ctx, "SELECT 1 FROM "+quote(name)+" LIMIT 1",
+				).Scan(&marker)
+				switch {
+				case err == nil:
+					populated = true
+				case errors.Is(err, sql.ErrNoRows):
+					continue
+				default:
+					return fmt.Errorf("sqladapter: inspect rows in %s: %w", name, err)
+				}
+			}
+			if populated {
+				return &UnsafeMigrationError{Model: name, Field: field}
+			}
+		}
+	}
+	for _, name := range models {
+		model := adapter.schema[name]
+		fields := sortedKeys(model.Fields)
+		existing := existingByModel[name]
 		columns := make([]string, 0, len(fields))
 		for _, field := range fields {
 			definition := model.Fields[field]
-			columns = append(columns, adapter.columnDefinition(field, definition, true))
+			column, err := adapter.columnDefinition(field, definition, true)
+			if err != nil {
+				return fmt.Errorf("sqladapter: define %s.%s: %w", name, field, err)
+			}
+			columns = append(columns, column)
 		}
 		if _, err := adapter.exec(ctx,
 			"CREATE TABLE IF NOT EXISTS "+quote(name)+" ("+strings.Join(columns, ", ")+")",
@@ -425,8 +480,11 @@ func (adapter *Adapter) migrate(ctx context.Context) error {
 			if len(existing) == 0 {
 				continue
 			}
-			if _, err := adapter.exec(ctx, "ALTER TABLE "+quote(name)+" ADD COLUMN "+
-				adapter.columnDefinition(field, model.Fields[field], false)); err != nil {
+			column, err := adapter.columnDefinition(field, model.Fields[field], false)
+			if err != nil {
+				return fmt.Errorf("sqladapter: define %s.%s: %w", name, field, err)
+			}
+			if _, err := adapter.exec(ctx, "ALTER TABLE "+quote(name)+" ADD COLUMN "+column); err != nil {
 				return fmt.Errorf("sqladapter: add %s.%s: %w", name, field, err)
 			}
 		}
@@ -532,15 +590,81 @@ func (adapter *Adapter) columnDefinition(
 	name string,
 	definition betterauth.FieldSchema,
 	includeUnique bool,
-) string {
+) (string, error) {
 	column := quote(name) + " " + adapter.sqlType(definition.Type)
 	if definition.Required {
 		column += " NOT NULL"
 	}
+	if definition.DefaultValue != nil {
+		literal, err := adapter.defaultLiteral(definition)
+		if err != nil {
+			return "", err
+		}
+		column += " DEFAULT " + literal
+	}
 	if includeUnique && definition.Unique {
 		column += " UNIQUE"
 	}
-	return column
+	return column, nil
+}
+
+func (adapter *Adapter) defaultLiteral(definition betterauth.FieldSchema) (string, error) {
+	invalid := func() (string, error) {
+		return "", fmt.Errorf(
+			"default for %s must be a static value compatible with the field type",
+			definition.Type,
+		)
+	}
+	switch definition.Type {
+	case betterauth.FieldString, betterauth.FieldJSON, betterauth.FieldStringArray:
+		value, ok := definition.DefaultValue.(string)
+		if !ok {
+			return invalid()
+		}
+		return quoteLiteral(value), nil
+	case betterauth.FieldBoolean:
+		value, ok := definition.DefaultValue.(bool)
+		if !ok {
+			return invalid()
+		}
+		// SQL adapters store booleans as INTEGER/BIGINT for cross-driver
+		// compatibility, matching schemaAdapter's normal value conversion.
+		if value {
+			return "1", nil
+		}
+		return "0", nil
+	case betterauth.FieldNumber:
+		value := reflect.ValueOf(definition.DefaultValue)
+		if !value.IsValid() {
+			return invalid()
+		}
+		switch value.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return strconv.FormatInt(value.Int(), 10), nil
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			return strconv.FormatUint(value.Uint(), 10), nil
+		case reflect.Float32, reflect.Float64:
+			number := value.Float()
+			if math.IsNaN(number) || math.IsInf(number, 0) {
+				return invalid()
+			}
+			return strconv.FormatFloat(number, 'g', -1, value.Type().Bits()), nil
+		default:
+			return invalid()
+		}
+	case betterauth.FieldDate:
+		value, ok := definition.DefaultValue.(time.Time)
+		if !ok || value.IsZero() {
+			return invalid()
+		}
+		return quoteLiteral(value.UTC().Format(time.RFC3339Nano)), nil
+	default:
+		return invalid()
+	}
+}
+
+func quoteLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 func (adapter *Adapter) model(name string) (betterauth.ModelSchema, error) {

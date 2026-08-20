@@ -11,6 +11,11 @@ here.
 The 1.7 implementation status and explicit deferrals are recorded in
 `docs/compatibility/better-auth-v1.7.md`.
 
+Focused Better Auth v1.7.1 security and interoperability behavior is tracked in
+[`docs/compatibility/better-auth-v1.7.1.md`](./docs/compatibility/better-auth-v1.7.1.md).
+It supplements rather than replaces the broader v1.7 migration or the certified
+v1.6.26 production baseline.
+
 ## Status vocabulary
 
 | Status | Meaning |
