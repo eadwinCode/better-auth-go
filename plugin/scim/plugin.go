@@ -110,6 +110,7 @@ func (instance *runtime) plugin() betterauth.Plugin {
 				AllowNonKebabPath: true, Handler: instance.resourceType,
 			},
 		},
+		OnRequest:  instance.normalizeSCIMIngress,
 		OnResponse: instance.scimResponseHook,
 		RateLimits: []betterauth.PluginRateLimitRule{{
 			Matcher: func(context *betterauth.HookContext) bool {

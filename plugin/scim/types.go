@@ -66,13 +66,39 @@ type Email struct {
 	Primary bool   `json:"primary,omitempty"`
 }
 
+// MultiValuedAttribute covers the common SCIM value/type/primary shape. The
+// current provisioning model persists email identity fields; the additional
+// shapes are accepted so standards-compliant clients can send Boolean primary
+// values without failing strict JSON decoding while richer attribute storage
+// remains part of the SCIM model redesign.
+type MultiValuedAttribute struct {
+	Value   string `json:"value,omitempty"`
+	Type    string `json:"type,omitempty"`
+	Primary bool   `json:"primary,omitempty"`
+}
+
+type Address struct {
+	Formatted     string `json:"formatted,omitempty"`
+	StreetAddress string `json:"streetAddress,omitempty"`
+	Locality      string `json:"locality,omitempty"`
+	Region        string `json:"region,omitempty"`
+	PostalCode    string `json:"postalCode,omitempty"`
+	Country       string `json:"country,omitempty"`
+	Type          string `json:"type,omitempty"`
+	Primary       bool   `json:"primary,omitempty"`
+}
+
 type UserInput struct {
-	Schemas    []string `json:"schemas,omitempty"`
-	UserName   string   `json:"userName"`
-	ExternalID string   `json:"externalId,omitempty"`
-	Name       *Name    `json:"name,omitempty"`
-	Emails     []Email  `json:"emails,omitempty"`
-	Active     *bool    `json:"active,omitempty"`
+	Schemas      []string               `json:"schemas,omitempty"`
+	UserName     string                 `json:"userName"`
+	ExternalID   string                 `json:"externalId,omitempty"`
+	Name         *Name                  `json:"name,omitempty"`
+	Emails       []Email                `json:"emails,omitempty"`
+	PhoneNumbers []MultiValuedAttribute `json:"phoneNumbers,omitempty"`
+	Addresses    []Address              `json:"addresses,omitempty"`
+	Roles        []MultiValuedAttribute `json:"roles,omitempty"`
+	Entitlements []MultiValuedAttribute `json:"entitlements,omitempty"`
+	Active       *bool                  `json:"active,omitempty"`
 }
 
 type ResourceMeta struct {

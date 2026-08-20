@@ -36,7 +36,7 @@ func (instance *runtime) createUser(
 	existingAccount, accountErr := context.Database.FindOne(context.Context, betterauth.FindOneQuery{
 		Model: betterauth.ModelAccount,
 		Where: []betterauth.Where{
-			betterauth.Eq("providerId", connection.ProviderID),
+			betterauth.Eq("providerId", scimAccountProviderID(connection)),
 			betterauth.Eq("accountId", accountID),
 		},
 	})
@@ -85,7 +85,7 @@ func (instance *runtime) createUser(
 		return scimInternal()
 	}
 	account := betterauth.OAuthAccount{
-		ID: accountIDValue, UserID: user.ID, Provider: connection.ProviderID,
+		ID: accountIDValue, UserID: user.ID, Provider: scimAccountProviderID(connection),
 		ProviderAccountID: accountID, CreatedAt: now, UpdatedAt: now,
 	}
 	if instance.config.Hooks.BeforeUserCreate != nil {
@@ -188,7 +188,9 @@ func (instance *runtime) listUsers(
 	} else {
 		totalCount, countErr := context.Database.Count(context.Context, betterauth.CountQuery{
 			Model: betterauth.ModelAccount,
-			Where: []betterauth.Where{betterauth.Eq("providerId", connection.ProviderID)},
+			Where: []betterauth.Where{
+				betterauth.Eq("providerId", scimAccountProviderID(connection)),
+			},
 		})
 		if countErr != nil {
 			return scimInternal()
@@ -197,7 +199,9 @@ func (instance *runtime) listUsers(
 		if count > 0 && start <= total {
 			accounts, findErr := context.Database.FindMany(context.Context, betterauth.FindManyQuery{
 				Model: betterauth.ModelAccount,
-				Where: []betterauth.Where{betterauth.Eq("providerId", connection.ProviderID)},
+				Where: []betterauth.Where{
+					betterauth.Eq("providerId", scimAccountProviderID(connection)),
+				},
 				Limit: count, Offset: start - 1,
 				Sort: &betterauth.Sort{Field: "createdAt", Direction: "asc"},
 			})
@@ -244,7 +248,9 @@ func (instance *runtime) findFilteredUser(
 	filters []Filter,
 ) (managedUser, bool, error) {
 	var userWhere []betterauth.Where
-	accountWhere := []betterauth.Where{betterauth.Eq("providerId", connection.ProviderID)}
+	accountWhere := []betterauth.Where{
+		betterauth.Eq("providerId", scimAccountProviderID(connection)),
+	}
 	for _, filter := range filters {
 		switch filter.Field {
 		case "id", "email":
@@ -406,7 +412,7 @@ func (instance *runtime) updateUser(
 		row, findErr := context.Database.FindOne(context.Context, betterauth.FindOneQuery{
 			Model: betterauth.ModelAccount,
 			Where: []betterauth.Where{
-				betterauth.Eq("providerId", connection.ProviderID),
+				betterauth.Eq("providerId", scimAccountProviderID(connection)),
 				betterauth.Eq("accountId", accountID),
 			},
 		})
@@ -460,7 +466,7 @@ func (instance *runtime) updateUser(
 			Model: betterauth.ModelAccount,
 			Where: []betterauth.Where{
 				betterauth.Eq("id", updatedAccount.ID),
-				betterauth.Eq("providerId", connection.ProviderID),
+				betterauth.Eq("providerId", scimAccountProviderID(connection)),
 			},
 			Update: betterauth.Record{
 				"accountId": updatedAccount.ProviderAccountID, "updatedAt": updatedAccount.UpdatedAt,
@@ -535,7 +541,7 @@ func (instance *runtime) deleteUser(
 				Model: betterauth.ModelAccount,
 				Where: []betterauth.Where{
 					betterauth.Eq("id", managed.Account.ID),
-					betterauth.Eq("providerId", connection.ProviderID),
+					betterauth.Eq("providerId", scimAccountProviderID(connection)),
 				},
 			}); err != nil {
 				return err
@@ -606,7 +612,8 @@ func (instance *runtime) findManagedUser(
 	accountRow, err := context.Database.FindOne(context.Context, betterauth.FindOneQuery{
 		Model: betterauth.ModelAccount,
 		Where: []betterauth.Where{
-			betterauth.Eq("userId", userID), betterauth.Eq("providerId", connection.ProviderID),
+			betterauth.Eq("userId", userID),
+			betterauth.Eq("providerId", scimAccountProviderID(connection)),
 		},
 	})
 	if err != nil || accountRow == nil {
@@ -631,6 +638,13 @@ func (instance *runtime) findManagedUser(
 		return managedUser{}, response
 	}
 	return managedUser{User: user, Account: account}, nil
+}
+
+// scimAccountProviderID is deliberately internal and keyed by the connection
+// record, not its public provider label. SSO and SCIM can therefore reuse the
+// same public ID without sharing or overwriting core account rows.
+func scimAccountProviderID(connection ProviderConnection) string {
+	return "scim:" + connection.ID
 }
 
 func (instance *runtime) connectionOwnsUser(

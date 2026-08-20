@@ -68,12 +68,16 @@ func listUsersValidator(config Config) betterauth.EndpointValidator {
 
 func userInputValidator() betterauth.EndpointValidator {
 	base := betterauth.ObjectValidator{Fields: map[string]betterauth.FieldValidation{
-		"schemas":    {Kind: betterauth.ValidationArray},
-		"userName":   scimString(true, 320),
-		"externalId": scimString(false, 512),
-		"name":       {Kind: betterauth.ValidationObject, Nullable: true},
-		"emails":     {Kind: betterauth.ValidationArray},
-		"active":     {Kind: betterauth.ValidationBoolean},
+		"schemas":      {Kind: betterauth.ValidationArray},
+		"userName":     scimString(true, 320),
+		"externalId":   scimString(false, 512),
+		"name":         {Kind: betterauth.ValidationObject, Nullable: true},
+		"emails":       {Kind: betterauth.ValidationArray},
+		"phoneNumbers": {Kind: betterauth.ValidationArray},
+		"addresses":    {Kind: betterauth.ValidationArray},
+		"roles":        {Kind: betterauth.ValidationArray},
+		"entitlements": {Kind: betterauth.ValidationArray},
+		"active":       {Kind: betterauth.ValidationBoolean},
 	}}
 	return betterauth.EndpointValidatorFunc(func(value any) error {
 		if value == nil {
