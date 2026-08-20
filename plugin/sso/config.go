@@ -230,7 +230,6 @@ func normalizeProvider(provider ProviderRegistration) (ProviderRegistration, err
 			copyConfig.Certificate == "" || copyConfig.SPEntityID == "" {
 			return provider, errors.New("incomplete SAML configuration")
 		}
-		copyConfig.WantAssertionsSigned = true
 		provider.Issuer = copyConfig.Issuer
 		provider.SAML = &copyConfig
 	}
