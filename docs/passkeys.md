@@ -85,6 +85,11 @@ Registration:
    `{"response": credential, "name": "Laptop"}`, the trusted `Origin`, session
    cookie, and `X-CSRF-Token`.
 
+For passkey-first/sessionless registration, add `"createSession": true` to
+step 4. The verified passkey and initial session are persisted in one database
+transaction; session cookies are applied only after commit. The response adds
+the `session` and `user` fields to the passkey resource.
+
 Authentication:
 
 1. `GET /api/auth/passkey/generate-authenticate-options`. An existing session

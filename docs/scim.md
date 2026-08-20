@@ -5,8 +5,8 @@
 > interoperability tests against every directory before deployment. See
 > [Versioning and stability](./versioning.md).
 
-The `plugin/scim` package is an inbound directory-provisioning service aligned
-with `@better-auth/scim` v1.6.25, RFC 7643, and RFC 7644. It is independent of
+The `plugin/scim` package is an inbound directory-provisioning service migrating
+to the Better Auth 1.7 persistence boundary, RFC 7643, and RFC 7644. It is independent of
 the SSO plugin and mounts through the same standard `net/http` handler as the
 core authentication server.
 
@@ -70,20 +70,26 @@ port remains available when the application already encapsulates that policy.
 Raw bearer tokens are returned once. Persistence stores only a fixed SHA-256
 hash of the random secret. Rotation replaces the hash atomically and invalidates
 the previous token; connection deletion invalidates the token immediately.
+Connection deletion is rejected until every directory binding has been
+explicitly deprovisioned, preventing orphaned provisioning state or skipped
+organization cleanup.
 
 `/scim/v2/Users` accepts `application/scim+json` and `application/json`.
 Protocol routes use bearer authentication and are the only unsafe SCIM routes
 allowed to skip browser-origin checks. Their middleware, endpoint validators,
 rate limits, hooks, request-size limit, and response hooks still run.
 
-Every managed User must have a core account row for the authenticated SCIM
-provider. A matching global email is never enough to grant management access.
+Every managed User has a `scimUser` directory binding scoped to its connection.
+SCIM never creates an authentication `account` row. A matching global email is
+never enough to grant management access.
 Existing-user linking is disabled by default and fails closed unless explicit
 domain, membership, or application policy is configured.
 
-Organization deprovisioning removes only that membership and SCIM account link;
+Organization deprovisioning removes only that optional projection and SCIM binding;
 it never deletes the global user. Personal deprovisioning deletes the global
-user only when the SCIM identity is the user's sole account.
+user only when that connection originally created it and it has neither another
+SCIM binding nor an authentication account. Linked and pre-upgrade bindings fail
+safe by preserving the global user.
 
 ## Deterministic fixtures
 
@@ -117,3 +123,5 @@ Live enterprise-directory interoperability and a pinned TypeScript differential
 suite remain promotion gates. Until they pass, the package remains experimental
 even though its deterministic security suite is part of release-candidate CI.
 See [ADR 0008](./adr/0008-scim-provisioning.md) for the security contract.
+The breaking 1.7 full-reprovision procedure and current Group limitation are
+documented in the [1.7 migration contract](./compatibility/better-auth-v1.7.md#scim-cutover).

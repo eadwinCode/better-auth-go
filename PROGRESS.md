@@ -1,14 +1,14 @@
-# Better Auth v1.6.25 Production Progress
+# Better Auth v1.7.0 Migration Progress
 
-This file is the release tracker for `better-auth-go`. The compatibility target
-is pinned to **Better Auth TypeScript 1.6.25**. A capability is not production
+This file is the release tracker for `better-auth-go`. The active migration target
+is pinned to **Better Auth TypeScript 1.7.0**; the previously certified stable
+boundary remains the documented v1.6.25 surface until the 1.7 matrix completes. A capability is not production
 complete merely because it compiles or has an implementation: it must satisfy
 the HTTP contract, adapter contract, security checks, and test evidence listed
 here.
 
-The scope is limited to behavior shipped by the pinned Better Auth release.
-Features introduced after 1.6.25 and Go-only product features are not part of
-this release.
+The 1.7 implementation status and explicit deferrals are recorded in
+`docs/compatibility/better-auth-v1.7.md`.
 
 ## Status vocabulary
 
@@ -37,7 +37,7 @@ attestation verification.
 
 ## Evidence snapshot
 
-Last updated: 2026-07-29
+Last updated: 2026-08-20
 
 | Gate | Command or evidence | Result |
 | --- | --- | --- |
@@ -66,6 +66,10 @@ Update this table with the date and exact command whenever evidence is rerun.
 Do not convert a pending or skipped integration test into a pass.
 
 ## Compatibility baseline
+
+- Active migration source: Better Auth `v1.7.0`, commit
+  `c3688ba88edff12dfcb1ced007e332711509ac29`
+- Migration contract: `docs/compatibility/better-auth-v1.7.md`
 
 - Better Auth package: `better-auth@1.6.25`
 - Better Auth source: tag `v1.6.25`, commit
