@@ -77,9 +77,22 @@ allowed to skip browser-origin checks. Their middleware, endpoint validators,
 rate limits, hooks, request-size limit, and response hooks still run.
 
 Every managed User must have a core account row for the authenticated SCIM
-provider. A matching global email is never enough to grant management access.
+connection. Core account provider IDs use the internal
+`scim:<connection-id>` namespace rather than the public SCIM provider ID. This
+allows SSO and SCIM to reuse a public identifier without sharing account rows.
+A matching global email is never enough to grant management access.
 Existing-user linking is disabled by default and fails closed unless explicit
 domain, membership, or application policy is configured.
+
+Existing installations upgrading from the public-provider-ID account layout
+must explicitly backfill each SCIM account row to `scim:<connection-id>` before
+serving traffic. Automatic legacy fallback is intentionally not provided
+because an equal SSO provider ID makes ownership ambiguous.
+
+Ingress accepts exact `true` and `false` string values case-insensitively for
+User `active` and the `primary` field on emails, phone numbers, addresses,
+roles, and entitlements. Values with surrounding whitespace and other truthy
+forms remain invalid.
 
 Organization deprovisioning removes only that membership and SCIM account link;
 it never deletes the global user. Personal deprovisioning deletes the global

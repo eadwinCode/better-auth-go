@@ -6,6 +6,10 @@ complete merely because it compiles or has an implementation: it must satisfy
 the HTTP contract, adapter contract, security checks, and test evidence listed
 here.
 
+Focused Better Auth v1.7.1 security and interoperability behavior is tracked in
+[`docs/compatibility/better-auth-v1.7.1.md`](./docs/compatibility/better-auth-v1.7.1.md).
+It supplements rather than replaces the broader v1.6.25 production baseline.
+
 The scope is limited to behavior shipped by the pinned Better Auth release.
 Features introduced after 1.6.25 and Go-only product features are not part of
 this release.

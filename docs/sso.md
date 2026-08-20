@@ -93,6 +93,11 @@ See [ADR 0007](./adr/0007-enterprise-sso.md). In particular:
   audience verification;
 - SAML assertions are correlated, signed, audience/recipient/issuer/timestamp
   checked, and replay-protected;
+- assertion signatures are verified against the exact raw XML before response
+  unmarshalling; multiple/nested assertions and signature decoys fail closed;
+- `WantAssertionsSigned` is enforced as configured, and generated SP metadata
+  carries the matching assertion/request signing policy within the configured
+  metadata size bound;
 - callback and RelayState destinations must be same-origin or exact trusted
   origins;
 - provider secrets are encrypted and omitted from public records;
