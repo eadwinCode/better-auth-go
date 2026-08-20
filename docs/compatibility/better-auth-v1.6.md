@@ -4,7 +4,7 @@ This document tracks behavioral compatibility between Better Auth TypeScript
 v1.6 and `better-auth-go`. It is a living release gate, not a claim that Go and
 TypeScript APIs are source-compatible.
 
-Reference snapshot audited on 2026-07-28:
+Reference snapshot audited on 2026-08-09:
 
 - Better Auth documentation version: v1.6;
 - upstream repository: `better-auth/better-auth`;
@@ -27,6 +27,22 @@ Reference snapshot audited on 2026-07-28:
 6. Prefer native Go security formats for new data. Better Auth password/session
    formats are opt-in migration bridges.
 7. Security fixes may intentionally differ and must be documented.
+
+## v1.6.26 delta
+
+| Upstream change | better-auth-go status |
+| --- | --- |
+| Delete user sessions from secondary storage | Primary database sessions are transactionally deleted and multi-session deletion is tested. Secondary storage is not implemented; its cleanup contract is tracked in ADR 0020. |
+| Skip corrupt secondary-storage session entries | Deferred with the absent secondary-storage contract; a future batch lookup must skip only the corrupt/missing entry and preserve valid results. |
+| Email OTP enumeration, generator purpose, and reset retry fixes | Deferred with the missing email-OTP plugin; the three route-level acceptance requirements are frozen in ADR 0020 and the feature-gap register. |
+| Transaction-scoped JWT key minting | The generic adapter suite now certifies commit, rollback, and nested use of the callback-scoped adapter. JWT remains missing, so JWK-specific behavior and MySQL evidence are deferred. |
+| Database rate-limit cleanup without a background handler | The Go server retains its injected limiter port and has no database limiter storage. Any future implementation must await cleanup when no handler is configured. |
+| Redis `SCAN`-based list and clear | Redis storage is not implemented. A future adapter must use cursor-based `SCAN`, literal-prefix matching, deduplicated lists, and paged non-empty deletes. |
+| Preserve Apple `form_post` user data through OAuth proxy | Deferred with the missing OAuth-proxy plugin; the preserved, safely parsed payload contract is tracked. |
+| Stable namespaced `placeholder.invalid` emails | Implemented by `CreatePlaceholderEmail`; invalid components fail explicitly and equal identifiers remain isolated by namespace. |
+
+The TypeScript-only `jwtClient`/`oneTapClient` inference corrections and the
+Next.js `next/headers` import-promise optimization are intentionally excluded.
 
 ## Core endpoint map
 
@@ -80,7 +96,7 @@ session-management differential certification.
 ## Email/password option contract
 
 `Config.EmailPassword` and `Config.EmailVerification` implement the pinned
-v1.6.25 behavior for `disableSignUp`, `autoSignIn`,
+v1.6.26 behavior for `disableSignUp`, `autoSignIn`,
 `requireEmailVerification`, `revokeSessionsOnPasswordReset`, `sendOnSignUp`,
 `sendOnSignIn`, `autoSignInAfterVerification`, `onPasswordReset`,
 `onExistingUserSignUp`, `customSyntheticUser`, and the before/after
@@ -97,7 +113,7 @@ verification callbacks.
 - Reset and verification lifetimes default to one hour.
 - Reset does not create a session and only revokes sessions when configured.
 - The canonical reset-request message, reset callback, invalid-token and replay
-  behavior are differentially certified against 1.6.25.
+  behavior are differentially certified against 1.6.26.
 - Ordinary email verification returns `{"status":true,"user":null}` and
   authenticated resend errors match the upstream public codes. Go deliberately
   rejects verification-token replay because verification tokens are
@@ -130,10 +146,10 @@ verification state.
 
 When the migration-only `RequireLocalEmailVerified:false` option is selected,
 verified provider evidence for the exact same normalized email promotes the
-local email to verified after the implicit link, matching v1.6.25. Optional
+local email to verified after the implicit link, matching v1.6.26. Optional
 name/image profile synchronization remains unable to change identity fields.
 
-The v1.6.25 generic OAuth provider-error branch is a deliberate difference: it
+The v1.6.26 generic OAuth provider-error branch is a deliberate difference: it
 runs before parsing state, redirects to the global error URL, reflects
 `error_description`, and leaves state reusable. Go consumes and provider-binds
 state before handling every error, redirects only to the state-owned
@@ -141,7 +157,7 @@ allowlisted URL, and emits only a bounded public error code.
 
 ## Bounded admin impersonation options
 
-`Config.Admin` adds the v1.6.25 administrator-selection inputs needed by the
+`Config.Admin` adds the v1.6.26 administrator-selection inputs needed by the
 existing impersonation surface: default/admin roles, explicit admin user IDs,
 a request-scoped role resolver, and `AllowImpersonatingAdmins`. The existing
 application authorizer remains mandatory and additive. Role-based selection
@@ -222,7 +238,7 @@ this list do not require a library release. Explicit OAuth endpoints use
 `social.New`; issuer discovery uses `social.NewOIDC`.
 
 All 35 IDs above have deterministic authorization, scope, PKCE, token-auth, and
-representative profile-mapping fixtures pinned to 1.6.25. Generic OAuth covers
+representative profile-mapping fixtures pinned to 1.6.26. Generic OAuth covers
 client-secret body/basic and public clients, refresh, custom mapping, error
 redaction, redirect rejection, and response bounds. Generic OIDC additionally
 certifies discovery, issuer/audience/nonce/expiry/algorithm checks, JWKS

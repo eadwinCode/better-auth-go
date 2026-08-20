@@ -183,6 +183,11 @@ and verification tokens default to a one-hour lifetime. Applications can
 override the existing `MinPasswordBytes`, `MaxPasswordBytes`,
 `PasswordResetTTL`, and `EmailVerificationTTL` fields.
 
+Accounts whose upstream identity has no deliverable email can use
+`CreatePlaceholderEmail` to derive a deterministic, namespaced address under
+the reserved `placeholder.invalid` domain. The function validates both
+components and never produces a routable address.
+
 The remaining Better Auth 1.6 lifecycle callbacks and delivery modes are
 available through `Config.EmailVerification`, `Config.EmailPassword`, and
 `Config.User`:
@@ -495,7 +500,7 @@ runbook is in [Production operations](./docs/production-operations.md).
 
 - [Better Auth v1.6 compatibility matrix](./docs/compatibility/better-auth-v1.6.md)
 - [Better Auth v1.7 migration contract](./docs/compatibility/better-auth-v1.7.md)
-- [Better Auth v1.6.25 production progress](./PROGRESS.md)
+- [Better Auth v1.6.26 production progress](./PROGRESS.md)
 - [Versioning and stability](./docs/versioning.md)
 - [In-process session resolution](./docs/session-resolution.md)
 - [Production operations](./docs/production-operations.md)

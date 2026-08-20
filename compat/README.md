@@ -11,5 +11,6 @@ the pinned Better Auth TypeScript oracle in `typescript-oracle/`.
 - Provider preset implementation tests remain beside the `social` package
   because they intentionally exercise package-private provider contracts.
 
-The tests characterize Better Auth v1.6.25. Deliberate security differences
+The tests characterize the active Better Auth v1.7.0 migration target. The
+certified stable baseline remains v1.6.26. Deliberate security differences
 are asserted explicitly instead of being normalized away.
