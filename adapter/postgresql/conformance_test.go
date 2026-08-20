@@ -114,6 +114,10 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	configured, err = betterauth.WrapDatabaseAdapter(configured, staging)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err = v17.Backfill(t.Context(), configured, v17.Options{}); err != nil {
 		t.Fatalf("backfill account issuer: %v", err)
 	}
