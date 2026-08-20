@@ -27,6 +27,7 @@ type idTokenVerifier struct {
 	audience         string
 	maxResponseBytes int64
 	clock            betterauth.Clock
+	claimsValidator  func(map[string]any) error
 
 	mu        sync.RWMutex
 	keys      map[string]*rsa.PublicKey
@@ -85,7 +86,11 @@ func (v *idTokenVerifier) Verify(ctx context.Context, raw, expectedNonce string)
 		}
 	}
 	issuer := stringValue(claims["iss"])
-	if !contains(v.issuers, issuer) {
+	issuerValid := contains(v.issuers, issuer)
+	if v.claimsValidator != nil {
+		issuerValid = v.claimsValidator(claims) == nil
+	}
+	if !issuerValid {
 		return nil, errors.New("social: invalid ID token issuer")
 	}
 	if !audienceContains(claims["aud"], v.audience) {
@@ -96,6 +101,11 @@ func (v *idTokenVerifier) Verify(ctx context.Context, raw, expectedNonce string)
 	}
 	if stringValue(claims["sub"]) == "" {
 		return nil, errors.New("social: ID token has no subject")
+	}
+	if v.claimsValidator != nil {
+		if err := v.claimsValidator(claims); err != nil {
+			return nil, err
+		}
 	}
 	return claims, nil
 }

@@ -275,7 +275,8 @@ func (a *Adapter) EnsureIndexes(ctx context.Context, schema betterauth.Schema) e
 	indexes := make(map[string][]mongo.IndexModel, len(schema))
 	modelNames := make(map[string]string, len(schema))
 	fieldNames := make(map[string]map[string]string, len(schema))
-	providerAccountIndexDeclared := false
+	issuerAccountIndexDeclared := false
+	accountIssuerRequired := false
 	for logicalModel, model := range schema {
 		storedModel := model.ModelName
 		if storedModel == "" {
@@ -310,9 +311,9 @@ func (a *Adapter) EnsureIndexes(ctx context.Context, schema betterauth.Schema) e
 			if logicalModel == betterauth.ModelAccount &&
 				definition.Unique &&
 				len(definition.Fields) == 2 &&
-				definition.Fields[0] == "providerId" &&
+				definition.Fields[0] == "issuer" &&
 				definition.Fields[1] == "accountId" {
-				providerAccountIndexDeclared = true
+				issuerAccountIndexDeclared = true
 			}
 			keys := make(bson.D, len(definition.Fields))
 			for position, logicalField := range definition.Fields {
@@ -328,8 +329,13 @@ func (a *Adapter) EnsureIndexes(ctx context.Context, schema betterauth.Schema) e
 				Keys: keys, Options: index,
 			})
 		}
+		if logicalModel == betterauth.ModelAccount {
+			accountIssuerRequired = model.Fields["issuer"].Required
+		}
 	}
-	addCoreMongoIndexes(indexes, modelNames, fieldNames, providerAccountIndexDeclared)
+	addCoreMongoIndexes(
+		indexes, modelNames, fieldNames, issuerAccountIndexDeclared, accountIssuerRequired,
+	)
 	for model, definitions := range indexes {
 		if _, err := a.collection(model).Indexes().CreateMany(a.ctx(ctx), definitions); err != nil {
 			return translateError(err)
@@ -342,7 +348,8 @@ func addCoreMongoIndexes(
 	indexes map[string][]mongo.IndexModel,
 	models map[string]string,
 	fields map[string]map[string]string,
-	providerAccountIndexDeclared bool,
+	issuerAccountIndexDeclared bool,
+	accountIssuerRequired bool,
 ) {
 	if model := models[betterauth.ModelSession]; model != "" {
 		indexes[model] = append(indexes[model], mongo.IndexModel{
@@ -356,13 +363,14 @@ func addCoreMongoIndexes(
 			Options: options.Index().SetExpireAfterSeconds(0).SetName("ttl_expires"),
 		})
 	}
-	if model := models[betterauth.ModelAccount]; model != "" && !providerAccountIndexDeclared {
+	if model := models[betterauth.ModelAccount]; model != "" &&
+		accountIssuerRequired && !issuerAccountIndexDeclared {
 		indexes[model] = append(indexes[model], mongo.IndexModel{
 			Keys: bson.D{
-				{Key: fields[betterauth.ModelAccount]["providerId"], Value: 1},
+				{Key: fields[betterauth.ModelAccount]["issuer"], Value: 1},
 				{Key: fields[betterauth.ModelAccount]["accountId"], Value: 1},
 			},
-			Options: options.Index().SetUnique(true).SetName("uniq_provider_account"),
+			Options: options.Index().SetUnique(true).SetName("account_issuer_accountId_uidx"),
 		})
 	}
 	if model := models[betterauth.ModelOutboxEvent]; model != "" {

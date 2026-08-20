@@ -168,6 +168,29 @@ func TestEmailPasswordSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestSignOutAcceptsAnEmptyBody(t *testing.T) {
+	t.Parallel()
+	client, _ := newBlackBoxServer(t)
+	if response := client.request(t, http.MethodPost, "/sign-up/email", map[string]any{
+		"email": "empty-signout@example.com", "password": "correct horse battery staple",
+		"name": "Empty Signout",
+	}, false); response.Code != http.StatusOK {
+		t.Fatal(response.Body.String())
+	}
+	request := httptest.NewRequest(
+		http.MethodPost, "https://auth.example.com/api/auth/sign-out", nil,
+	)
+	request.Header.Set("Origin", "https://app.example.com")
+	request.Header.Set("X-CSRF-Token", client.csrf.Value)
+	request.AddCookie(client.csrf)
+	request.AddCookie(client.session)
+	response := httptest.NewRecorder()
+	client.handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("empty-body signout = %d: %s", response.Code, response.Body.String())
+	}
+}
+
 func TestCSRFAndOriginEnforcement(t *testing.T) {
 	t.Parallel()
 	client, _ := newBlackBoxServer(t)

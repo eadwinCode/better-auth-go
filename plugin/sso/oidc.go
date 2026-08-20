@@ -101,12 +101,11 @@ func (systemClock) Now() time.Time { return time.Now().UTC() }
 
 func oidcProfileMapper(providerID string, mapping OIDCMapping) social.ProfileMapper {
 	return func(claims map[string]any) (betterauth.OAuthProfile, error) {
-		idField := defaultField(mapping.ID, "sub")
 		emailField := defaultField(mapping.Email, "email")
 		verifiedField := defaultField(mapping.EmailVerified, "email_verified")
 		nameField := defaultField(mapping.Name, "name")
 		imageField := defaultField(mapping.Image, "picture")
-		id := claimString(claims, idField)
+		id := claimString(claims, "sub")
 		email := claimString(claims, emailField)
 		if id == "" || email == "" {
 			return betterauth.OAuthProfile{}, errors.New("sso: OIDC profile is incomplete")

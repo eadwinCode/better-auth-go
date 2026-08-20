@@ -1,18 +1,20 @@
-# Better Auth v1.6.26 Production Progress
+# Better Auth v1.7.0 Migration Progress
 
-This file is the release tracker for `better-auth-go`. The compatibility target
-is pinned to **Better Auth TypeScript 1.6.26**. A capability is not production
+This file is the release tracker for `better-auth-go`. The active migration target
+is pinned to **Better Auth TypeScript 1.7.0**; the previously certified stable
+boundary remains the documented v1.6.26 surface until the 1.7 matrix completes.
+A capability is not production
 complete merely because it compiles or has an implementation: it must satisfy
 the HTTP contract, adapter contract, security checks, and test evidence listed
 here.
 
+The 1.7 implementation status and explicit deferrals are recorded in
+`docs/compatibility/better-auth-v1.7.md`.
+
 Focused Better Auth v1.7.1 security and interoperability behavior is tracked in
 [`docs/compatibility/better-auth-v1.7.1.md`](./docs/compatibility/better-auth-v1.7.1.md).
-It supplements rather than replaces the broader v1.6.25 production baseline.
-
-The scope is limited to behavior shipped by the pinned Better Auth release.
-Features introduced after 1.6.26 and Go-only product features are not part of
-this release.
+It supplements rather than replaces the broader v1.7 migration or the certified
+v1.6.26 production baseline.
 
 ## Status vocabulary
 
@@ -56,15 +58,16 @@ applicable to the Go server.
 
 ## Evidence snapshot
 
-Last updated: 2026-08-09
+Last updated: 2026-08-20
 
 | Gate | Command or evidence | Result |
 | --- | --- | --- |
 | Go unit and black-box tests | `go test -count=1 ./...` | Pass |
 | TypeScript oracle type check | `bun run typecheck` in `compat/typescript-oracle` | Pass |
 | TypeScript oracle migration | `scripts/test-typescript-compat.sh` isolated SQLite setup | Pass |
-| Go/TypeScript core characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback, multi-session, email change, direct/emailed deletion, OAuth callback/error/replay/new-user, linking collision/options, provider-token, sign-out/session and impersonation-option suites |
-| Pinned upstream source inventory | `scripts/check-upstream-v1.6.26.sh` | Pass at tag commit `a16b30e` |
+| Go/TypeScript v1.7.0 characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback, multi-session, email change, direct/emailed deletion, OAuth callback/error/replay/new-user, linking collision/options, provider-token, sign-out/session and impersonation-option suites |
+| Pinned v1.7.0 migration inventory | `scripts/check-upstream-v1.7.0.sh` | Pass at tag commit `c3688ba` |
+| Certified v1.6.26 source inventory | `scripts/check-upstream-v1.6.26.sh` | Pass at tag commit `a16b30e` |
 | Formatting | `test -z "$(gofmt -l .)"` | Pass |
 | Vet | `go vet ./...` | Pass |
 | Race detector | `go test -race -count=1 ./...` | Pass |
@@ -86,8 +89,12 @@ Do not convert a pending or skipped integration test into a pass.
 
 ## Compatibility baseline
 
-- Better Auth package: `better-auth@1.6.26`
-- Better Auth source: tag `v1.6.26`, commit
+- Active migration source: Better Auth `v1.7.0`, commit
+  `c3688ba88edff12dfcb1ced007e332711509ac29`
+- Migration contract: `docs/compatibility/better-auth-v1.7.md`
+
+- Certified stable baseline: `better-auth@1.6.26`
+- Certified stable source: tag `v1.6.26`, commit
   `a16b30e8437927c08350194000178073b06af8cf`; sibling checkout
   `../better-auth-repo`, overridable with `BETTER_AUTH_UPSTREAM_DIR`
 - TypeScript HTTP oracle: checked in at `compat/typescript-oracle`; override
@@ -241,7 +248,7 @@ entry in this table and a compatibility decision.
 1. All pull-request gates from a clean checkout.
 2. Real MongoDB and PostgreSQL conformance, migrations and concurrent mutation
    tests.
-3. Complete TypeScript 1.6.26 differential endpoint and option matrix.
+3. Complete TypeScript 1.7.0 differential endpoint and option matrix.
 4. All 35 social-provider fixtures and generic OAuth/OIDC fixtures (present).
 5. Selected live social-provider sandbox tests or an explicitly approved
    provider-operated-risk decision.

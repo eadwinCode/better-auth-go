@@ -61,8 +61,13 @@ as hashes.
 | `POST /two-factor/generate-backup-codes` | fresh session, CSRF, password for credential users |
 | `POST /two-factor/verify-backup-code` | pending-login cookie, or session plus CSRF |
 
-`twoFactorEnabled` remains false until the first TOTP succeeds. Enrollment and
-backup-code responses are the only time plaintext recovery codes are returned.
+The enable request accepts `method: "totp"` (the default) or `method: "otp"`.
+TOTP returns `{"method":"totp","totpURI":...,"backupCodes":[...]}` and
+`twoFactorEnabled` remains false until the first code succeeds. OTP requires a
+configured delivery callback, enables the gate immediately, and returns only
+`{"method":"otp"}`. Enrollment responses are discriminated by `method`.
+TOTP enrollment and backup-code responses are the only time plaintext recovery
+codes are returned.
 
 ## Sign-in
 

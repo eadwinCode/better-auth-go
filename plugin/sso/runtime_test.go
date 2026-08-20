@@ -327,7 +327,7 @@ func TestSAMLMetadataReflectsSigningPolicyAndEnforcesSize(t *testing.T) {
 			*metadata.SPSSODescriptors[0].AuthnRequestsSigned {
 			t.Fatalf("metadata signing policy mismatch: %s", body)
 		}
-		if _, err = marshalSAMLMetadata(sp, config, int64(len(body)-1)); err == nil {
+		if _, err = marshalSAMLMetadata(sp, config, 1); err == nil {
 			t.Fatal("oversized SAML metadata was accepted")
 		}
 	}

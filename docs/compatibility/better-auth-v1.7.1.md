@@ -1,8 +1,8 @@
 # Better Auth v1.7.1 security and interoperability overlay
 
 This document records the focused Better Auth v1.7.1 migration applied on top
-of the repository's broader v1.6.25 compatibility baseline. It is not a claim
-that the unmerged Better Auth 1.7 plugin redesign has been ported wholesale.
+of the repository's broader v1.7.0 migration and certified v1.6.26 baseline.
+It does not expand the explicit deferrals in the v1.7 migration contract.
 
 Primary upstream references, reviewed on 2026-08-20:
 
@@ -18,7 +18,7 @@ Primary upstream references, reviewed on 2026-08-20:
 | Prevent SAML signature wrapping | implemented | protocol root, direct-child position, a single assertion, a single direct XMLDSig signature, and authenticated assertion ID are required |
 | Bound and accurately advertise SP metadata | implemented | serialized metadata is capped by `MaxMetadataSize`; `AuthnRequestsSigned` and `WantAssertionsSigned` reflect configuration |
 | Parse SCIM Boolean strings case-insensitively | implemented | exact `true`/`false` strings are normalized for User `active` and `primary` on emails, phone numbers, addresses, roles, and entitlements, including PATCH forms |
-| Separate SCIM IDs from SSO provider IDs | implemented | core account rows use the internal `scim:<connection-id>` provider namespace; public SCIM provider IDs are unchanged |
+| Separate SCIM IDs from SSO provider IDs | implemented | connection-scoped `scimUser` bindings are separate from authentication accounts, so equal public SCIM and SSO provider IDs cannot share identity rows |
 | Require native database transactions | implemented | server construction rejects adapters without transaction capability; adapter conformance verifies rollback |
 | Refuse unsafe required-column additions | implemented | SQL migration preflights the entire schema and rejects required/no-default additions to populated tables before DDL; static defaults and reviewed external backfills remain possible |
 
@@ -33,16 +33,16 @@ migration refusal/backfill/rollback.
 
 Better Auth 1.7 adds an optional managed-connection catalog with server-only
 credential create, rotate, and revoke APIs plus terminal connection binding
-during dynamic decommissioning. This repository still uses the earlier SCIM
-connection model: one hash-only bearer credential per connection and
-session-authorized browser management endpoints. Adding lookalike APIs would
-duplicate the unmerged 1.7 connection/credential architecture and make later
-migration less safe.
+during dynamic decommissioning. This repository now has connection-scoped
+`scimUser` bindings, but still uses one hash-only bearer credential per
+connection and session-authorized browser management endpoints. Adding
+lookalike APIs would duplicate the remaining upstream client/config and
+credential architecture and make later migration less safe.
 
-The dependency is explicit: land the broader 1.7 SCIM connection and credential
-model first, then port the server-only credential catalog and terminal binding
-as one atomic workstream. Until then, deployments must not claim managed
-connections or first-request dynamic decommission behavior.
+The dependency is explicit: port the remaining server-only credential catalog,
+terminal binding, native group/provisioning-domain, and tombstone behavior as a
+reviewed SCIM workstream. Until then, deployments must not claim those surfaces
+or first-request dynamic decommission behavior.
 
 ### OAuth provider insufficient-scope challenges
 
@@ -60,11 +60,9 @@ migration changes in this overlay.
 
 ## Rollout notes
 
-1. Audit existing SCIM-created core account rows before deploying. For each
-   connection, migrate its account `providerId` from the old public provider ID
-   to `scim:<connection-id>`. Do not perform an automatic fallback lookup: when
-   an SSO provider reused the same ID, ownership is ambiguous and must fail
-   closed.
+1. Follow the v1.7 SCIM cutover in `docs/migrations/better-auth-1.7.md` and fully
+   reprovision the directory into `scimUser` bindings. Do not translate legacy
+   authentication-account provisioning state in place.
 2. Fetch SP metadata after rollout and confirm the IdP sees the intended
    `WantAssertionsSigned` and `AuthnRequestsSigned` values.
 3. Providers configured with `WantAssertionsSigned=true` must sign the

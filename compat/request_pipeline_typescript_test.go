@@ -11,7 +11,7 @@ import (
 	betterauth "github.com/eadwinCode/better-auth-go"
 )
 
-func TestBetterAuthV1626TrustedOriginPolicyCompatibility(t *testing.T) {
+func TestBetterAuthV170TrustedOriginPolicyCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	wildcardOracle := oracle.clone(t)
 	wildcardOracle.basePath += "-origin-wildcard"

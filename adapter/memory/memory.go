@@ -313,7 +313,15 @@ func conflicts(rows map[string]map[string]betterauth.Record, model string, candi
 				return true
 			}
 		case betterauth.ModelAccount:
-			if existing["providerId"] == candidate["providerId"] && existing["accountId"] == candidate["accountId"] {
+			candidateIssuer, _ := candidate["issuer"].(string)
+			existingIssuer, _ := existing["issuer"].(string)
+			if candidateIssuer != "" && existingIssuer == candidateIssuer &&
+				existing["accountId"] == candidate["accountId"] {
+				return true
+			}
+			if candidateIssuer == "" && existingIssuer == "" &&
+				existing["providerId"] == candidate["providerId"] &&
+				existing["accountId"] == candidate["accountId"] {
 				return true
 			}
 		case betterauth.ModelVerification:

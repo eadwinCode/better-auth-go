@@ -162,5 +162,24 @@ func baseSchema() betterauth.Schema {
 				},
 			},
 		},
+		ModelSCIMUser: {
+			Fields: map[string]betterauth.FieldSchema{
+				"id":           {Type: betterauth.FieldString, Required: true, Unique: true, Returned: true},
+				"connectionId": {Type: betterauth.FieldString, Required: true, Index: true},
+				"userId": {
+					Type: betterauth.FieldString, Required: true, Index: true,
+					References: betterauth.ModelUser,
+				},
+				"externalId":        {Type: betterauth.FieldString, Required: true, Returned: true},
+				"connectionUserKey": {Type: betterauth.FieldString, Required: true, Unique: true},
+				"ownsUser":          {Type: betterauth.FieldBoolean, Required: true},
+				"createdAt":         {Type: betterauth.FieldDate, Required: true, Returned: true},
+				"updatedAt":         {Type: betterauth.FieldDate, Required: true, Returned: true},
+			},
+			Indexes: []betterauth.IndexSchema{{
+				Name: "scim_user_connection_external", Fields: []string{"connectionId", "externalId"},
+				Unique: true,
+			}},
+		},
 	}
 }

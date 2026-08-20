@@ -214,6 +214,7 @@ func (provider *fakeOAuthProvider) Exchange(
 	}
 	if profile.ProviderAccountID == "" {
 		profile = betterauth.OAuthProfile{
+			Issuer:            "local:oauth:test",
 			ProviderAccountID: "provider-user-1",
 			Email:             "oauth@example.com",
 			EmailVerified:     true,

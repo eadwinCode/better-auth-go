@@ -8,6 +8,7 @@ import (
 	betterauth "github.com/eadwinCode/better-auth-go"
 	"github.com/eadwinCode/better-auth-go/adapter/postgresql"
 	"github.com/eadwinCode/better-auth-go/adaptertest"
+	v17 "github.com/eadwinCode/better-auth-go/migration/v17"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -91,7 +92,7 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := adaptertest.LegacyCoreSchema()
+	legacy := releaseUpgradeSchema(adaptertest.LegacyCoreSchema())
 	if err := adapter.Migrate(t.Context(), legacy); err != nil {
 		t.Fatal(err)
 	}
@@ -105,9 +106,39 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	}
 	adaptertest.SeedReleaseBaseline(t, configured)
 
-	current := betterauth.CoreSchema()
+	staging := releaseUpgradeSchema(v17.StagingSchema())
+	if err := adapter.Migrate(t.Context(), staging); err != nil {
+		t.Fatalf("add nullable issuer: %v", err)
+	}
+	configured, err = adapter.WithSchema(staging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured, err = betterauth.WrapDatabaseAdapter(configured, staging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = v17.Backfill(t.Context(), configured, v17.Options{}); err != nil {
+		t.Fatalf("backfill account issuer: %v", err)
+	}
+	current := releaseUpgradeSchema(betterauth.CoreSchema())
 	if err := adapter.Migrate(t.Context(), current); err != nil {
 		t.Fatalf("upgrade current schema: %v", err)
+	}
+	if err := v17.FinalizeSQL(t.Context(), database, v17.PostgreSQL, current); err != nil {
+		t.Fatalf("finalize account issuer: %v", err)
+	}
+	if _, err := database.ExecContext(
+		t.Context(), `UPDATE "release_upgrade_account" SET "issuer" = NULL WHERE "id" = 'upgrade-account'`,
+	); err == nil {
+		t.Fatal("finalized PostgreSQL account issuer remained nullable")
+	}
+	var legacyIndexes int
+	if err := database.QueryRowContext(t.Context(),
+		`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN (`+
+			`'uniq_provider_account', 'account_provider_account_unique')`,
+	).Scan(&legacyIndexes); err != nil || legacyIndexes != 0 {
+		t.Fatalf("legacy PostgreSQL account indexes remain: %d %v", legacyIndexes, err)
 	}
 	if err := adapter.Migrate(t.Context(), current); err != nil {
 		t.Fatalf("idempotent current migration: %v", err)
@@ -121,7 +152,10 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 		t.Fatal(err)
 	}
 	adaptertest.AssertReleaseUpgrade(t, configured)
-	for _, expected := range []string{"session_userId_index", "account_userId_index"} {
+	for _, expected := range []string{
+		"release_upgrade_session_userId_index",
+		"release_upgrade_account_userId_index",
+	} {
 		var found int
 		if err := database.QueryRowContext(
 			t.Context(),
@@ -134,6 +168,17 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 			t.Fatalf("current index %q was not created", expected)
 		}
 	}
+}
+
+func releaseUpgradeSchema(schema betterauth.Schema) betterauth.Schema {
+	for logicalName, model := range schema {
+		model.ModelName = "release_upgrade_" + logicalName
+		for index := range model.Indexes {
+			model.Indexes[index].Name = "release_upgrade_" + model.Indexes[index].Name
+		}
+		schema[logicalName] = model
+	}
+	return schema
 }
 
 func databaseForTest(t *testing.T) *sql.DB {
@@ -155,7 +200,7 @@ func databaseForTest(t *testing.T) *sql.DB {
 }
 
 func conformanceSchema() betterauth.Schema {
-	return betterauth.Schema{
+	schema := betterauth.Schema{
 		"conformance": {Fields: map[string]betterauth.FieldSchema{
 			"id": {Type: betterauth.FieldString, Required: true, Unique: true}, "group": {Type: betterauth.FieldString},
 			"sequence": {Type: betterauth.FieldNumber}, "name": {Type: betterauth.FieldString},
@@ -171,4 +216,6 @@ func conformanceSchema() betterauth.Schema {
 			"id": {Type: betterauth.FieldString, Required: true, Unique: true},
 		}},
 	}
+	schema[betterauth.ModelAccount] = betterauth.CoreSchema()[betterauth.ModelAccount]
+	return schema
 }

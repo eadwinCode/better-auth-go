@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	betterauth "github.com/eadwinCode/better-auth-go"
 )
 
 func TestSupportedProviderCatalog(t *testing.T) {
@@ -93,6 +95,7 @@ func TestGenericOAuthExchange(t *testing.T) {
 		ClientID: "client-id", ClientSecret: "client-secret",
 		AuthorizationURL: server.URL + "/authorize", TokenURL: server.URL + "/token",
 		UserInfoURL: server.URL + "/userinfo", HTTPClient: server.Client(),
+		AccountSubject: testAccountSubject,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -129,6 +132,7 @@ func TestProviderRejectsRedirectingTokenEndpoint(t *testing.T) {
 		ClientID: "client", ClientSecret: "secret",
 		AuthorizationURL: redirector.URL + "/authorize", TokenURL: redirector.URL,
 		UserInfoURL: redirector.URL + "/userinfo", HTTPClient: redirector.Client(),
+		AccountSubject: testAccountSubject,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -136,5 +140,44 @@ func TestProviderRejectsRedirectingTokenEndpoint(t *testing.T) {
 	_, err = provider.Exchange(context.Background(), "code", "verifier", "", "https://auth.example/callback")
 	if err == nil || !strings.Contains(err.Error(), "redirect") {
 		t.Fatalf("expected redirect rejection, got %v", err)
+	}
+}
+
+func testAccountSubject(profile map[string]any) (string, error) {
+	if value := stringValue(profile["sub"]); value != "" {
+		return value, nil
+	}
+	return stringValue(profile["id"]), nil
+}
+
+func TestProviderEndSessionURLIsBoundedAndDiscriminated(t *testing.T) {
+	provider, err := New("logout-provider", Options{
+		ClientID: "client-id", ClientSecret: "client-secret",
+		AuthorizationURL: "https://idp.example.com/authorize",
+		TokenURL:         "https://idp.example.com/token",
+		UserInfoURL:      "https://idp.example.com/userinfo",
+		EndSessionURL:    "https://idp.example.com/logout",
+		AccountSubject:   testAccountSubject,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination, err := provider.EndSessionURL(betterauth.OAuthEndSessionRequest{
+		IDToken: "id-token", PostLogoutRedirectURI: "https://app.example.com/signed-out",
+		State: "opaque-state",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	if parsed.Scheme != "https" || parsed.Host != "idp.example.com" ||
+		query.Get("id_token_hint") != "id-token" || query.Get("client_id") != "client-id" ||
+		query.Get("post_logout_redirect_uri") != "https://app.example.com/signed-out" ||
+		query.Get("state") != "opaque-state" {
+		t.Fatalf("unexpected end-session URL: %s", destination)
 	}
 }

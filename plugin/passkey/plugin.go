@@ -92,7 +92,8 @@ func (instance *runtime) plugin() betterauth.Plugin {
 				Path: "/passkey/verify-registration", Method: http.MethodPost,
 				Use: registrationVerifyUse,
 				BodyValidator: betterauth.ObjectValidator{Fields: map[string]betterauth.FieldValidation{
-					"response": {Kind: betterauth.ValidationObject, Required: true},
+					"response":      {Kind: betterauth.ValidationObject, Required: true},
+					"createSession": {Kind: betterauth.ValidationBoolean},
 					"name": {
 						Kind: betterauth.ValidationString, MinLength: 1, MaxLength: 128,
 					},
@@ -309,9 +310,30 @@ func (instance *runtime) verifyRegistration(
 	if err != nil || target == nil {
 		return nil, verificationError("Resolved user is invalid.", err)
 	}
-	passkey, err := instance.createPasskey(
-		context, targetUserID, name, challenge.Session.UserID, credential,
+	createSession := bodyBool(context, "createSession")
+	var (
+		passkey Passkey
+		issued  *betterauth.IssuedSession
 	)
+	err = context.Database.Transaction(context.Context, func(tx betterauth.DatabaseAdapter) error {
+		txContext := *context
+		txContext.Database = tx
+		created, createErr := instance.createPasskey(
+			&txContext, targetUserID, name, challenge.Session.UserID, credential,
+		)
+		if createErr != nil {
+			return createErr
+		}
+		passkey = created
+		if !createSession {
+			return nil
+		}
+		if context.IssueSessionWithDatabase == nil {
+			return errors.New("passkey: transactional session issuance is unavailable")
+		}
+		issued, createErr = context.IssueSessionWithDatabase(tx, targetUserID)
+		return createErr
+	})
 	if err != nil {
 		if errors.Is(err, betterauth.ErrConflict) {
 			return nil, betterauth.NewError(
@@ -321,9 +343,28 @@ func (instance *runtime) verifyRegistration(
 		}
 		return nil, internalError(err)
 	}
-	response, err := betterauth.JSONResponse(http.StatusOK, passkey)
+	var responseBody any = passkey
+	if issued != nil {
+		encoded, marshalErr := json.Marshal(passkey)
+		if marshalErr != nil {
+			return nil, internalError(marshalErr)
+		}
+		withSession := make(map[string]any)
+		if unmarshalErr := json.Unmarshal(encoded, &withSession); unmarshalErr != nil {
+			return nil, internalError(unmarshalErr)
+		}
+		withSession["session"] = issued.Session
+		withSession["user"] = issued.User
+		responseBody = withSession
+	}
+	response, err := betterauth.JSONResponse(http.StatusOK, responseBody)
 	if err != nil {
 		return nil, err
+	}
+	if issued != nil {
+		if err := issued.Apply(response); err != nil {
+			return nil, internalError(err)
+		}
 	}
 	_ = instance.clearChallengeCookie(context, response)
 	return response, nil
@@ -673,6 +714,12 @@ func clientResponse(context *betterauth.HookContext) (map[string]any, error) {
 func bodyString(context *betterauth.HookContext, key string) string {
 	body, _ := context.Body.(map[string]any)
 	value, _ := body[key].(string)
+	return value
+}
+
+func bodyBool(context *betterauth.HookContext, key string) bool {
+	body, _ := context.Body.(map[string]any)
+	value, _ := body[key].(bool)
 	return value
 }
 

@@ -37,14 +37,15 @@ type runner interface {
 // Adapter is a schema-aware database/sql adapter. Call Migrate explicitly
 // before serving requests.
 type Adapter struct {
-	db                   *sql.DB
-	tx                   *sql.Tx
-	dialect              Dialect
-	schema               betterauth.Schema
-	accountModel         string
-	accountProviderField string
-	accountIDField       string
-	idFields             map[string]string
+	db                    *sql.DB
+	tx                    *sql.Tx
+	dialect               Dialect
+	schema                betterauth.Schema
+	accountModel          string
+	accountIssuerField    string
+	accountIssuerRequired bool
+	accountIDField        string
+	idFields              map[string]string
 }
 
 // UnsafeMigrationError reports an additive migration that would add a
@@ -106,11 +107,12 @@ func (adapter *Adapter) withSchema(schema betterauth.Schema) (*Adapter, error) {
 		if configured.accountModel == "" {
 			configured.accountModel = betterauth.ModelAccount
 		}
-		if provider, exists := account.Fields["providerId"]; exists {
-			configured.accountProviderField = provider.FieldName
-			if configured.accountProviderField == "" {
-				configured.accountProviderField = "providerId"
+		if issuer, exists := account.Fields["issuer"]; exists {
+			configured.accountIssuerField = issuer.FieldName
+			if configured.accountIssuerField == "" {
+				configured.accountIssuerField = "issuer"
 			}
+			configured.accountIssuerRequired = issuer.Required
 		}
 		if accountID, exists := account.Fields["accountId"]; exists {
 			configured.accountIDField = accountID.FieldName
@@ -400,8 +402,9 @@ func (adapter *Adapter) Transaction(ctx context.Context, callback func(betteraut
 	}
 	transaction := &Adapter{
 		db: adapter.db, tx: tx, dialect: adapter.dialect, schema: adapter.schema,
-		accountModel: adapter.accountModel, accountProviderField: adapter.accountProviderField,
-		accountIDField: adapter.accountIDField, idFields: adapter.idFields,
+		accountModel: adapter.accountModel, accountIssuerField: adapter.accountIssuerField,
+		accountIssuerRequired: adapter.accountIssuerRequired,
+		accountIDField:        adapter.accountIDField, idFields: adapter.idFields,
 	}
 	if err := callback(transaction); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
@@ -524,11 +527,12 @@ func (adapter *Adapter) migrate(ctx context.Context) error {
 			}
 		}
 	}
-	if adapter.accountModel != "" && adapter.accountProviderField != "" && adapter.accountIDField != "" {
+	if adapter.accountModel != "" && adapter.accountIssuerField != "" &&
+		adapter.accountIssuerRequired && adapter.accountIDField != "" {
 		if _, exists := adapter.schema[adapter.accountModel]; exists {
-			indexName := safeIndexName(adapter.accountModel + "_provider_account_unique")
+			indexName := safeIndexName(adapter.accountModel + "_issuer_account_unique")
 			_, err := adapter.exec(ctx, "CREATE UNIQUE INDEX IF NOT EXISTS "+quote(indexName)+
-				" ON "+quote(adapter.accountModel)+" ("+quote(adapter.accountProviderField)+", "+
+				" ON "+quote(adapter.accountModel)+" ("+quote(adapter.accountIssuerField)+", "+
 				quote(adapter.accountIDField)+")")
 			if err != nil {
 				return fmt.Errorf("sqladapter: migrate account identity index: %w", err)

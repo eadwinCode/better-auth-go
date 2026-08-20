@@ -31,8 +31,9 @@ func (s *databaseStore) CreateEmailUser(ctx context.Context, params CreateEmailU
 		}
 		_, err = tx.Create(ctx, CreateQuery{Model: ModelAccount, ForceAllowID: true, Data: Record{
 			"id": params.User.ID + ":credential", "userId": params.User.ID,
-			"providerId": credentialProvider, "accountId": params.User.ID,
-			"password": params.PasswordHash, "createdAt": params.User.CreatedAt,
+			"providerId": credentialProvider, "issuer": CredentialAccountIssuer,
+			"accountId": params.User.ID,
+			"password":  params.PasswordHash, "createdAt": params.User.CreatedAt,
 			"updatedAt": params.User.UpdatedAt,
 		}})
 		if err != nil {
@@ -68,9 +69,9 @@ func (s *databaseStore) FindUserByID(ctx context.Context, id string) (User, erro
 }
 
 func (s *databaseStore) PasswordCredential(ctx context.Context, userID string) (PasswordCredential, error) {
-	row, err := s.db.FindOne(ctx, FindOneQuery{Model: ModelAccount, Where: []Where{
-		Eq("providerId", credentialProvider), Eq("accountId", userID),
-	}})
+	row, err := s.db.FindOne(ctx, FindOneQuery{
+		Model: ModelAccount, Where: credentialIdentityWhere(userID),
+	})
 	if err != nil {
 		return PasswordCredential{}, err
 	}
@@ -86,24 +87,22 @@ func (s *databaseStore) PasswordCredential(ctx context.Context, userID string) (
 }
 
 func (s *databaseStore) ReplacePasswordHash(ctx context.Context, userID, previous, replacement string, now time.Time) error {
-	_, err := s.db.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
-		Eq("providerId", credentialProvider), Eq("accountId", userID), Eq("password", previous),
-	}, Update: Record{"password": replacement, "updatedAt": now.UTC()}})
+	where := append(credentialIdentityWhere(userID), Eq("password", previous))
+	_, err := s.db.Update(ctx, UpdateQuery{Model: ModelAccount, Where: where,
+		Update: Record{"password": replacement, "updatedAt": now.UTC()}})
 	return err
 }
 
 func (s *databaseStore) SetPasswordHash(ctx context.Context, userID, passwordHash string, now time.Time) error {
 	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
-		account, err := tx.FindOne(ctx, FindOneQuery{Model: ModelAccount, Where: []Where{
-			Eq("providerId", credentialProvider), Eq("accountId", userID), Eq("userId", userID),
-		}})
+		where := append(credentialIdentityWhere(userID), Eq("userId", userID))
+		account, err := tx.FindOne(ctx, FindOneQuery{Model: ModelAccount, Where: where})
 		if err != nil && !errors.Is(err, ErrNotFound) {
 			return err
 		}
 		if account != nil {
-			updated, err := tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
-				Eq("providerId", credentialProvider), Eq("accountId", userID), Eq("userId", userID),
-			}, Update: Record{"password": passwordHash, "updatedAt": now.UTC()}})
+			updated, err := tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: where,
+				Update: Record{"password": passwordHash, "updatedAt": now.UTC()}})
 			if err != nil {
 				return err
 			}
@@ -114,7 +113,7 @@ func (s *databaseStore) SetPasswordHash(ctx context.Context, userID, passwordHas
 		}
 		_, err = tx.Create(ctx, CreateQuery{Model: ModelAccount, ForceAllowID: true, Data: Record{
 			"id": userID + ":credential", "userId": userID,
-			"providerId": credentialProvider, "accountId": userID,
+			"providerId": credentialProvider, "issuer": CredentialAccountIssuer, "accountId": userID,
 			"password": passwordHash, "createdAt": now.UTC(), "updatedAt": now.UTC(),
 		}})
 		return err
@@ -124,10 +123,9 @@ func (s *databaseStore) SetPasswordHash(ctx context.Context, userID, passwordHas
 func (s *databaseStore) ChangePasswordAndRotate(ctx context.Context, params ChangePasswordParams) (Session, error) {
 	var created Session
 	err := s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
-		account, err := tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
-			Eq("providerId", credentialProvider), Eq("accountId", params.UserID),
-			Eq("userId", params.UserID), Eq("password", params.PreviousHash),
-		}, Update: Record{
+		where := append(credentialIdentityWhere(params.UserID),
+			Eq("userId", params.UserID), Eq("password", params.PreviousHash))
+		account, err := tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: where, Update: Record{
 			"password": params.ReplacementHash, "updatedAt": params.ReplacementSession.CreatedAt,
 		}})
 		if err != nil {
@@ -251,6 +249,41 @@ func (s *databaseStore) UnlinkAccount(
 	})
 }
 
+func (s *databaseStore) UnlinkAccountByID(
+	ctx context.Context,
+	userID string,
+	accountRecordID string,
+	allowLast bool,
+) error {
+	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
+		if !allowLast {
+			count, err := tx.Count(ctx, CountQuery{
+				Model: ModelAccount, Where: []Where{Eq("userId", userID)},
+			})
+			if err != nil {
+				return err
+			}
+			if count <= 1 {
+				return ErrConflict
+			}
+		}
+		row, err := tx.FindOne(ctx, FindOneQuery{
+			Model:  ModelAccount,
+			Where:  []Where{Eq("id", accountRecordID), Eq("userId", userID)},
+			Select: []string{"id"},
+		})
+		if err != nil {
+			return err
+		}
+		if row == nil {
+			return ErrNotFound
+		}
+		return tx.Delete(ctx, DeleteQuery{Model: ModelAccount, Where: []Where{
+			Eq("id", accountRecordID), Eq("userId", userID),
+		}})
+	})
+}
+
 func (s *databaseStore) DeleteUser(ctx context.Context, userID string) error {
 	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
 		if _, err := tx.DeleteMany(ctx, DeleteQuery{
@@ -357,9 +390,8 @@ func (s *databaseStore) LinkOAuthAccount(
 	now time.Time,
 ) error {
 	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
-		existing, err := tx.FindOne(ctx, FindOneQuery{Model: ModelAccount, Where: []Where{
-			Eq("providerId", profile.Provider), Eq("accountId", profile.ProviderAccountID),
-		}})
+		existing, err := tx.FindOne(ctx, FindOneQuery{Model: ModelAccount,
+			Where: accountIdentityWhere(profile.Issuer, profile.ProviderAccountID)})
 		if err != nil && !errors.Is(err, ErrNotFound) {
 			return err
 		}
@@ -375,6 +407,7 @@ func (s *databaseStore) LinkOAuthAccount(
 			if err != nil {
 				return err
 			}
+			tokens.Scope = mergeOAuthScopes(optionalString(existing["scope"]), tokens.Scope)
 			_, err = tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
 				Eq("id", id), Eq("userId", userID),
 			}, Update: Record{
@@ -388,7 +421,7 @@ func (s *databaseStore) LinkOAuthAccount(
 		}
 		_, err = tx.Create(ctx, CreateQuery{Model: ModelAccount, ForceAllowID: true, Data: Record{
 			"id": accountID, "userId": userID, "providerId": profile.Provider,
-			"accountId":   profile.ProviderAccountID,
+			"issuer": profile.Issuer, "accountId": profile.ProviderAccountID,
 			"accessToken": tokens.AccessToken, "refreshToken": tokens.RefreshToken,
 			"idToken": tokens.IDToken, "scope": tokens.Scope,
 			"accessTokenExpiresAt":  nullableTimeValue(tokens.AccessTokenExpiresAt),
@@ -410,6 +443,35 @@ func (s *databaseStore) OAuthAccountTokens(
 		where = append(where, Eq("accountId", accountID))
 	}
 	row, err := s.db.FindOne(ctx, FindOneQuery{Model: ModelAccount, Where: where})
+	if err != nil {
+		return StoredOAuthAccount{}, err
+	}
+	if row == nil {
+		return StoredOAuthAccount{}, ErrNotFound
+	}
+	account, err := accountFromRecord(row)
+	if err != nil {
+		return StoredOAuthAccount{}, err
+	}
+	return StoredOAuthAccount{Account: account, Tokens: ProviderTokens{
+		AccessToken:           optionalString(row["accessToken"]),
+		RefreshToken:          optionalString(row["refreshToken"]),
+		IDToken:               optionalString(row["idToken"]),
+		Scope:                 optionalString(row["scope"]),
+		AccessTokenExpiresAt:  optionalTime(row["accessTokenExpiresAt"]),
+		RefreshTokenExpiresAt: optionalTime(row["refreshTokenExpiresAt"]),
+	}}, nil
+}
+
+func (s *databaseStore) OAuthAccountTokensByID(
+	ctx context.Context,
+	userID string,
+	accountRecordID string,
+) (StoredOAuthAccount, error) {
+	row, err := s.db.FindOne(ctx, FindOneQuery{
+		Model: ModelAccount,
+		Where: []Where{Eq("id", accountRecordID), Eq("userId", userID)},
+	})
 	if err != nil {
 		return StoredOAuthAccount{}, err
 	}
@@ -657,9 +719,9 @@ func (s *databaseStore) ConsumePasswordReset(
 		if userID == "" {
 			return ErrReplay
 		}
-		account, err := tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
-			Eq("providerId", credentialProvider), Eq("accountId", userID), Eq("userId", userID),
-		}, Update: Record{"password": passwordHash, "updatedAt": now}})
+		where := append(credentialIdentityWhere(userID), Eq("userId", userID))
+		account, err := tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: where,
+			Update: Record{"password": passwordHash, "updatedAt": now}})
 		if err != nil {
 			return err
 		}
@@ -667,8 +729,9 @@ func (s *databaseStore) ConsumePasswordReset(
 			if _, err = tx.Create(ctx, CreateQuery{
 				Model: ModelAccount, ForceAllowID: true, Data: Record{
 					"id": userID + ":credential", "userId": userID,
-					"providerId": credentialProvider, "accountId": userID,
-					"password": passwordHash, "createdAt": now, "updatedAt": now,
+					"providerId": credentialProvider, "issuer": CredentialAccountIssuer,
+					"accountId": userID,
+					"password":  passwordHash, "createdAt": now, "updatedAt": now,
 				},
 			}); err != nil {
 				return err
@@ -761,9 +824,8 @@ func (s *databaseStore) UpsertOAuthUser(
 	var createdSession Session
 	isNew := false
 	err := s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
-		account, err := tx.FindOne(ctx, FindOneQuery{Model: ModelAccount, Where: []Where{
-			Eq("providerId", profile.Provider), Eq("accountId", profile.ProviderAccountID),
-		}})
+		account, err := tx.FindOne(ctx, FindOneQuery{Model: ModelAccount,
+			Where: accountIdentityWhere(profile.Issuer, profile.ProviderAccountID)})
 		if err != nil && !errors.Is(err, ErrNotFound) {
 			return err
 		}
@@ -781,6 +843,7 @@ func (s *databaseStore) UpsertOAuthUser(
 				return err
 			}
 			if policy.UpdateAccountOnSignIn {
+				tokens.Scope = mergeOAuthScopes(optionalString(account["scope"]), tokens.Scope)
 				accountID, err := recordString(account, "id")
 				if err != nil {
 					return err
@@ -843,7 +906,7 @@ func (s *databaseStore) UpsertOAuthUser(
 			accountID := event.ID + ":account"
 			_, err = tx.Create(ctx, CreateQuery{Model: ModelAccount, ForceAllowID: true, Data: Record{
 				"id": accountID, "userId": user.ID, "providerId": profile.Provider,
-				"accountId":   profile.ProviderAccountID,
+				"issuer": profile.Issuer, "accountId": profile.ProviderAccountID,
 				"accessToken": tokens.AccessToken, "refreshToken": tokens.RefreshToken, "idToken": tokens.IDToken,
 				"scope": tokens.Scope, "accessTokenExpiresAt": nullableTimeValue(tokens.AccessTokenExpiresAt),
 				"refreshTokenExpiresAt": nullableTimeValue(tokens.RefreshTokenExpiresAt),
@@ -1025,6 +1088,10 @@ func accountFromRecord(row Record) (OAuthAccount, error) {
 	if err != nil {
 		return OAuthAccount{}, err
 	}
+	issuer, err := recordString(row, "issuer")
+	if err != nil {
+		return OAuthAccount{}, err
+	}
 	accountID, err := recordString(row, "accountId")
 	if err != nil {
 		return OAuthAccount{}, err
@@ -1038,7 +1105,7 @@ func accountFromRecord(row Record) (OAuthAccount, error) {
 		return OAuthAccount{}, err
 	}
 	return OAuthAccount{
-		ID: id, UserID: userID, Provider: providerID, ProviderAccountID: accountID,
+		ID: id, UserID: userID, Provider: providerID, Issuer: issuer, ProviderAccountID: accountID,
 		Scope: optionalString(row["scope"]), CreatedAt: createdAt, UpdatedAt: updatedAt,
 	}, nil
 }

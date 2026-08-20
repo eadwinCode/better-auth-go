@@ -500,7 +500,7 @@ func TestPluginValidationFailsClosed(t *testing.T) {
 	}
 }
 
-func TestDatabaseAfterHookFailureRollsBackCoreTransaction(t *testing.T) {
+func TestDatabaseAfterHookFailureIsReportedAfterCommit(t *testing.T) {
 	t.Parallel()
 	database := memory.New()
 	plugin := betterauth.Plugin{
@@ -524,8 +524,47 @@ func TestDatabaseAfterHookFailureRollsBackCoreTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record != nil {
-		t.Fatalf("failed transaction persisted a user: %#v", record)
+	if record == nil {
+		t.Fatal("after-hook failure incorrectly claimed to roll back a committed user")
+	}
+}
+
+func TestDatabaseAfterHooksAreDiscardedOnRollback(t *testing.T) {
+	t.Parallel()
+	database := memory.New()
+	var after atomic.Int64
+	plugin := betterauth.Plugin{
+		ID: "commit-boundary",
+		DatabaseHooks: []betterauth.DatabaseHook{
+			{
+				Model:      betterauth.ModelUser,
+				Operations: []betterauth.DatabaseOperation{betterauth.DatabaseCreate},
+				After: func(context.Context, *betterauth.DatabaseHookContext) error {
+					after.Add(1)
+					return nil
+				},
+			},
+			{
+				Model:      betterauth.ModelAccount,
+				Operations: []betterauth.DatabaseOperation{betterauth.DatabaseCreate},
+				Before: func(context.Context, *betterauth.DatabaseHookContext) error {
+					return errors.New("force transaction rollback")
+				},
+			},
+		},
+	}
+	handler := newPluginServer(t, database, nil, plugin)
+	response := pluginRequest(t, handler, http.MethodPost, "/sign-up/email", "https://app.example.com",
+		`{"email":"commit-boundary@example.com","password":"correct horse battery staple","name":"Rollback"}`)
+	if response.Code != http.StatusInternalServerError || after.Load() != 0 {
+		t.Fatalf("rolled-back after effect executed: status=%d after=%d", response.Code, after.Load())
+	}
+	record, err := database.FindOne(context.Background(), betterauth.FindOneQuery{
+		Model: betterauth.ModelUser,
+		Where: []betterauth.Where{betterauth.Eq("email", "commit-boundary@example.com")},
+	})
+	if err != nil || record != nil {
+		t.Fatalf("rollback persisted user: %#v, %v", record, err)
 	}
 }
 

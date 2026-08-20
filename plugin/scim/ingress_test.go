@@ -77,14 +77,3 @@ func TestSCIMStringBooleanNormalizationIsExact(t *testing.T) {
 		}
 	}
 }
-
-func TestSCIMAccountProviderNamespaceUsesConnectionID(t *testing.T) {
-	t.Parallel()
-	first := ProviderConnection{ID: "connection-a", ProviderID: "shared"}
-	second := ProviderConnection{ID: "connection-b", ProviderID: "shared"}
-	if scimAccountProviderID(first) != "scim:connection-a" ||
-		scimAccountProviderID(first) == scimAccountProviderID(second) ||
-		scimAccountProviderID(first) == first.ProviderID {
-		t.Fatal("SCIM account provider namespace is not connection-scoped")
-	}
-}

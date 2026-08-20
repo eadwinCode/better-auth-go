@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// SupportedProviders is the Better Auth v1.6 built-in provider catalog.
+// SupportedProviders is the Better Auth v1.7 built-in provider catalog.
 var SupportedProviders = []string{
 	"apple", "atlassian", "cognito", "discord", "dropbox", "facebook", "figma",
 	"github", "gitlab", "google", "huggingface", "kakao", "kick", "line",
@@ -143,7 +143,8 @@ func providerPreset(id string, options Options) (preset, error) {
 		value.jwksURL = authority + "/" + url.PathEscape(tenant) + "/discovery/v2.0/keys"
 		value.issuers = []string{authority + "/" + tenant + "/v2.0"}
 		value.defaultScopes = []string{"openid", "profile", "email", "User.Read", "offline_access"}
-		value.oidc = tenant != "common" && tenant != "organizations" && tenant != "consumers"
+		value.oidc = true
+		value.claimsValidator = microsoftClaimsValidator(authority, tenant)
 	case "naver":
 		value.authorizationURL = "https://nid.naver.com/oauth2.0/authorize"
 		value.tokenURL = "https://nid.naver.com/oauth2.0/token"

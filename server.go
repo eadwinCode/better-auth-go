@@ -217,10 +217,31 @@ func (s *Server) newSession(userID string, duration time.Duration) (Session, str
 }
 
 func (s *Server) issuePluginSession(r *http.Request, userID string) (*IssuedSession, error) {
+	return s.issuePluginSessionUsing(r, s.cfg.Database, userID, true)
+}
+
+func (s *Server) issuePluginSessionWithDatabase(
+	r *http.Request,
+	database DatabaseAdapter,
+	userID string,
+) (*IssuedSession, error) {
+	if database == nil {
+		return nil, errors.New("betterauth: session transaction adapter is nil")
+	}
+	return s.issuePluginSessionUsing(r, database, userID, false)
+}
+
+func (s *Server) issuePluginSessionUsing(
+	r *http.Request,
+	database DatabaseAdapter,
+	userID string,
+	rotateCurrent bool,
+) (*IssuedSession, error) {
 	if userID == "" {
 		return nil, publicError(CodeUnauthorized, "Authentication required.", http.StatusUnauthorized, nil)
 	}
-	user, err := s.store.FindUserByID(r.Context(), userID)
+	store := newDatabaseStore(database)
+	user, err := store.FindUserByID(r.Context(), userID)
 	if err != nil || user.DisabledAt != nil {
 		return nil, publicError(CodeUnauthorized, "Authentication required.", http.StatusUnauthorized, err)
 	}
@@ -232,10 +253,15 @@ func (s *Server) issuePluginSession(r *http.Request, userID string) (*IssuedSess
 	if err != nil {
 		return nil, err
 	}
-	if _, _, currentRaw, currentErr := s.sessionFromRequest(r.Context(), r); currentErr == nil {
-		replacement, err = s.store.RotateSession(r.Context(), HashToken(currentRaw), replacement)
+	if rotateCurrent {
+		_, _, currentRaw, currentErr := s.sessionFromRequest(r.Context(), r)
+		if currentErr == nil {
+			replacement, err = store.RotateSession(r.Context(), HashToken(currentRaw), replacement)
+		} else {
+			replacement, err = store.CreateSession(r.Context(), replacement)
+		}
 	} else {
-		replacement, err = s.store.CreateSession(r.Context(), replacement)
+		replacement, err = store.CreateSession(r.Context(), replacement)
 	}
 	if err != nil {
 		return nil, publicError(

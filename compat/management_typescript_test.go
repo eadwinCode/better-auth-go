@@ -129,7 +129,7 @@ func assertCode(
 	}
 }
 
-func TestBetterAuthV1626EmailChangeAndDeletionCompatibility(t *testing.T) {
+func TestBetterAuthV170EmailChangeAndDeletionCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	oracle.clearMail(t)
 	goClient, goMailer := managementCompatibilityServer(t)
@@ -289,7 +289,7 @@ func TestBetterAuthV1626EmailChangeAndDeletionCompatibility(t *testing.T) {
 	}
 }
 
-func TestBetterAuthV1626VerifiedDeletionCompatibility(t *testing.T) {
+func TestBetterAuthV170VerifiedDeletionCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t).deletionVerificationClone(t)
 	oracle.clearMail(t)
 	const (
@@ -506,7 +506,7 @@ func linkCompatibilityProvider(
 	}
 }
 
-func TestBetterAuthV1626AccountAndProviderTokenCompatibility(t *testing.T) {
+func TestBetterAuthV170AccountAndProviderTokenCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	goClient, _ := managementCompatibilityServer(t)
 	email := uniqueCompatibilityEmail("account")
@@ -516,19 +516,20 @@ func TestBetterAuthV1626AccountAndProviderTokenCompatibility(t *testing.T) {
 	assertCode(
 		t,
 		http.StatusBadRequest,
-		"PROVIDER_NOT_SUPPORTED",
-		"Provider missing is not supported.",
+		"ACCOUNT_NOT_FOUND",
+		"Account not found",
 		map[string]oracleResponse{
 			"Go": goResponse(goClient.request(t, http.MethodPost, "/get-access-token", map[string]any{
-				"providerId": "missing",
+				"accountId": "missing",
 			}, true)),
 			"TypeScript": oracle.request(t, http.MethodPost, "/get-access-token", map[string]any{
-				"providerId": "missing",
+				"accountId": "missing",
 			}, ""),
 		},
 	)
 	linkCompatibilityProvider(t, goClient, oracle)
 
+	accountIDs := make(map[string]string, 2)
 	for implementation, result := range map[string]oracleResponse{
 		"Go":         goResponse(goClient.request(t, http.MethodGet, "/list-accounts", nil, false)),
 		"TypeScript": oracle.request(t, http.MethodGet, "/list-accounts", nil, ""),
@@ -542,7 +543,13 @@ func TestBetterAuthV1626AccountAndProviderTokenCompatibility(t *testing.T) {
 		}
 		providers := map[string]bool{}
 		for _, account := range accounts {
-			providers[account["providerId"].(string)] = true
+			providerID := account["providerId"].(string)
+			providers[providerID] = true
+			if providerID == "test" {
+				accountIDs[implementation], _ = account["id"].(string)
+			} else if providerID == "credential" {
+				accountIDs[implementation+":credential"], _ = account["id"].(string)
+			}
 		}
 		if !providers["credential"] || !providers["test"] {
 			t.Fatalf("%s provider set mismatch: %#v", implementation, accounts)
@@ -551,10 +558,10 @@ func TestBetterAuthV1626AccountAndProviderTokenCompatibility(t *testing.T) {
 
 	for implementation, result := range map[string]oracleResponse{
 		"Go": goResponse(goClient.request(t, http.MethodPost, "/get-access-token", map[string]any{
-			"providerId": "test",
+			"accountId": accountIDs["Go"],
 		}, true)),
 		"TypeScript": oracle.request(t, http.MethodPost, "/get-access-token", map[string]any{
-			"providerId": "test",
+			"accountId": accountIDs["TypeScript"],
 		}, ""),
 	} {
 		if result.status != http.StatusOK {
@@ -575,10 +582,10 @@ func TestBetterAuthV1626AccountAndProviderTokenCompatibility(t *testing.T) {
 
 	refreshResults := map[string]oracleResponse{
 		"Go": goResponse(goClient.request(t, http.MethodPost, "/refresh-token", map[string]any{
-			"providerId": "test",
+			"accountId": accountIDs["Go"],
 		}, true)),
 		"TypeScript": oracle.request(t, http.MethodPost, "/refresh-token", map[string]any{
-			"providerId": "test",
+			"accountId": accountIDs["TypeScript"],
 		}, ""),
 	}
 	for implementation, result := range refreshResults {
@@ -605,19 +612,19 @@ func TestBetterAuthV1626AccountAndProviderTokenCompatibility(t *testing.T) {
 		"Account not found",
 		map[string]oracleResponse{
 			"Go": goResponse(goClient.request(t, http.MethodPost, "/unlink-account", map[string]any{
-				"providerId": "missing",
+				"accountId": "missing",
 			}, true)),
 			"TypeScript": oracle.request(t, http.MethodPost, "/unlink-account", map[string]any{
-				"providerId": "missing",
+				"accountId": "missing",
 			}, ""),
 		},
 	)
 	for implementation, result := range map[string]oracleResponse{
 		"Go": goResponse(goClient.request(t, http.MethodPost, "/unlink-account", map[string]any{
-			"providerId": "test",
+			"accountId": accountIDs["Go"],
 		}, true)),
 		"TypeScript": oracle.request(t, http.MethodPost, "/unlink-account", map[string]any{
-			"providerId": "test",
+			"accountId": accountIDs["TypeScript"],
 		}, ""),
 	} {
 		assertStatusTrue(t, implementation, result)
@@ -629,10 +636,10 @@ func TestBetterAuthV1626AccountAndProviderTokenCompatibility(t *testing.T) {
 		"Account not found",
 		map[string]oracleResponse{
 			"Go": goResponse(goClient.request(t, http.MethodPost, "/get-access-token", map[string]any{
-				"providerId": "test",
+				"accountId": accountIDs["Go"],
 			}, true)),
 			"TypeScript": oracle.request(t, http.MethodPost, "/get-access-token", map[string]any{
-				"providerId": "test",
+				"accountId": accountIDs["TypeScript"],
 			}, ""),
 		},
 	)
@@ -644,16 +651,16 @@ func TestBetterAuthV1626AccountAndProviderTokenCompatibility(t *testing.T) {
 		"You can't unlink your last account",
 		map[string]oracleResponse{
 			"Go": goResponse(goClient.request(t, http.MethodPost, "/unlink-account", map[string]any{
-				"providerId": "credential",
+				"accountId": accountIDs["Go:credential"],
 			}, true)),
 			"TypeScript": oracle.request(t, http.MethodPost, "/unlink-account", map[string]any{
-				"providerId": "credential",
+				"accountId": accountIDs["TypeScript:credential"],
 			}, ""),
 		},
 	)
 }
 
-func TestBetterAuthV1626ImpersonationCompatibility(t *testing.T) {
+func TestBetterAuthV170ImpersonationCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	tsTarget := oracle.clone(t)
 	goAdmin, _ := managementCompatibilityServer(t)
@@ -761,7 +768,7 @@ func TestBetterAuthV1626ImpersonationCompatibility(t *testing.T) {
 	}
 }
 
-func TestBetterAuthV1626AllowImpersonatingAdminsCompatibility(t *testing.T) {
+func TestBetterAuthV170AllowImpersonatingAdminsCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t).adminImpersonationClone(t)
 	tsTarget := oracle.clone(t)
 	goAdmin, _ := managementCompatibilityServerConfig(t, func(config *betterauth.Config) {
