@@ -9,6 +9,7 @@ import (
 	betterauth "github.com/eadwinCode/better-auth-go"
 	"github.com/eadwinCode/better-auth-go/adapter/mongodb"
 	"github.com/eadwinCode/better-auth-go/adaptertest"
+	v17 "github.com/eadwinCode/better-auth-go/migration/v17"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -32,6 +33,9 @@ func TestConformance(t *testing.T) {
 	t.Cleanup(func() { _ = client.Database(databaseName).Drop(context.Background()) })
 	adapter, err := mongodb.New(mongodb.Config{Database: client.Database(databaseName)})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.EnsureIndexes(t.Context(), betterauth.CoreSchema()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,6 +71,13 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 		t.Fatal(err)
 	}
 	adaptertest.SeedReleaseBaseline(t, legacyDatabase)
+	stagingDatabase, err := betterauth.WrapDatabaseAdapter(adapter, v17.StagingSchema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = v17.Backfill(t.Context(), stagingDatabase, v17.Options{}); err != nil {
+		t.Fatalf("backfill account issuer: %v", err)
+	}
 	current := betterauth.CoreSchema()
 	if err := adapter.EnsureIndexes(t.Context(), current); err != nil {
 		t.Fatalf("upgrade current indexes: %v", err)

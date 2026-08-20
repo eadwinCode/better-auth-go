@@ -189,6 +189,7 @@ func (instance *runtime) samlCallback(
 	if err != nil || !domainAllowed(provider.Domain, emailDomain(userInfo.Email)) {
 		return nil, providerFailure(errors.New("sso: SAML identity domain mismatch"))
 	}
+	userInfo.Issuer = provider.SAML.Issuer
 	return instance.completeIdentityWithState(
 		ctx, provider, userInfo, nil, betterauth.ProviderTokens{}, state,
 	)
@@ -281,10 +282,7 @@ func samlUserInfo(assertion *saml.Assertion, mapping SAMLMapping) (UserInfo, err
 	if assertion.Subject != nil && assertion.Subject.NameID != nil {
 		nameID = assertion.Subject.NameID.Value
 	}
-	id := firstAttribute(attributes, mapping.ID, "id", "uid")
-	if id == "" {
-		id = nameID
-	}
+	id := strings.TrimSpace(nameID)
 	email := firstAttribute(
 		attributes, mapping.Email, "email", "mail",
 		"http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",

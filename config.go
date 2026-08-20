@@ -142,11 +142,14 @@ type Config struct {
 	MaxRequestBytes         int64
 	MinPasswordBytes        int
 	MaxPasswordBytes        int
-	TrustProxyHeaders       bool
-	Plugins                 []Plugin
-	Hooks                   ServerHooks
-	BackgroundTasks         BackgroundTaskRunner
-	MaxResponseBytes        int64
+	// TrustProxyHeaders permits X-Forwarded-For only for rate-limit/audit IP
+	// attribution. PublicURL, callback URLs, cookies, and origin authority are
+	// always derived from explicit configuration, never forwarded host/proto.
+	TrustProxyHeaders bool
+	Plugins           []Plugin
+	Hooks             ServerHooks
+	BackgroundTasks   BackgroundTaskRunner
+	MaxResponseBytes  int64
 }
 
 type systemClock struct{}

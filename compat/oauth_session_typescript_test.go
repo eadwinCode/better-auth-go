@@ -80,7 +80,7 @@ func assertOAuthRedirect(
 	}
 }
 
-func TestBetterAuthV1625OAuthCallbackErrorReplayAndRedirectCompatibility(t *testing.T) {
+func TestBetterAuthV170OAuthCallbackErrorReplayAndRedirectCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	goClient, _ := managementCompatibilityServer(t)
 
@@ -104,11 +104,10 @@ func TestBetterAuthV1625OAuthCallbackErrorReplayAndRedirectCompatibility(t *test
 	goError := goResponse(goClient.request(t, http.MethodGet, goErrorPath, nil, false))
 	tsError := oracle.request(t, http.MethodGet, tsErrorPath, nil, "")
 	assertOAuthRedirect(t, "Go", goError, "https://app.example.com/oauth-error", "access_denied")
-	// Better Auth v1.6.25 generic OAuth handles provider errors before parsing
-	// state. It therefore uses the global error URL and reflects the provider
-	// description. Go deliberately keeps the stronger state-bound,
-	// description-free contract from ADR 0016.
-	assertOAuthRedirect(t, "TypeScript", tsError, oracle.origin+"/api/auth/error", "access_denied")
+	// Better Auth v1.7 binds provider errors to the state-selected error URL,
+	// while still reflecting the provider description. Go deliberately keeps
+	// the description-free contract from ADR 0016.
+	assertOAuthRedirect(t, "TypeScript", tsError, oracle.origin+"/oauth-error", "access_denied")
 	if strings.Contains(goError.header.Get("Location"), "do-not-reflect") ||
 		strings.Contains(string(goError.body), "do-not-reflect") {
 		t.Fatal("Go reflected an untrusted provider error description")
@@ -155,7 +154,7 @@ func TestBetterAuthV1625OAuthCallbackErrorReplayAndRedirectCompatibility(t *test
 	assertOAuthRedirect(t, "TypeScript", tsReturning, oracle.origin+"/oauth-success", "")
 }
 
-func TestBetterAuthV1625OAuthAccountCollisionCompatibility(t *testing.T) {
+func TestBetterAuthV170OAuthAccountCollisionCompatibility(t *testing.T) {
 	oracleA := newTypeScriptOracle(t)
 	oracleB := oracleA.clone(t)
 	goA, _ := managementCompatibilityServer(t)
@@ -209,7 +208,7 @@ func TestBetterAuthV1625OAuthAccountCollisionCompatibility(t *testing.T) {
 	)
 }
 
-func TestBetterAuthV1625SessionAndSignOutClosureCompatibility(t *testing.T) {
+func TestBetterAuthV170SessionAndSignOutClosureCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	goClient, _ := newBlackBoxServer(t)
 	for implementation, response := range map[string]oracleResponse{

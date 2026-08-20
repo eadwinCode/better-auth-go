@@ -35,7 +35,6 @@ type DNSResolver interface {
 }
 
 type OIDCMapping struct {
-	ID            string            `json:"id,omitempty"`
 	Email         string            `json:"email,omitempty"`
 	EmailVerified string            `json:"emailVerified,omitempty"`
 	Name          string            `json:"name,omitempty"`
@@ -61,7 +60,6 @@ type OIDCConfig struct {
 }
 
 type SAMLMapping struct {
-	ID            string            `json:"id,omitempty"`
 	Email         string            `json:"email,omitempty"`
 	EmailVerified string            `json:"emailVerified,omitempty"`
 	Name          string            `json:"name,omitempty"`
@@ -114,6 +112,7 @@ type Provider struct {
 
 type UserInfo struct {
 	ID            string
+	Issuer        string
 	Email         string
 	EmailVerified bool
 	Name          string

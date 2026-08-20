@@ -33,9 +33,9 @@ func TestNewContributesHashOnlyProviderSchemaAndMetadataEndpoints(t *testing.T) 
 	if !model.Fields["providerId"].Unique || !model.Fields["tokenHash"].Unique {
 		t.Fatal("provider id and token hash must be unique")
 	}
-	accountIndexes := betterauth.CoreSchema()[betterauth.ModelAccount].Indexes
-	if len(accountIndexes) != 1 || !accountIndexes[0].Unique {
-		t.Fatal("core account identities require a unique provider/account index")
+	binding, exists := plugin.Schema[ModelSCIMUser]
+	if !exists || len(binding.Indexes) != 1 || !binding.Indexes[0].Unique {
+		t.Fatal("SCIM directory identities require an isolated compound unique index")
 	}
 	if len(plugin.Endpoints) != 15 {
 		t.Fatalf("SCIM endpoints = %d", len(plugin.Endpoints))

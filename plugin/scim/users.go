@@ -14,7 +14,7 @@ import (
 
 type managedUser struct {
 	User    betterauth.User
-	Account betterauth.OAuthAccount
+	Account userBinding
 }
 
 func (instance *runtime) createUser(
@@ -34,10 +34,10 @@ func (instance *runtime) createUser(
 	email := primaryEmail(input)
 	accountID := externalAccountID(input)
 	existingAccount, accountErr := context.Database.FindOne(context.Context, betterauth.FindOneQuery{
-		Model: betterauth.ModelAccount,
+		Model: ModelSCIMUser,
 		Where: []betterauth.Where{
-			betterauth.Eq("providerId", connection.ProviderID),
-			betterauth.Eq("accountId", accountID),
+			betterauth.Eq("connectionId", connection.ProviderID),
+			betterauth.Eq("externalId", accountID),
 		},
 	})
 	if existingAccount != nil {
@@ -84,9 +84,9 @@ func (instance *runtime) createUser(
 	if err != nil {
 		return scimInternal()
 	}
-	account := betterauth.OAuthAccount{
+	account := userBinding{
 		ID: accountIDValue, UserID: user.ID, Provider: connection.ProviderID,
-		ProviderAccountID: accountID, CreatedAt: now, UpdatedAt: now,
+		ProviderAccountID: accountID, OwnsUser: !existing, CreatedAt: now, UpdatedAt: now,
 	}
 	if instance.config.Hooks.BeforeUserCreate != nil {
 		if err = instance.config.Hooks.BeforeUserCreate(context, user, connection); err != nil {
@@ -102,7 +102,7 @@ func (instance *runtime) createUser(
 			}
 		}
 		if _, createErr := tx.Create(context.Context, betterauth.CreateQuery{
-			Model: betterauth.ModelAccount, ForceAllowID: true, Data: scimAccountRecord(account),
+			Model: ModelSCIMUser, ForceAllowID: true, Data: scimAccountRecord(account),
 		}); createErr != nil {
 			return createErr
 		}
@@ -128,7 +128,7 @@ func (instance *runtime) createUser(
 		}
 		return writeAudit(context, tx, "scim.user.created", protocolActor(connection), user.ID,
 			map[string]string{
-				"providerId": connection.ProviderID, "organizationId": connection.OrganizationID,
+				"connectionId": connection.ProviderID, "organizationId": connection.OrganizationID,
 				"linkedExisting": strconv.FormatBool(existing),
 			})
 	})
@@ -187,8 +187,8 @@ func (instance *runtime) listUsers(
 		}
 	} else {
 		totalCount, countErr := context.Database.Count(context.Context, betterauth.CountQuery{
-			Model: betterauth.ModelAccount,
-			Where: []betterauth.Where{betterauth.Eq("providerId", connection.ProviderID)},
+			Model: ModelSCIMUser,
+			Where: []betterauth.Where{betterauth.Eq("connectionId", connection.ProviderID)},
 		})
 		if countErr != nil {
 			return scimInternal()
@@ -196,8 +196,8 @@ func (instance *runtime) listUsers(
 		total = int(totalCount)
 		if count > 0 && start <= total {
 			accounts, findErr := context.Database.FindMany(context.Context, betterauth.FindManyQuery{
-				Model: betterauth.ModelAccount,
-				Where: []betterauth.Where{betterauth.Eq("providerId", connection.ProviderID)},
+				Model: ModelSCIMUser,
+				Where: []betterauth.Where{betterauth.Eq("connectionId", connection.ProviderID)},
 				Limit: count, Offset: start - 1,
 				Sort: &betterauth.Sort{Field: "createdAt", Direction: "asc"},
 			})
@@ -244,13 +244,13 @@ func (instance *runtime) findFilteredUser(
 	filters []Filter,
 ) (managedUser, bool, error) {
 	var userWhere []betterauth.Where
-	accountWhere := []betterauth.Where{betterauth.Eq("providerId", connection.ProviderID)}
+	accountWhere := []betterauth.Where{betterauth.Eq("connectionId", connection.ProviderID)}
 	for _, filter := range filters {
 		switch filter.Field {
 		case "id", "email":
 			userWhere = append(userWhere, betterauth.Eq(filter.Field, filter.Value))
 		case "accountId":
-			accountWhere = append(accountWhere, betterauth.Eq("accountId", filter.Value))
+			accountWhere = append(accountWhere, betterauth.Eq("externalId", filter.Value))
 		default:
 			return managedUser{}, false, errors.New("scim: unsafe filter field")
 		}
@@ -267,14 +267,14 @@ func (instance *runtime) findFilteredUser(
 		userID, _ := userRow["id"].(string)
 		accountWhere = append(accountWhere, betterauth.Eq("userId", userID))
 		accountRow, err = context.Database.FindOne(context.Context, betterauth.FindOneQuery{
-			Model: betterauth.ModelAccount, Where: accountWhere,
+			Model: ModelSCIMUser, Where: accountWhere,
 		})
 		if err != nil || accountRow == nil {
 			return managedUser{}, false, normalizeFindError(err)
 		}
 	} else {
 		accountRow, err = context.Database.FindOne(context.Context, betterauth.FindOneQuery{
-			Model: betterauth.ModelAccount, Where: accountWhere,
+			Model: ModelSCIMUser, Where: accountWhere,
 		})
 		if err != nil || accountRow == nil {
 			return managedUser{}, false, normalizeFindError(err)
@@ -404,10 +404,10 @@ func (instance *runtime) updateUser(
 	}
 	if accountID != managed.Account.ProviderAccountID {
 		row, findErr := context.Database.FindOne(context.Context, betterauth.FindOneQuery{
-			Model: betterauth.ModelAccount,
+			Model: ModelSCIMUser,
 			Where: []betterauth.Where{
-				betterauth.Eq("providerId", connection.ProviderID),
-				betterauth.Eq("accountId", accountID),
+				betterauth.Eq("connectionId", connection.ProviderID),
+				betterauth.Eq("externalId", accountID),
 			},
 		})
 		if findErr == nil && row != nil {
@@ -457,13 +457,17 @@ func (instance *runtime) updateUser(
 			return updateErr
 		}
 		if _, updateErr := tx.Update(context.Context, betterauth.UpdateQuery{
-			Model: betterauth.ModelAccount,
+			Model: ModelSCIMUser,
 			Where: []betterauth.Where{
 				betterauth.Eq("id", updatedAccount.ID),
-				betterauth.Eq("providerId", connection.ProviderID),
+				betterauth.Eq("connectionId", connection.ProviderID),
 			},
 			Update: betterauth.Record{
-				"accountId": updatedAccount.ProviderAccountID, "updatedAt": updatedAccount.UpdatedAt,
+				"externalId": updatedAccount.ProviderAccountID,
+				"connectionUserKey": scimConnectionUserKey(
+					connection.ProviderID, updatedAccount.ProviderAccountID,
+				),
+				"updatedAt": updatedAccount.UpdatedAt,
 			},
 		}); updateErr != nil {
 			return updateErr
@@ -487,7 +491,7 @@ func (instance *runtime) updateUser(
 			action = "scim.user.deactivated"
 		}
 		return writeAudit(context, tx, action, protocolActor(connection), updated.ID,
-			map[string]string{"providerId": connection.ProviderID})
+			map[string]string{"connectionId": connection.ProviderID})
 	})
 	if err != nil {
 		if errors.Is(err, betterauth.ErrConflict) {
@@ -532,25 +536,36 @@ func (instance *runtime) deleteUser(
 				return err
 			}
 			if err := tx.Delete(context.Context, betterauth.DeleteQuery{
-				Model: betterauth.ModelAccount,
+				Model: ModelSCIMUser,
 				Where: []betterauth.Where{
 					betterauth.Eq("id", managed.Account.ID),
-					betterauth.Eq("providerId", connection.ProviderID),
+					betterauth.Eq("connectionId", connection.ProviderID),
 				},
 			}); err != nil {
 				return err
 			}
 		} else {
-			accountCount, countErr := tx.Count(context.Context, betterauth.CountQuery{
-				Model: betterauth.ModelAccount,
+			bindingCount, countErr := tx.Count(context.Context, betterauth.CountQuery{
+				Model: ModelSCIMUser,
 				Where: []betterauth.Where{betterauth.Eq("userId", managed.User.ID)},
 			})
 			if countErr != nil {
 				return countErr
 			}
-			if accountCount > 1 {
-				if err := tx.Delete(context.Context, betterauth.DeleteQuery{
+			deleteGlobalUser := false
+			if managed.Account.OwnsUser && bindingCount == 1 {
+				authAccountCount, accountErr := tx.Count(context.Context, betterauth.CountQuery{
 					Model: betterauth.ModelAccount,
+					Where: []betterauth.Where{betterauth.Eq("userId", managed.User.ID)},
+				})
+				if accountErr != nil {
+					return accountErr
+				}
+				deleteGlobalUser = authAccountCount == 0
+			}
+			if !deleteGlobalUser {
+				if err := tx.Delete(context.Context, betterauth.DeleteQuery{
+					Model: ModelSCIMUser,
 					Where: []betterauth.Where{betterauth.Eq("id", managed.Account.ID)},
 				}); err != nil {
 					return err
@@ -563,7 +578,7 @@ func (instance *runtime) deleteUser(
 					return err
 				}
 				if _, err := tx.DeleteMany(context.Context, betterauth.DeleteQuery{
-					Model: betterauth.ModelAccount,
+					Model: ModelSCIMUser,
 					Where: []betterauth.Where{betterauth.Eq("userId", managed.User.ID)},
 				}); err != nil {
 					return err
@@ -579,7 +594,7 @@ func (instance *runtime) deleteUser(
 		return writeAudit(context, tx, "scim.user.deprovisioned",
 			protocolActor(connection), managed.User.ID,
 			map[string]string{
-				"providerId": connection.ProviderID, "organizationId": connection.OrganizationID,
+				"connectionId": connection.ProviderID, "organizationId": connection.OrganizationID,
 			})
 	})
 	if err != nil {
@@ -604,9 +619,9 @@ func (instance *runtime) findManagedUser(
 		return managedUser{}, response
 	}
 	accountRow, err := context.Database.FindOne(context.Context, betterauth.FindOneQuery{
-		Model: betterauth.ModelAccount,
+		Model: ModelSCIMUser,
 		Where: []betterauth.Where{
-			betterauth.Eq("userId", userID), betterauth.Eq("providerId", connection.ProviderID),
+			betterauth.Eq("userId", userID), betterauth.Eq("connectionId", connection.ProviderID),
 		},
 	})
 	if err != nil || accountRow == nil {
@@ -718,19 +733,20 @@ func userFromSCIMRecord(row betterauth.Record) (betterauth.User, error) {
 	}, nil
 }
 
-func accountFromSCIMRecord(row betterauth.Record) (betterauth.OAuthAccount, error) {
+func accountFromSCIMRecord(row betterauth.Record) (userBinding, error) {
 	id, idOK := row["id"].(string)
 	userID, userOK := row["userId"].(string)
-	providerID, providerOK := row["providerId"].(string)
-	accountID, accountOK := row["accountId"].(string)
+	providerID, providerOK := row["connectionId"].(string)
+	accountID, accountOK := row["externalId"].(string)
 	created, createdOK := row["createdAt"].(time.Time)
 	updated, updatedOK := row["updatedAt"].(time.Time)
 	if !idOK || !userOK || !providerOK || !accountOK || !createdOK || !updatedOK ||
 		id == "" || userID == "" || providerID == "" || accountID == "" {
-		return betterauth.OAuthAccount{}, errors.New("scim: invalid account record")
+		return userBinding{}, errors.New("scim: invalid user binding record")
 	}
-	return betterauth.OAuthAccount{
+	return userBinding{
 		ID: id, UserID: userID, Provider: providerID, ProviderAccountID: accountID,
+		OwnsUser:  boolOr(row["ownsUser"], false),
 		CreatedAt: created.UTC(), UpdatedAt: updated.UTC(),
 	}, nil
 }
@@ -743,12 +759,19 @@ func scimUserRecord(user betterauth.User) betterauth.Record {
 	}
 }
 
-func scimAccountRecord(account betterauth.OAuthAccount) betterauth.Record {
+func scimAccountRecord(account userBinding) betterauth.Record {
 	return betterauth.Record{
-		"id": account.ID, "userId": account.UserID, "providerId": account.Provider,
-		"accountId": account.ProviderAccountID, "createdAt": account.CreatedAt,
-		"updatedAt": account.UpdatedAt,
+		"id": account.ID, "userId": account.UserID, "connectionId": account.Provider,
+		"externalId":        account.ProviderAccountID,
+		"connectionUserKey": scimConnectionUserKey(account.Provider, account.ProviderAccountID),
+		"ownsUser":          account.OwnsUser,
+		"createdAt":         account.CreatedAt,
+		"updatedAt":         account.UpdatedAt,
 	}
+}
+
+func scimConnectionUserKey(connectionID, externalID string) string {
+	return betterauth.HashToken(connectionID + "\x00" + externalID)
 }
 
 func primaryEmail(input UserInput) string {

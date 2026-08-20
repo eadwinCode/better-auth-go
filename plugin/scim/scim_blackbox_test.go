@@ -330,6 +330,14 @@ func TestSCIMConnectionAndUserLifecycleBlackBox(t *testing.T) {
 	if get.Code != http.StatusOK || !strings.Contains(get.Body.String(), `"active":false`) {
 		t.Fatalf("get = %d: %s", get.Code, get.Body.String())
 	}
+	unsafeConnectionDelete := browser.request(
+		t, http.MethodPost, "/scim/delete-provider-connection",
+		map[string]any{"providerId": "workforce-directory"}, true,
+	)
+	if unsafeConnectionDelete.Code != http.StatusConflict {
+		t.Fatalf("connection with bindings deleted = %d: %s",
+			unsafeConnectionDelete.Code, unsafeConnectionDelete.Body.String())
+	}
 	deleted := protocolRequest(
 		t, server.Handler(), http.MethodDelete, "/scim/v2/Users/"+created.ID,
 		tokenBody.Token, "", nil,
@@ -460,18 +468,115 @@ func TestOrganizationSCIMDeletePreservesGlobalUser(t *testing.T) {
 		t.Fatalf("organization SCIM deleted global user: %v %#v", err, user)
 	}
 	account, err := database.FindOne(context.Background(), betterauth.FindOneQuery{
-		Model: betterauth.ModelAccount,
+		Model: ModelSCIMUser,
 		Where: []betterauth.Where{
-			betterauth.Eq("providerId", "organization-directory"),
+			betterauth.Eq("connectionId", "organization-directory"),
 			betterauth.Eq("userId", resource.ID),
 		},
 	})
 	if err != nil || account != nil {
-		t.Fatalf("organization SCIM account survived delete: %v %#v", err, account)
+		t.Fatalf("organization SCIM binding survived delete: %v %#v", err, account)
 	}
 	member, err := authorizer.IsSCIMMember(nil, "org-1", resource.ID)
 	if err != nil || member {
 		t.Fatalf("organization membership survived delete: %v %v", member, err)
+	}
+}
+
+func TestPersonalSCIMDeletePreservesLinkedAuthenticationUser(t *testing.T) {
+	t.Parallel()
+	secret := strings.Repeat("l", 32)
+	token, err := encodeBearerToken(secret, "linked-directory", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plugin, err := New(Config{
+		DefaultConnections: []DefaultConnection{{
+			ProviderID: "linked-directory", TokenHash: betterauth.HashToken(secret),
+			UserID: "owner",
+		}},
+		LinkExistingUsers: ExistingUserLinkPolicy{
+			Enabled: true, TrustedDomains: []string{"example.com"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	passwords, err := betterauth.NewArgon2idVerifier(betterauth.Argon2Params{
+		Memory: 19 * 1024, Iterations: 2, Parallelism: 1, SaltLength: 16, KeyLength: 32,
+	}, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	database := memory.New()
+	server, err := betterauth.New(betterauth.Config{
+		PublicURL: "https://auth.example.com", TrustedOrigins: []string{"https://app.example.com"},
+		Database: database, Mailer: discardMailer{},
+		ImpersonationAuthorizer: denyImpersonation{}, Passwords: passwords,
+		Plugins: []betterauth.Plugin{plugin},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser := &scimBrowser{handler: server.Handler(), cookies: map[string]*http.Cookie{}}
+	signup := browser.request(t, http.MethodPost, "/sign-up/email", map[string]any{
+		"email": "linked@example.com", "password": "correct horse battery staple",
+		"name": "Linked User",
+	}, false)
+	if signup.Code != http.StatusOK {
+		t.Fatalf("signup = %d: %s", signup.Code, signup.Body.String())
+	}
+	var signupBody struct {
+		User betterauth.User `json:"user"`
+	}
+	if err = json.Unmarshal(signup.Body.Bytes(), &signupBody); err != nil || signupBody.User.ID == "" {
+		t.Fatalf("signup decode: %v %#v", err, signupBody)
+	}
+	create := protocolRequest(
+		t, server.Handler(), http.MethodPost, "/scim/v2/Users",
+		token, "application/scim+json",
+		UserInput{
+			Schemas: []string{SchemaUser}, UserName: "linked@example.com",
+			ExternalID: "linked-1",
+		},
+	)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", create.Code, create.Body.String())
+	}
+	var resource UserResource
+	if err = json.Unmarshal(create.Body.Bytes(), &resource); err != nil {
+		t.Fatal(err)
+	}
+	if resource.ID != signupBody.User.ID {
+		t.Fatalf("SCIM linked user = %q, want %q", resource.ID, signupBody.User.ID)
+	}
+	binding, err := database.FindOne(context.Background(), betterauth.FindOneQuery{
+		Model: ModelSCIMUser,
+		Where: []betterauth.Where{betterauth.Eq("userId", resource.ID)},
+	})
+	if err != nil || boolOr(binding["ownsUser"], true) {
+		t.Fatalf("linked binding claimed user ownership: %v %#v", err, binding)
+	}
+	deleted := protocolRequest(
+		t, server.Handler(), http.MethodDelete, "/scim/v2/Users/"+resource.ID,
+		token, "", nil,
+	)
+	if deleted.Code != http.StatusNoContent {
+		t.Fatalf("delete = %d: %s", deleted.Code, deleted.Body.String())
+	}
+	user, err := database.FindOne(context.Background(), betterauth.FindOneQuery{
+		Model: betterauth.ModelUser,
+		Where: []betterauth.Where{betterauth.Eq("id", resource.ID)},
+	})
+	if err != nil || user == nil {
+		t.Fatalf("SCIM deleted linked global user: %v %#v", err, user)
+	}
+	authAccounts, err := database.Count(context.Background(), betterauth.CountQuery{
+		Model: betterauth.ModelAccount,
+		Where: []betterauth.Where{betterauth.Eq("userId", resource.ID)},
+	})
+	if err != nil || authAccounts != 1 {
+		t.Fatalf("SCIM deleted linked authentication account: %d %v", authAccounts, err)
 	}
 }
 

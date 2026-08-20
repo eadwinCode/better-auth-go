@@ -87,6 +87,7 @@ func CoreSchema() Schema {
 				"id":                    {Type: FieldString, Required: true, Unique: true},
 				"userId":                {Type: FieldString, Required: true, Index: true, References: ModelUser},
 				"providerId":            {Type: FieldString, Required: true},
+				"issuer":                {Type: FieldString, Required: true},
 				"accountId":             {Type: FieldString, Required: true},
 				"password":              {Type: FieldString},
 				"accessToken":           {Type: FieldString},
@@ -99,7 +100,7 @@ func CoreSchema() Schema {
 				"updatedAt":             {Type: FieldDate, Required: true},
 			},
 			Indexes: []IndexSchema{{
-				Name: "uniq_provider_account", Fields: []string{"providerId", "accountId"}, Unique: true,
+				Name: "account_issuer_accountId_uidx", Fields: []string{"issuer", "accountId"}, Unique: true,
 			}},
 		},
 		ModelVerification: {

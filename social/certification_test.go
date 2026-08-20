@@ -246,6 +246,12 @@ func TestGenericOIDCDiscoveryAndIDTokenVerification(t *testing.T) {
 			if r.Form.Get("code_verifier") != "verifier" {
 				t.Errorf("PKCE verifier missing: %v", r.Form)
 			}
+			if r.Form.Get("code") == "missing-id-token" {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"access_token": "access-token", "expires_in": 300,
+				})
+				return
+			}
 			signingKey := activeKey
 			keyID := activeKeyID
 			audience := "client-id"
@@ -318,6 +324,13 @@ func TestGenericOIDCDiscoveryAndIDTokenVerification(t *testing.T) {
 	if result.Profile.Provider != "enterprise-oidc" ||
 		result.Profile.ProviderAccountID != "oidc-user" || !result.Profile.EmailVerified {
 		t.Fatalf("generic OIDC profile: %#v", result.Profile)
+	}
+	_, err = provider.Exchange(
+		context.Background(), "missing-id-token", "verifier", "nonce",
+		"https://auth.example/callback",
+	)
+	if err == nil || !strings.Contains(err.Error(), "no ID token") {
+		t.Fatalf("OIDC response without a verified subject was accepted: %v", err)
 	}
 	if want := now.Add(5 * time.Minute); !result.Tokens.AccessTokenExpiresAt.Equal(want) {
 		t.Fatalf("deterministic token expiry = %v, want %v", result.Tokens.AccessTokenExpiresAt, want)
@@ -422,6 +435,10 @@ func TestGenericOAuthAuthenticationRefreshMapperAndErrorBounds(t *testing.T) {
 						}
 					}
 					if r.Form.Get("grant_type") == "refresh_token" {
+						if r.Form.Get("resource") != "https://api.example.com" ||
+							r.Form.Get("refresh_token") != "refresh" {
+							t.Errorf("refresh token params contract: %v", r.Form)
+						}
 						_ = json.NewEncoder(w).Encode(map[string]any{
 							"access_token": "refreshed", "refresh_token": "next-refresh",
 							"scope": "openid", "expires_in": 60,
@@ -450,6 +467,10 @@ func TestGenericOAuthAuthenticationRefreshMapperAndErrorBounds(t *testing.T) {
 				UserInfoURL: server.URL + "/userinfo", HTTPClient: server.Client(),
 				Scopes:              []string{"profile", "email", "profile"},
 				AuthorizationParams: map[string]string{"prompt": "consent"},
+				RefreshTokenParams: map[string]string{
+					"resource": "https://api.example.com", "refresh_token": "attacker-value",
+				},
+				AccountSubject: testAccountSubject,
 				ProfileMapper: func(raw map[string]any) (betterauth.OAuthProfile, error) {
 					return betterauth.OAuthProfile{
 						ProviderAccountID: "mapped-" + stringValue(raw["id"]),
@@ -479,7 +500,7 @@ func TestGenericOAuthAuthenticationRefreshMapperAndErrorBounds(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Profile.ProviderAccountID != "mapped-raw-id" ||
+			if result.Profile.ProviderAccountID != "raw-id" ||
 				result.Profile.Provider != "generic-"+string(method) || !result.Profile.EmailVerified {
 				t.Fatalf("custom mapper result: %#v", result.Profile)
 			}
@@ -503,6 +524,7 @@ func TestGenericOAuthAuthenticationRefreshMapperAndErrorBounds(t *testing.T) {
 			ClientID: "client", ClientSecret: "secret",
 			AuthorizationURL: server.URL + "/authorize", TokenURL: server.URL,
 			UserInfoURL: server.URL + "/userinfo", HTTPClient: server.Client(),
+			AccountSubject: testAccountSubject,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -525,6 +547,7 @@ func TestGenericOAuthAuthenticationRefreshMapperAndErrorBounds(t *testing.T) {
 			AuthorizationURL: server.URL + "/authorize", TokenURL: server.URL,
 			UserInfoURL: server.URL + "/userinfo", HTTPClient: server.Client(),
 			MaxResponseBytes: 4096,
+			AccountSubject:   testAccountSubject,
 		})
 		if err != nil {
 			t.Fatal(err)

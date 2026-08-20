@@ -92,26 +92,6 @@ func (instance *runtime) generateToken(
 			)
 		}
 	}
-	if existing == nil {
-		account, findErr := context.Database.FindOne(
-			context.Context,
-			betterauth.FindOneQuery{
-				Model: betterauth.ModelAccount,
-				Where: []betterauth.Where{betterauth.Eq("providerId", providerID)},
-			},
-		)
-		if findErr != nil && !errors.Is(findErr, betterauth.ErrNotFound) {
-			return nil, internalManagementError(findErr)
-		}
-		if account != nil {
-			return nil, betterauth.NewError(
-				betterauth.CodeConflict,
-				"SCIM provider identifier collides with an existing account provider.",
-				http.StatusConflict, nil,
-			)
-		}
-	}
-
 	count, err := context.Database.Count(context.Context, betterauth.CountQuery{
 		Model: ModelSCIMProvider,
 	})
@@ -242,6 +222,16 @@ func (instance *runtime) deleteConnection(
 		return nil, err
 	}
 	err = context.Database.Transaction(context.Context, func(tx betterauth.DatabaseAdapter) error {
+		bindings, countErr := tx.Count(context.Context, betterauth.CountQuery{
+			Model: ModelSCIMUser,
+			Where: []betterauth.Where{betterauth.Eq("connectionId", connection.ProviderID)},
+		})
+		if countErr != nil {
+			return countErr
+		}
+		if bindings != 0 {
+			return betterauth.ErrConflict
+		}
 		if err := tx.Delete(context.Context, betterauth.DeleteQuery{
 			Model: ModelSCIMProvider,
 			Where: []betterauth.Where{betterauth.Eq("id", connection.ID)},
@@ -252,6 +242,13 @@ func (instance *runtime) deleteConnection(
 			map[string]string{"providerId": connection.ProviderID})
 	})
 	if err != nil {
+		if errors.Is(err, betterauth.ErrConflict) {
+			return nil, betterauth.NewError(
+				betterauth.CodeConflict,
+				"Deprovision every SCIM user before deleting the connection.",
+				http.StatusConflict, err,
+			)
+		}
 		return nil, internalManagementError(err)
 	}
 	return betterauth.JSONResponse(http.StatusOK, map[string]bool{"success": true})

@@ -9,8 +9,10 @@ import (
 )
 
 type providerTokenRequest struct {
-	ProviderID string `json:"providerId"`
-	AccountID  string `json:"accountId,omitempty"`
+	// AccountID is the Better Auth account row ID in the v1.7 API.
+	AccountID string `json:"accountId,omitempty"`
+	// ProviderID retains the pre-1.7 provider/account-subject selector.
+	ProviderID string `json:"providerId,omitempty"`
 }
 
 func (s *Server) handleGetAccessToken(w http.ResponseWriter, r *http.Request) error {
@@ -79,20 +81,24 @@ func (s *Server) providerAccount(
 ) (StoredOAuthAccount, error) {
 	providerID := strings.ToLower(strings.TrimSpace(input.ProviderID))
 	accountID := strings.TrimSpace(input.AccountID)
-	if !validProviderID(providerID) || len(accountID) > 512 || providerID == credentialProvider {
+	if (providerID == "" && accountID == "") || len(accountID) > 512 ||
+		(providerID != "" && (!validProviderID(providerID) || providerID == credentialProvider)) {
 		return StoredOAuthAccount{}, publicError(
 			CodeBadRequest, "Invalid provider account.", http.StatusBadRequest, nil,
 		)
 	}
-	if _, exists := s.cfg.SocialProviders[providerID]; !exists {
-		return StoredOAuthAccount{}, publicError(
-			CodeProviderNotSupported,
-			"Provider "+providerID+" is not supported.",
-			http.StatusBadRequest,
-			nil,
-		)
+	var (
+		account StoredOAuthAccount
+		err     error
+	)
+	if providerID == "" {
+		account, err = s.store.OAuthAccountTokensByID(ctx, userID, accountID)
+		if err == nil {
+			providerID = account.Account.Provider
+		}
+	} else {
+		account, err = s.store.OAuthAccountTokens(ctx, userID, providerID, accountID)
 	}
-	account, err := s.store.OAuthAccountTokens(ctx, userID, providerID, accountID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return StoredOAuthAccount{}, publicError(
@@ -101,6 +107,20 @@ func (s *Server) providerAccount(
 		}
 		return StoredOAuthAccount{}, publicError(
 			CodeInternal, "Provider account could not be read.", http.StatusInternalServerError, err,
+		)
+	}
+	if providerID == credentialProvider {
+		return StoredOAuthAccount{}, publicError(
+			CodeProviderNotSupported, "Provider credential is not supported.",
+			http.StatusBadRequest, nil,
+		)
+	}
+	if _, exists := s.cfg.SocialProviders[providerID]; !exists {
+		return StoredOAuthAccount{}, publicError(
+			CodeProviderNotSupported,
+			"Provider "+providerID+" is not supported.",
+			http.StatusBadRequest,
+			nil,
 		)
 	}
 	return account, nil
@@ -155,6 +175,8 @@ func (s *Server) refreshProviderAccount(
 	}
 	if refreshed.Scope == "" {
 		refreshed.Scope = current.Scope
+	} else {
+		refreshed.Scope = mergeOAuthScopes(current.Scope, refreshed.Scope)
 	}
 	encrypted, err := s.encryptProviderTokens(ctx, refreshed)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	betterauth "github.com/eadwinCode/better-auth-go"
 )
@@ -163,6 +164,31 @@ func Run(t *testing.T, factory Factory) {
 		})
 		if err != nil || record != nil {
 			t.Fatalf("transaction did not roll back: %#v, %v", record, err)
+		}
+	})
+
+	t.Run("account identity is issuer scoped", func(t *testing.T) {
+		adapter := factory(t)
+		ctx := context.Background()
+		create := func(id, issuer, provider string) error {
+			_, err := adapter.Create(ctx, betterauth.CreateQuery{
+				Model: betterauth.ModelAccount, ForceAllowID: true,
+				Data: betterauth.Record{
+					"id": id, "userId": "user-" + id, "providerId": provider,
+					"issuer": issuer, "accountId": "shared-subject",
+					"createdAt": time.Now().UTC(), "updatedAt": time.Now().UTC(),
+				},
+			})
+			return err
+		}
+		if err := create("issuer-a", "https://issuer-a.example", "alias-a"); err != nil {
+			t.Fatal(err)
+		}
+		if err := create("issuer-b", "https://issuer-b.example", "alias-a"); err != nil {
+			t.Fatalf("same provider/accountId under a different issuer collided: %v", err)
+		}
+		if err := create("issuer-a-alias", "https://issuer-a.example", "alias-b"); !errors.Is(err, betterauth.ErrConflict) {
+			t.Fatalf("same issuer/accountId under a provider alias was accepted: %v", err)
 		}
 	})
 }

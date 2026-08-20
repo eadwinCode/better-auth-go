@@ -481,7 +481,7 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) erro
 }
 
 type unlinkAccountRequest struct {
-	ProviderID string `json:"providerId"`
+	ProviderID string `json:"providerId,omitempty"`
 	AccountID  string `json:"accountId,omitempty"`
 }
 
@@ -502,12 +502,20 @@ func (s *Server) handleUnlinkAccount(w http.ResponseWriter, r *http.Request) err
 	}
 	input.ProviderID = strings.TrimSpace(input.ProviderID)
 	input.AccountID = strings.TrimSpace(input.AccountID)
-	if !validProviderID(input.ProviderID) || len(input.AccountID) > 512 {
+	if (input.ProviderID == "" && input.AccountID == "") || len(input.AccountID) > 512 ||
+		(input.ProviderID != "" && !validProviderID(input.ProviderID)) {
 		return publicError(CodeBadRequest, "Invalid account selection.", http.StatusBadRequest, nil)
 	}
-	err = s.store.UnlinkAccount(
-		r.Context(), user.ID, input.ProviderID, input.AccountID, s.cfg.Account.AllowUnlinkingAll,
-	)
+	if input.ProviderID == "" {
+		err = s.store.UnlinkAccountByID(
+			r.Context(), user.ID, input.AccountID, s.cfg.Account.AllowUnlinkingAll,
+		)
+	} else {
+		err = s.store.UnlinkAccount(
+			r.Context(), user.ID, input.ProviderID, input.AccountID,
+			s.cfg.Account.AllowUnlinkingAll,
+		)
+	}
 	if errors.Is(err, ErrNotFound) {
 		return publicError(CodeAccountNotFound, "Account not found", http.StatusBadRequest, err)
 	}

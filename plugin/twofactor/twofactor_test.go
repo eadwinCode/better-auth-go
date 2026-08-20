@@ -197,6 +197,9 @@ func enrollTOTP(
 		t.Fatalf("enable: %d %s", response.Code, response.Body.String())
 	}
 	body := decodeBody(t, response)
+	if body["method"] != "totp" {
+		t.Fatalf("unexpected enable method: %#v", body)
+	}
 	uri, err := url.Parse(body["totpURI"].(string))
 	if err != nil {
 		t.Fatal(err)
@@ -218,6 +221,36 @@ func enrollTOTP(
 		t.Fatalf("verify enrollment: %d %s", verified.Code, verified.Body.String())
 	}
 	return secret, codes
+}
+
+func TestTwoFactorOTPEnablementIsDiscriminatedAndDoesNotCreateTOTPState(t *testing.T) {
+	handler, database, _, _, _ := newTwoFactorTestServer(t, nil)
+	browser := newTestBrowser(handler)
+	signUp(t, browser)
+
+	response := browser.request(t, http.MethodPost, "/two-factor/enable", map[string]any{
+		"password": "correct horse battery staple", "method": "otp",
+	}, true)
+	if response.Code != http.StatusOK {
+		t.Fatalf("enable OTP: %d %s", response.Code, response.Body.String())
+	}
+	body := decodeBody(t, response)
+	if len(body) != 1 || body["method"] != "otp" {
+		t.Fatalf("OTP enable response is not discriminated: %#v", body)
+	}
+	row, err := database.FindOne(context.Background(), betterauth.FindOneQuery{
+		Model: ModelTwoFactor,
+		Where: []betterauth.Where{betterauth.Eq("userId", firstUserID(t, database))},
+	})
+	if err != nil || row != nil {
+		t.Fatalf("OTP enrollment created TOTP state: %#v %v", row, err)
+	}
+
+	signOut(t, browser)
+	methods := signInChallenge(t, browser)["twoFactorMethods"].([]any)
+	if len(methods) != 1 || methods[0] != "otp" {
+		t.Fatalf("unexpected OTP-only challenge: %#v", methods)
+	}
 }
 
 func TestTwoFactorTOTPOTPBackupAndTrustedDeviceFlow(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	betterauth "github.com/eadwinCode/better-auth-go"
 	"github.com/eadwinCode/better-auth-go/adapter/postgresql"
 	"github.com/eadwinCode/better-auth-go/adaptertest"
+	v17 "github.com/eadwinCode/better-auth-go/migration/v17"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -105,9 +106,35 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	}
 	adaptertest.SeedReleaseBaseline(t, configured)
 
+	staging := v17.StagingSchema()
+	if err := adapter.Migrate(t.Context(), staging); err != nil {
+		t.Fatalf("add nullable issuer: %v", err)
+	}
+	configured, err = adapter.WithSchema(staging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = v17.Backfill(t.Context(), configured, v17.Options{}); err != nil {
+		t.Fatalf("backfill account issuer: %v", err)
+	}
 	current := betterauth.CoreSchema()
 	if err := adapter.Migrate(t.Context(), current); err != nil {
 		t.Fatalf("upgrade current schema: %v", err)
+	}
+	if err := v17.FinalizeSQL(t.Context(), database, v17.PostgreSQL, current); err != nil {
+		t.Fatalf("finalize account issuer: %v", err)
+	}
+	if _, err := database.ExecContext(
+		t.Context(), `UPDATE "account" SET "issuer" = NULL WHERE "id" = 'upgrade-account'`,
+	); err == nil {
+		t.Fatal("finalized PostgreSQL account issuer remained nullable")
+	}
+	var legacyIndexes int
+	if err := database.QueryRowContext(t.Context(),
+		`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN (`+
+			`'uniq_provider_account', 'account_provider_account_unique')`,
+	).Scan(&legacyIndexes); err != nil || legacyIndexes != 0 {
+		t.Fatalf("legacy PostgreSQL account indexes remain: %d %v", legacyIndexes, err)
 	}
 	if err := adapter.Migrate(t.Context(), current); err != nil {
 		t.Fatalf("idempotent current migration: %v", err)
@@ -155,7 +182,7 @@ func databaseForTest(t *testing.T) *sql.DB {
 }
 
 func conformanceSchema() betterauth.Schema {
-	return betterauth.Schema{
+	schema := betterauth.Schema{
 		"conformance": {Fields: map[string]betterauth.FieldSchema{
 			"id": {Type: betterauth.FieldString, Required: true, Unique: true}, "group": {Type: betterauth.FieldString},
 			"sequence": {Type: betterauth.FieldNumber}, "name": {Type: betterauth.FieldString},
@@ -171,4 +198,6 @@ func conformanceSchema() betterauth.Schema {
 			"id": {Type: betterauth.FieldString, Required: true, Unique: true},
 		}},
 	}
+	schema[betterauth.ModelAccount] = betterauth.CoreSchema()[betterauth.ModelAccount]
+	return schema
 }

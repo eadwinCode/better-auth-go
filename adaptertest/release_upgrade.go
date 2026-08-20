@@ -18,6 +18,9 @@ const ReleaseUpgradeBaseline = "ecf48ac"
 // compound indexes but otherwise has the current core fields.
 func LegacyCoreSchema() betterauth.Schema {
 	schema := betterauth.CoreSchema()
+	account := schema[betterauth.ModelAccount]
+	delete(account.Fields, "issuer")
+	schema[betterauth.ModelAccount] = account
 	for modelName, model := range schema {
 		model.Indexes = nil
 		for fieldName, field := range model.Fields {
@@ -117,7 +120,7 @@ func AssertReleaseUpgrade(t *testing.T, database betterauth.DatabaseAdapter) {
 	updated, err := database.Update(ctx, betterauth.UpdateQuery{
 		Model: betterauth.ModelAccount,
 		Where: []betterauth.Where{
-			betterauth.Eq("providerId", "credential"),
+			betterauth.Eq("issuer", betterauth.CredentialAccountIssuer),
 			betterauth.Eq("accountId", "upgrade-user"),
 		},
 		Update: betterauth.Record{

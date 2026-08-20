@@ -184,7 +184,7 @@ func TestPasskeyW3CRegistrationAndAuthenticationFlow(t *testing.T) {
 		},
 	})
 	userID := signUp(t, client, "ada@example.org")
-	originalSession := client.cookies["__Host-better_auth_session"].Value
+	initialSession := client.cookies["__Host-better_auth_session"].Value
 
 	generated := client.request(
 		t, http.MethodGet,
@@ -246,7 +246,7 @@ func TestPasskeyW3CRegistrationAndAuthenticationFlow(t *testing.T) {
 	}
 	registered := client.request(
 		t, http.MethodPost, "/passkey/verify-registration", testOrigin,
-		wrapResponse(t, registrationResponse, "Laptop"),
+		wrapRegistrationResponse(t, registrationResponse, "Laptop", true),
 	)
 	if registered.Code != http.StatusOK {
 		t.Fatalf("registration verification failed: %d %s", registered.Code, registered.Body.String())
@@ -260,6 +260,11 @@ func TestPasskeyW3CRegistrationAndAuthenticationFlow(t *testing.T) {
 	}
 	if passkey.CredentialID != base64.RawURLEncoding.EncodeToString(fixtureCredentialID) {
 		t.Fatalf("unexpected credential ID: %s", passkey.CredentialID)
+	}
+	originalSession := client.cookies["__Host-better_auth_session"].Value
+	if originalSession == "" || originalSession == initialSession ||
+		!strings.Contains(registered.Body.String(), `"session"`) {
+		t.Fatal("registration createSession did not issue a new transactional session")
 	}
 	replay := client.request(
 		t, http.MethodPost, "/passkey/verify-registration", testOrigin,
@@ -560,6 +565,15 @@ func setStoredChallenge(
 }
 
 func wrapResponse(t *testing.T, response []byte, name string) []byte {
+	return wrapRegistrationResponse(t, response, name, false)
+}
+
+func wrapRegistrationResponse(
+	t *testing.T,
+	response []byte,
+	name string,
+	createSession bool,
+) []byte {
 	t.Helper()
 	var value any
 	if err := json.Unmarshal(response, &value); err != nil {
@@ -568,6 +582,9 @@ func wrapResponse(t *testing.T, response []byte, name string) []byte {
 	body := map[string]any{"response": value}
 	if name != "" {
 		body["name"] = name
+	}
+	if createSession {
+		body["createSession"] = true
 	}
 	result, err := json.Marshal(body)
 	if err != nil {

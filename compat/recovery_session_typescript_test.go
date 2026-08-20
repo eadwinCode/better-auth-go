@@ -24,7 +24,7 @@ func assertStatusTrue(t *testing.T, implementation string, response oracleRespon
 	}
 }
 
-func TestBetterAuthV1625PasswordRecoveryCompatibility(t *testing.T) {
+func TestBetterAuthV170PasswordRecoveryCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	oracle.clearMail(t)
 	const goCallbackURL = "https://app.example.com/recovery"
@@ -226,7 +226,7 @@ func TestBetterAuthV1625PasswordRecoveryCompatibility(t *testing.T) {
 	}
 }
 
-func TestBetterAuthV1625EmailVerificationCompatibility(t *testing.T) {
+func TestBetterAuthV170EmailVerificationCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	oracle.clearMail(t)
 	goClient, goMailer := newBlackBoxServer(t)
@@ -352,7 +352,7 @@ func TestBetterAuthV1625EmailVerificationCompatibility(t *testing.T) {
 	}
 }
 
-func TestBetterAuthV1625SessionManagementCompatibility(t *testing.T) {
+func TestBetterAuthV170SessionManagementCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	goFirst, _ := newBlackBoxServerConfig(t, func(config *betterauth.Config) {
 		config.Plugins = append(config.Plugins, betterauth.Plugin{
