@@ -92,7 +92,7 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := adaptertest.LegacyCoreSchema()
+	legacy := releaseUpgradeSchema(adaptertest.LegacyCoreSchema())
 	if err := adapter.Migrate(t.Context(), legacy); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	}
 	adaptertest.SeedReleaseBaseline(t, configured)
 
-	staging := v17.StagingSchema()
+	staging := releaseUpgradeSchema(v17.StagingSchema())
 	if err := adapter.Migrate(t.Context(), staging); err != nil {
 		t.Fatalf("add nullable issuer: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	if _, err = v17.Backfill(t.Context(), configured, v17.Options{}); err != nil {
 		t.Fatalf("backfill account issuer: %v", err)
 	}
-	current := betterauth.CoreSchema()
+	current := releaseUpgradeSchema(betterauth.CoreSchema())
 	if err := adapter.Migrate(t.Context(), current); err != nil {
 		t.Fatalf("upgrade current schema: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 		t.Fatalf("finalize account issuer: %v", err)
 	}
 	if _, err := database.ExecContext(
-		t.Context(), `UPDATE "account" SET "issuer" = NULL WHERE "id" = 'upgrade-account'`,
+		t.Context(), `UPDATE "release_upgrade_account" SET "issuer" = NULL WHERE "id" = 'upgrade-account'`,
 	); err == nil {
 		t.Fatal("finalized PostgreSQL account issuer remained nullable")
 	}
@@ -148,7 +148,10 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 		t.Fatal(err)
 	}
 	adaptertest.AssertReleaseUpgrade(t, configured)
-	for _, expected := range []string{"session_userId_index", "account_userId_index"} {
+	for _, expected := range []string{
+		"release_upgrade_session_userId_index",
+		"release_upgrade_account_userId_index",
+	} {
 		var found int
 		if err := database.QueryRowContext(
 			t.Context(),
@@ -161,6 +164,17 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 			t.Fatalf("current index %q was not created", expected)
 		}
 	}
+}
+
+func releaseUpgradeSchema(schema betterauth.Schema) betterauth.Schema {
+	for logicalName, model := range schema {
+		model.ModelName = "release_upgrade_" + logicalName
+		for index := range model.Indexes {
+			model.Indexes[index].Name = "release_upgrade_" + model.Indexes[index].Name
+		}
+		schema[logicalName] = model
+	}
+	return schema
 }
 
 func databaseForTest(t *testing.T) *sql.DB {
