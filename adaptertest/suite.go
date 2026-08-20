@@ -142,7 +142,7 @@ func Run(t *testing.T, factory Factory) {
 	t.Run("transaction rollback", func(t *testing.T) {
 		adapter := factory(t)
 		if !adapter.Capabilities().Transactions {
-			t.Skip("adapter does not advertise transactions")
+			t.Fatal("adapter conformance requires native transaction support")
 		}
 		ctx := context.Background()
 		rollback := errors.New("rollback")
