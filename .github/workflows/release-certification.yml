@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - name: Format
         run: test -z "$(gofmt -l .)"
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - run: go test -run=^$ -fuzz=FuzzArgon2idParser -fuzztime=10s .
       - run: go test -run=^$ -fuzz=FuzzSessionCookieParsing -fuzztime=10s .
@@ -70,13 +70,13 @@ jobs:
       - run: go test -run=^$ -fuzz=FuzzOpenSession -fuzztime=10s ./plugin/onetimetoken
 
   typescript:
-    name: Better Auth 1.7.0 differential
+    name: Better Auth 1.7.7 differential
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - uses: oven-sh/setup-bun@v2
         with:
@@ -108,7 +108,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - name: Start MongoDB 8 replica set
         run: |
@@ -155,7 +155,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - run: go test -race -count=1 ./plugin/sso ./plugin/scim
 
@@ -181,7 +181,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - name: Install candidate without replace
         run: scripts/test-install-module.sh "${{ inputs.module-ref }}"

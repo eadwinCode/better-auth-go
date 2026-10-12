@@ -55,8 +55,8 @@ func TestSSOProviderCannotReuseSocialProviderID(t *testing.T) {
 		Database:       database, Clock: clock, Mailer: runtimeMailer{},
 		ImpersonationAuthorizer: runtimeImpersonation{},
 		ProviderTokenCipher:     cipher, Plugins: []betterauth.Plugin{plugin},
-		SocialProviders:         map[string]betterauth.OAuthProvider{"acme-social": unusedSocialProvider{}},
-		AllowedRedirectURLs:     []string{"https://app.example.com/dashboard"},
+		SocialProviders:     map[string]betterauth.OAuthProvider{"acme-social": unusedSocialProvider{}},
+		AllowedRedirectURLs: []string{"https://app.example.com/dashboard"},
 	})
 	if err != nil {
 		t.Fatal(err)

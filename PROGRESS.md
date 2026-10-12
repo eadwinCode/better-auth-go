@@ -75,7 +75,7 @@ Last updated: 2026-10-12
 | Formatting | `test -z "$(gofmt -l .)"` | Pass |
 | Vet | `go vet ./...` | Pass |
 | Race detector | `go test -race -count=1 ./...` | Pass |
-| Staticcheck | `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` | Pass (2026-10-12, with `GOTOOLCHAIN=go1.26.5`) |
+| Staticcheck | `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` | Pass (2026-10-12, with `GOTOOLCHAIN=go1.26.9`) |
 | Vulnerability scan | `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` | Pass; no called vulnerabilities |
 | Fuzz smoke matrix | 10-second targets from `.github/workflows/release-certification.yml` | Pass for the original twelve; `FuzzOpenSession` (one-time token) added and passed locally on 2026-10-12 |
 | SQLite adapter conformance | `go test -count=1 ./adapter/sqlite` | Pass as part of full suite |

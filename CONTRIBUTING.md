@@ -4,7 +4,7 @@
 
 Requirements:
 
-- Go 1.25 or newer (release validation uses the pinned Go 1.26.5 toolchain);
+- Go 1.25 or newer (release validation uses the pinned Go 1.26.9 toolchain);
 - MongoDB replica set for integration tests;
 - `staticcheck` and `govulncheck` for release validation.
 
