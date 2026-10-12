@@ -21,9 +21,13 @@ linking with `ErrAmbiguousAccount`. Go keeps the unique index
   have an `issuer` column. Follow `migration/v17/README.md`; it has tested
   PostgreSQL and SQLite clean-up scripts and the MongoDB steps.
 - Microsoft accounts use the verified `oid` as the account ID, as upstream does.
-  `migration/v17.RewriteAccountIDs` rewrites stored IDs (for example `sub` to
-  `oid`) from a resolver you supply, and writes nothing if two rows would share
-  a key.
+  Rows stored by v1.0.x under `sub` move to `oid` on their first sign-in, because
+  the verified ID token carries both claims (a Go addition; upstream requires a
+  migration first). `migration/v17.RewriteAccountIDs` can rewrite stored IDs
+  ahead of time from a resolver you supply.
+- Custom OAuth2 providers without `social.Options.AccountSubject` keep the
+  v1.0.x account ID rule: the first of `sub`, `id`, `user_id`, `account_id`,
+  `open_id` and `openid`.
 
 The repository has no MySQL adapter.
 

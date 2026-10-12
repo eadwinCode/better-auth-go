@@ -82,8 +82,15 @@ Sign up a new user and sign in with an existing social account.
 
 The Better Auth 1.7 port changed some provider subjects. Microsoft accounts now
 use the stable `oid` claim instead of the app-specific `sub` claim. Rows stored
-by better-auth-go v1.0.x keep the old value, so the next sign-in would not find
-them. Rewrite them before you accept traffic:
+by better-auth-go v1.0.x keep the old `sub`.
+
+**No step is required.** The Microsoft ID token carries both claims, so the
+first sign-in after the upgrade finds the row by `sub` and moves it to `oid`
+(`OAuthProfile.PreviousProviderAccountID`). Better Auth TypeScript has no such
+fallback and asks for a migration before traffic.
+
+To rewrite the rows ahead of time anyway, for example before you remove a
+provider, use `RewriteAccountIDs`:
 
 ```go
 report, err := v17.RewriteAccountIDs(ctx, database, v17.Options{

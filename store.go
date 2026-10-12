@@ -389,7 +389,7 @@ func (s *databaseStore) LinkOAuthAccount(
 	now time.Time,
 ) error {
 	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
-		existing, err := FindAccountByKey(ctx, tx, profile.Provider, profile.ProviderAccountID)
+		existing, err := findProfileAccount(ctx, tx, profile, now)
 		if err != nil {
 			return err
 		}
@@ -821,7 +821,7 @@ func (s *databaseStore) UpsertOAuthUser(
 	var createdSession Session
 	isNew := false
 	err := s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
-		account, err := FindAccountByKey(ctx, tx, profile.Provider, profile.ProviderAccountID)
+		account, err := findProfileAccount(ctx, tx, profile, session.CreatedAt)
 		if err != nil {
 			return err
 		}

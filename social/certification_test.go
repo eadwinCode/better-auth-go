@@ -601,3 +601,60 @@ func mustURL(t *testing.T, raw string) *url.URL {
 }
 
 var _ betterauth.Clock = certificationClock{}
+
+// Microsoft accounts use the directory "oid". better-auth-go v1.0.x stored
+// the app-specific "sub", so the profile also carries "sub" as the previous
+// account ID; the core uses it to move old accounts on sign-in.
+func TestMicrosoftProfileCarriesPreviousSubject(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/tenant-1/oauth2/v2.0/token":
+			raw := signIDToken(t, key, "key-1", map[string]any{
+				"iss": server.URL + "/tenant-1/v2.0", "aud": "client-id", "tid": "tenant-1",
+				"sub": "pairwise-sub", "oid": "directory-oid",
+				"email": "ms@example.com", "name": "Microsoft User",
+				"nonce": "nonce", "exp": now.Add(time.Hour).Unix(),
+			})
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "access-token", "id_token": raw, "expires_in": 300,
+			})
+		case "/tenant-1/discovery/v2.0/keys":
+			_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{map[string]any{
+				"kty": "RSA", "kid": "key-1", "alg": "RS256", "use": "sig",
+				"n": base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes()),
+				"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes()),
+			}}})
+		case "/userinfo":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"sub": "pairwise-sub", "email": "ms@example.com", "name": "Microsoft User",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	provider, err := New("microsoft", Options{
+		ClientID: "client-id", ClientSecret: "client-secret",
+		Tenant: "tenant-1", Issuer: server.URL, HTTPClient: server.Client(),
+		UserInfoURL: server.URL + "/userinfo",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := provider.Exchange(context.Background(), "code", "verifier", "nonce",
+		"https://auth.example/callback/microsoft")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Profile.ProviderAccountID != "directory-oid" ||
+		result.Profile.PreviousProviderAccountID != "pairwise-sub" {
+		t.Fatalf("profile=%#v", result.Profile)
+	}
+}

@@ -90,6 +90,15 @@ New in this port:
 - **Views at migration.** Go stops `Migrate` with a clear error. Upstream skips
   the relation and fails later.
 
+- **Microsoft upgrade.** v1.0.x stored Microsoft accounts by `sub`. Go moves
+  each one to `oid` on its first sign-in, using the verified ID token that
+  carries both. Upstream has no fallback and requires a migration before
+  traffic.
+- **Custom OAuth2 account IDs.** Without `AccountSubject`, Go keeps the
+  v1.0.x rule (first of `sub`, `id`, `user_id`, `account_id`, `open_id`,
+  `openid`) instead of failing at start-up, so v1.0.x configurations keep
+  working.
+
 Older Go rules that still apply here:
 
 - **Verified provider email.** Go refuses a social sign-in whose email is not

@@ -49,10 +49,19 @@ func providerAccountSubject(providerID string, raw map[string]any) (string, erro
 	case "wechat":
 		subject = firstString(profile, "unionid", "openid")
 	default:
-		// The remaining built-ins publish an immutable numeric/string id. A
-		// custom provider should configure Options.AccountSubject explicitly.
+		// The remaining built-ins publish an immutable numeric/string id.
 		subject = firstString(profile, "id")
 	}
+	if strings.TrimSpace(subject) == "" {
+		return "", errors.New("social: profile has no immutable account subject")
+	}
+	return subject, nil
+}
+
+// customAccountSubject is the account ID rule better-auth-go v1.0.x used for
+// a custom OAuth2 provider without Options.AccountSubject.
+func customAccountSubject(raw map[string]any) (string, error) {
+	subject := firstString(unwrapProfile(raw), "sub", "id", "user_id", "account_id", "open_id", "openid")
 	if strings.TrimSpace(subject) == "" {
 		return "", errors.New("social: profile has no immutable account subject")
 	}

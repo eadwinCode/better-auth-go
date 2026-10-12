@@ -86,10 +86,16 @@ type OAuthProfile struct {
 	// information only: accounts are keyed by Provider and ProviderAccountID.
 	Issuer            string
 	ProviderAccountID string
-	Email             string
-	EmailVerified     bool
-	Name              string
-	ImageURL          string
+	// PreviousProviderAccountID is an older account ID for the same verified
+	// identity, such as the Microsoft "sub" that better-auth-go v1.0.x stored
+	// before accounts used "oid". When no account matches ProviderAccountID
+	// but one matches this value, sign-in and linking switch that account to
+	// ProviderAccountID. Set it only from verified provider data.
+	PreviousProviderAccountID string
+	Email                     string
+	EmailVerified             bool
+	Name                      string
+	ImageURL                  string
 }
 
 type ProviderTokens struct {

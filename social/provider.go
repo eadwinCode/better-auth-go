@@ -300,7 +300,9 @@ func New(providerID string, options Options) (*Provider, error) {
 	}
 	accountSubject := options.AccountSubject
 	if accountSubject == nil && !definition.oidc && !isBuiltInProvider(definition.id) {
-		return nil, fmt.Errorf("social: custom provider %q requires AccountSubject", definition.id)
+		// Keep the v1.0.x default for custom OAuth2 providers, so existing
+		// configurations and stored account IDs keep working.
+		accountSubject = customAccountSubject
 	}
 	if accountSubject == nil {
 		accountSubject = func(profile map[string]any) (string, error) {
@@ -569,6 +571,12 @@ func (p *Provider) Exchange(
 		profile.Issuer = stringValue(verifiedClaims["iss"])
 		if p.id == "microsoft" {
 			profile.ProviderAccountID = stringValue(verifiedClaims["oid"])
+			// v1.0.x stored the app-specific "sub". Both claims come from
+			// the same verified token, so the core can move the old account
+			// to "oid" on sign-in.
+			if sub := stringValue(verifiedClaims["sub"]); sub != profile.ProviderAccountID {
+				profile.PreviousProviderAccountID = sub
+			}
 		} else {
 			profile.ProviderAccountID = stringValue(verifiedClaims["sub"])
 		}
