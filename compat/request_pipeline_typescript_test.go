@@ -117,3 +117,46 @@ func compatibilityOriginRequest(
 	handler.ServeHTTP(recorder, request)
 	return goResponse(recorder)
 }
+
+// Better Auth v1.7.2 (#10959) infers the origin of "Origin: null" requests
+// from the request target when Sec-Fetch-Site is exactly "same-origin".
+func TestBetterAuthV177NullOriginFetchMetadataCompatibility(t *testing.T) {
+	oracle := newTypeScriptOracle(t)
+	goClient, _ := newBlackBoxServerConfig(t, func(config *betterauth.Config) {
+		config.TrustedOrigins = append(config.TrustedOrigins, "https://auth.example.com")
+	})
+	for _, test := range []struct {
+		site string
+		want int
+	}{
+		{site: "same-origin", want: http.StatusOK},
+		{site: "same-site", want: http.StatusForbidden},
+		{site: "cross-site", want: http.StatusForbidden},
+	} {
+		t.Run(test.site, func(t *testing.T) {
+			body := map[string]any{
+				"email":    uniqueCompatibilityEmail("null-origin"),
+				"password": "Correct-Horse-123!", "name": "Null Origin",
+			}
+			payload, err := json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPost,
+				"https://auth.example.com/api/auth/sign-up/email", bytes.NewReader(payload))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Origin", "null")
+			request.Header.Set("Sec-Fetch-Site", test.site)
+			request.Header.Set("Cookie", "compatibility=1")
+			recorder := httptest.NewRecorder()
+			goClient.handler.ServeHTTP(recorder, request)
+			tsResult := oracle.clone(t).requestWithHeaders(t, http.MethodPost, "/sign-up/email", body, "null",
+				http.Header{"Cookie": {"compatibility=1"}, "Sec-Fetch-Site": {test.site}})
+			for implementation, status := range map[string]int{"Go": recorder.Code, "TypeScript": tsResult.status} {
+				if status != test.want {
+					t.Fatalf("%s status=%d want=%d", implementation, status, test.want)
+				}
+			}
+		})
+	}
+}

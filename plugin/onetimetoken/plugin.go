@@ -152,7 +152,7 @@ func cookieOriginCheck(context *betterauth.HookContext) (*betterauth.PluginRespo
 	if context.Headers.Get("Cookie") == "" {
 		return nil, nil
 	}
-	origin := context.Headers.Get("Origin")
+	origin := betterauth.InferNullOrigin(context.Request, context.BaseURL)
 	if origin == "" || origin == "null" || context.IsTrustedOrigin == nil || !context.IsTrustedOrigin(origin) {
 		return nil, betterauth.NewError(
 			betterauth.CodeInvalidOrigin, "Invalid origin", http.StatusForbidden, nil,

@@ -518,7 +518,7 @@ func (s *Server) ensureCSRFCookie(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *Server) checkOrigin(r *http.Request) error {
-	raw := r.Header.Get("Origin")
+	raw := InferNullOrigin(r, s.cfg.PublicURL)
 	if raw == "" {
 		return publicError(CodeInvalidOrigin, "Invalid origin", http.StatusForbidden, nil)
 	}
@@ -604,4 +604,23 @@ func truncate(value string, max int) string {
 
 func (s *Server) actionURL(route, token string) string {
 	return fmt.Sprintf("%s%s%s?token=%s", s.cfg.PublicURL, s.cfg.BasePath, route, token)
+}
+
+// InferNullOrigin returns the request's Origin header. Like Better Auth, when
+// a same-origin page uses Referrer-Policy: no-referrer the browser sends
+// "Origin: null"; only for exactly "null" together with exactly
+// "Sec-Fetch-Site: same-origin" does it return the request target's origin
+// (publicURL's scheme and the request Host) instead. Browsers set
+// Sec-Fetch-Site and pages cannot change it. The result must still be checked
+// against the trusted origins.
+func InferNullOrigin(r *http.Request, publicURL string) string {
+	origin := r.Header.Get("Origin")
+	if origin != "null" || r.Header.Get("Sec-Fetch-Site") != "same-origin" || r.Host == "" {
+		return origin
+	}
+	scheme, _, found := strings.Cut(publicURL, "://")
+	if !found || scheme == "" {
+		return origin
+	}
+	return scheme + "://" + r.Host
 }
