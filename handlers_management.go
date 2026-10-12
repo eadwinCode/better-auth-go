@@ -86,6 +86,9 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 // SetPassword sets or replaces the credential password for a user. It is a
 // trusted server API and is deliberately not exposed as an HTTP endpoint.
 func (s *Server) SetPassword(ctx context.Context, userID, password string) error {
+	if err := s.requireSchema(ctx); err != nil {
+		return err
+	}
 	if strings.TrimSpace(userID) == "" {
 		return publicError(CodeBadRequest, "Invalid password.", http.StatusBadRequest, nil)
 	}
@@ -106,6 +109,9 @@ func (s *Server) SetPassword(ctx context.Context, userID, password string) error
 // longer than the configured maximum returns a PASSWORD_TOO_LONG *Error before
 // any lookup or hash, like Better Auth's verifyPassword.
 func (s *Server) VerifyPassword(ctx context.Context, userID, password string) (bool, error) {
+	if err := s.requireSchema(ctx); err != nil {
+		return false, err
+	}
 	if strings.TrimSpace(userID) == "" {
 		return false, nil
 	}

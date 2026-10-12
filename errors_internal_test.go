@@ -26,6 +26,7 @@ func TestHTTPErrorCodesUseBetterAuthWireVocabulary(t *testing.T) {
 		CodeInvalidToken:         "INVALID_TOKEN",
 		CodeProviderFailure:      "PROVIDER_ERROR",
 		CodeMethodNotAllowed:     "METHOD_NOT_ALLOWED",
+		CodeSchemaMismatch:       "SCHEMA_MISMATCH",
 		CodeInternal:             "INTERNAL_SERVER_ERROR",
 		CodeTOTPAlreadyEnabled:   "TOTP_ALREADY_ENABLED",
 	}
