@@ -6,6 +6,7 @@ import {
   deletionVerificationAuth,
   dynamicOriginsAuth,
   oneTimeTokenAuths,
+  twoFactorAuths,
   wildcardOriginsAuth,
 } from "./auth.ts";
 import { betterAuthVersion, referenceConfig } from "./config.ts";
@@ -157,6 +158,14 @@ const server = Bun.serve({
       const prefix = referenceConfig.basePath + suffix;
       if (url.pathname === prefix || url.pathname.startsWith(prefix + "/")) {
         return oneTimeTokenAuths[suffix]!.handler(request);
+      }
+    }
+    for (const suffix of Object.keys(twoFactorAuths).sort(
+      (a, b) => b.length - a.length,
+    )) {
+      const prefix = referenceConfig.basePath + suffix;
+      if (url.pathname === prefix || url.pathname.startsWith(prefix + "/")) {
+        return twoFactorAuths[suffix]!.handler(request);
       }
     }
     return auth.handler(request);

@@ -142,6 +142,14 @@ func (instance *runtime) requirePassword(
 	userID string,
 	password string,
 ) error {
+	// Like Better Auth, an over-long password is rejected before any lookup
+	// or hash. With AllowPasswordless the credential lookup comes first,
+	// because a user without a password does not need one at all.
+	if !instance.config.AllowPasswordless {
+		if err := context.CheckPasswordNotTooLong(password); err != nil {
+			return err
+		}
+	}
 	encoded, exists, err := instance.credentialPassword(context, userID)
 	if err != nil {
 		return internalError(err)
@@ -154,6 +162,9 @@ func (instance *runtime) requirePassword(
 	}
 	if password == "" {
 		return invalidPassword(nil)
+	}
+	if err := context.CheckPasswordNotTooLong(password); err != nil {
+		return err
 	}
 	verified, err := context.Passwords.Verify(context.Context, encoded, password)
 	if err != nil {

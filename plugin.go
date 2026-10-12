@@ -183,6 +183,9 @@ type HookContext struct {
 	// transaction adapter. It is used by plugins that must persist an
 	// authentication credential and its initial session atomically.
 	IssueSessionWithDatabase func(DatabaseAdapter, string) (*IssuedSession, error)
+	// MaxPasswordBytes is the server's maximum password length in bytes.
+	// Plugins check it with CheckPasswordNotTooLong.
+	MaxPasswordBytes int
 	// AuthenticateOAuth completes a plugin-owned, externally verified identity
 	// transition through the core account/session store. Plugins must validate
 	// issuer, audience, nonce, signature, and verified email before calling it.
@@ -194,6 +197,14 @@ type HookContext struct {
 	ResumeSession   func(string) (*IssuedSession, error)
 	BackgroundTasks BackgroundTaskRunner
 	bodyDecodeError error
+}
+
+// CheckPasswordNotTooLong returns the PASSWORD_TOO_LONG error when password is
+// longer than MaxPasswordBytes. Plugins that verify a password must call it
+// before any database lookup or password hash, like Better Auth's
+// assertPasswordNotTooLong. A zero MaxPasswordBytes uses the default of 128.
+func (ctx *HookContext) CheckPasswordNotTooLong(password string) error {
+	return checkPasswordNotTooLong(password, ctx.MaxPasswordBytes)
 }
 
 func (ctx *HookContext) RunInBackground(task BackgroundTask) error {

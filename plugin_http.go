@@ -282,6 +282,7 @@ func (s *Server) newHookContext(
 		ResumeSession: func(raw string) (*IssuedSession, error) {
 			return s.resumePluginSession(r, raw)
 		},
+		MaxPasswordBytes: s.cfg.MaxPasswordBytes,
 	}
 	if session, user, _, err := s.sessionFromRequest(r.Context(), r); err == nil {
 		context.Session, context.User = &session, &user

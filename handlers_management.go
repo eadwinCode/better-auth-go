@@ -33,13 +33,17 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) er
 	if err := s.decodeJSON(w, r, &input); err != nil {
 		return err
 	}
-	if len(input.CurrentPassword) > s.cfg.MaxPasswordBytes {
-		return invalidCredentials(nil)
+	// Better Auth rate limits before the handler runs, so requests that fail
+	// the password checks below still count toward the limit.
+	if err := s.rateLimit(r.Context(), r, "change-password", HashToken(user.ID)); err != nil {
+		return err
 	}
+	// Same order as Better Auth: the new password policy first, then the
+	// current password length, all before the credential lookup.
 	if err := s.passwordPolicyError(input.NewPassword); err != nil {
 		return err
 	}
-	if err := s.rateLimit(r.Context(), r, "change-password", HashToken(user.ID)); err != nil {
+	if err := s.passwordTooLongError(input.CurrentPassword); err != nil {
 		return err
 	}
 	credential, err := s.store.PasswordCredential(r.Context(), user.ID)
@@ -98,10 +102,15 @@ func (s *Server) SetPassword(ctx context.Context, userID, password string) error
 	return s.store.SetPasswordHash(ctx, userID, hash, s.cfg.Clock.Now().UTC())
 }
 
-// VerifyPassword verifies a credential without creating a session.
+// VerifyPassword verifies a credential without creating a session. A password
+// longer than the configured maximum returns a PASSWORD_TOO_LONG *Error before
+// any lookup or hash, like Better Auth's verifyPassword.
 func (s *Server) VerifyPassword(ctx context.Context, userID, password string) (bool, error) {
-	if strings.TrimSpace(userID) == "" || len(password) > s.cfg.MaxPasswordBytes {
+	if strings.TrimSpace(userID) == "" {
 		return false, nil
+	}
+	if err := s.passwordTooLongError(password); err != nil {
+		return false, err
 	}
 	credential, err := s.store.PasswordCredential(ctx, userID)
 	if err != nil {
@@ -323,6 +332,9 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	if input.Password != "" {
+		if err := s.passwordTooLongError(input.Password); err != nil {
+			return err
+		}
 		credential, credentialErr := s.store.PasswordCredential(r.Context(), user.ID)
 		if credentialErr != nil && !errors.Is(credentialErr, ErrNotFound) {
 			return publicError(
@@ -333,9 +345,6 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) error 
 			return publicError(
 				CodeCredentialNotFound, "Credential account not found", http.StatusBadRequest, credentialErr,
 			)
-		}
-		if len(input.Password) > s.cfg.MaxPasswordBytes {
-			return publicError(CodeInvalidPassword, "Invalid password", http.StatusBadRequest, nil)
 		}
 		verification, err := s.cfg.Passwords.Verify(r.Context(), credential.PasswordHash, input.Password)
 		if err != nil {
