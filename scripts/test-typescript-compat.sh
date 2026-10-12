@@ -25,7 +25,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 oracle_url="http://127.0.0.1:${compatibility_port}"
-export BETTER_AUTH_SECRET="better-auth-go-v1.7.0-compatibility-only-secret"
+export BETTER_AUTH_SECRET="better-auth-go-v1.7.7-compatibility-only-secret"
 export BETTER_AUTH_TEST_CONTROL_SECRET="better-auth-go-test-control-only-secret"
 export BETTER_AUTH_URL="${oracle_url}"
 export BETTER_AUTH_BASE_PATH="/api/auth"
@@ -35,11 +35,19 @@ export BETTER_AUTH_DB="${temporary_root}/reference.sqlite"
 export HOST="127.0.0.1"
 export PORT="${compatibility_port}"
 
+# A server already on this port would answer the readiness check and the
+# suite would silently test it instead of a fresh oracle.
+if curl --silent --max-time 1 "${oracle_url}/healthz" >/dev/null 2>&1; then
+  echo "Port ${compatibility_port} is already in use; stop that server or set BETTER_AUTH_TS_PORT." >&2
+  exit 1
+fi
+
 (
   cd "${typescript_root}"
   bun run typecheck
   bun run migrate
-  bun run start
+  # exec, so cleanup stops the server itself rather than only this shell.
+  exec bun src/server.ts
 ) >"${oracle_log}" 2>&1 &
 oracle_pid="$!"
 
@@ -65,5 +73,5 @@ fi
   cd "${repository_root}"
   BETTER_AUTH_TS_URL="${oracle_url}" \
   BETTER_AUTH_TS_CONTROL_SECRET="${BETTER_AUTH_TEST_CONTROL_SECRET}" \
-    go test -count=1 -run '^TestBetterAuthV170' ./compat
+    go test -count=1 -run '^TestBetterAuthV177' ./compat
 )

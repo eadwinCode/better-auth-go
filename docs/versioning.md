@@ -11,7 +11,7 @@ The v1 compatibility guarantee covers:
 - the generic database adapter and adapter-conformance contracts;
 - `adapter/mongodb`, `adapter/postgresql`, and `adapter/sqlite`;
 - the documented core HTTP routes and security behavior;
-- the 35 social-provider presets and generic OAuth/OIDC consumer API, excluding
+- the 36 social-provider presets and generic OAuth/OIDC consumer API, excluding
   behavior controlled independently by provider services.
 
 Within that boundary, incompatible exported API changes, documented wire

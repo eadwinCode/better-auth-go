@@ -2,7 +2,7 @@ module github.com/eadwinCode/better-auth-go
 
 go 1.25.0
 
-toolchain go1.26.5
+toolchain go1.26.9
 
 require (
 	github.com/beevik/etree v1.6.0

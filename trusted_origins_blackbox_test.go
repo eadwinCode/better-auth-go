@@ -328,3 +328,53 @@ func serveRequest(handler http.Handler, request *http.Request) *httptest.Respons
 	handler.ServeHTTP(recorder, request)
 	return recorder
 }
+
+// Better Auth v1.7.2 accepts "Origin: null" from a same-origin page that uses
+// Referrer-Policy: no-referrer, by taking the origin from the request target
+// when Sec-Fetch-Site is exactly "same-origin". Every other form stays
+// rejected, and the inferred origin must still be trusted.
+func TestNullOriginInferredOnlyForSameOriginFetchMetadata(t *testing.T) {
+	t.Parallel()
+	var called atomic.Int64
+	handler := newOriginPolicyHandler(
+		t, []string{"https://app.example.com"}, nil, originPolicyPlugin(&called, nil),
+	)
+	for _, test := range []struct {
+		name   string
+		origin string
+		site   string
+		host   string
+		want   int
+	}{
+		{name: "same-origin trusted host", origin: "null", site: "same-origin", host: "app.example.com", want: http.StatusOK},
+		{name: "same-origin untrusted host", origin: "null", site: "same-origin", host: "auth.example.com", want: http.StatusForbidden},
+		{name: "same-site", origin: "null", site: "same-site", host: "app.example.com", want: http.StatusForbidden},
+		{name: "cross-site", origin: "null", site: "cross-site", host: "app.example.com", want: http.StatusForbidden},
+		{name: "none", origin: "null", site: "none", host: "app.example.com", want: http.StatusForbidden},
+		{name: "no fetch metadata", origin: "null", host: "app.example.com", want: http.StatusForbidden},
+		{name: "case changed", origin: "null", site: "Same-Origin", host: "app.example.com", want: http.StatusForbidden},
+		{name: "padded", origin: "null", site: " same-origin", host: "app.example.com", want: http.StatusForbidden},
+		{name: "Null spelling", origin: "Null", site: "same-origin", host: "app.example.com", want: http.StatusForbidden},
+		{name: "missing origin", site: "same-origin", host: "app.example.com", want: http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, path := range []string{"/api/auth/origin-policy", "/api/auth/sign-up/email"} {
+				request := httptest.NewRequest(http.MethodPost, "https://"+test.host+path, nil)
+				request.Header.Set("Content-Type", "application/json")
+				if test.origin != "" {
+					request.Header.Set("Origin", test.origin)
+				}
+				if test.site != "" {
+					request.Header.Set("Sec-Fetch-Site", test.site)
+				}
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, request)
+				forbidden := recorder.Code == http.StatusForbidden
+				if forbidden != (test.want == http.StatusForbidden) {
+					t.Fatalf("%s status=%d want forbidden=%v body=%s",
+						path, recorder.Code, test.want == http.StatusForbidden, recorder.Body)
+				}
+			}
+		})
+	}
+}

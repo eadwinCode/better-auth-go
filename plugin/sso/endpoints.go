@@ -362,11 +362,21 @@ func (instance *runtime) completeIdentityWithState(
 	if ctx.AuthenticateOAuth == nil {
 		return nil, internal(errors.New("SSO identity completion is unavailable"))
 	}
-	if strings.TrimSpace(info.Issuer) == "" || strings.TrimSpace(info.ID) == "" {
+	if strings.TrimSpace(info.ID) == "" {
 		return nil, providerFailure(errors.New("SSO provider returned no protocol identity"))
 	}
+	// Accounts are keyed by (providerId, accountId). An SSO provider that
+	// shares an ID with a social or trusted provider could sign in as that
+	// provider's users, so it is refused even if it was stored earlier.
+	inUse, err := accountProviderInUse(ctx, provider.ProviderID)
+	if err != nil {
+		return nil, internal(err)
+	}
+	if inUse {
+		return nil, forbidden(errors.New("SSO provider id is used by another account provider"))
+	}
 	if instance.config.DisableImplicitSignUp && !state.RequestSignUp {
-		exists, err := ssoIdentityExists(ctx, info.Issuer, info.ID, info.Email)
+		exists, err := ssoIdentityExists(ctx, provider.ProviderID, info.ID, info.Email)
 		if err != nil {
 			return nil, internal(err)
 		}
@@ -428,17 +438,18 @@ func (instance *runtime) completeIdentityWithState(
 	return response, nil
 }
 
+// ssoIdentityExists reports whether the SSO identity already has an account
+// or its email already has a user. Accounts are keyed by the SSO provider ID
+// and the provider's account ID, like every other account.
 func ssoIdentityExists(
 	ctx *betterauth.HookContext,
-	issuer, accountID, email string,
+	providerID, accountID, email string,
 ) (bool, error) {
-	account, err := ctx.Database.FindOne(ctx.Context, betterauth.FindOneQuery{
-		Model: betterauth.ModelAccount,
-		Where: []betterauth.Where{
-			betterauth.Eq("issuer", issuer), betterauth.Eq("accountId", accountID),
-		},
-	})
-	if err == nil && account != nil {
+	account, err := betterauth.FindAccountByKey(ctx.Context, ctx.Database, providerID, accountID)
+	if err != nil {
+		return false, err
+	}
+	if account != nil {
 		return true, nil
 	}
 	user, userErr := ctx.Database.FindOne(ctx.Context, betterauth.FindOneQuery{

@@ -43,8 +43,12 @@ go_providers() {
     sort
 }
 
-if ! diff -u <(upstream_providers) <(go_providers); then
-  echo "Go social-provider catalog differs from Better Auth ${upstream_tag}" >&2
+# Go may add providers from later releases; it must still ship every
+# provider this tag shipped.
+missing_providers="$(comm -23 <(upstream_providers) <(go_providers))"
+if [[ -n "${missing_providers}" ]]; then
+  echo "Go social-provider catalog is missing providers from Better Auth ${upstream_tag}:" >&2
+  echo "${missing_providers}" >&2
   exit 1
 fi
 
@@ -112,4 +116,4 @@ stripe|@better-auth/stripe
 PACKAGES
 
 echo "Better Auth ${upstream_tag} source inventory matches ${expected_commit}."
-echo "Verified 35 social providers, 27 built-in plugin exports, and 7 plugin packages."
+echo "Verified all 35 v1.6.26 social providers, 27 built-in plugin exports, and 7 plugin packages."

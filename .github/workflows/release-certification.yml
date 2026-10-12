@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - name: Format
         run: test -z "$(gofmt -l .)"
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - run: go test -run=^$ -fuzz=FuzzArgon2idParser -fuzztime=10s .
       - run: go test -run=^$ -fuzz=FuzzSessionCookieParsing -fuzztime=10s .
@@ -70,13 +70,13 @@ jobs:
       - run: go test -run=^$ -fuzz=FuzzOpenSession -fuzztime=10s ./plugin/onetimetoken
 
   typescript:
-    name: Better Auth 1.7.0 differential
+    name: Better Auth 1.7.7 differential
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - uses: oven-sh/setup-bun@v2
         with:
@@ -108,17 +108,23 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - name: Start MongoDB 8 replica set
         run: |
-          docker run --rm -d --name better-auth-go-mongo-release \
+          # No --rm: if mongod exits early, its logs must still be readable.
+          docker run -d --name better-auth-go-mongo-release \
             -p 27017:27017 mongo:8 --replSet rs0 --bind_ip_all \
             --oplogSize 128 --wiredTigerCacheSizeGB 0.25
           for attempt in $(seq 1 90); do
             if docker exec better-auth-go-mongo-release mongosh --quiet \
               --eval 'db.runCommand({ ping: 1 }).ok' | grep -q '^1$'; then
               break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' better-auth-go-mongo-release)" != "true" ]; then
+              echo "MongoDB container stopped during start-up:" >&2
+              docker logs better-auth-go-mongo-release
+              exit 1
             fi
             if [ "$attempt" = "90" ]; then
               docker logs better-auth-go-mongo-release
@@ -146,7 +152,7 @@ jobs:
         run: scripts/test-real-adapter-migrations.sh
       - name: Stop MongoDB
         if: always()
-        run: docker stop better-auth-go-mongo-release || true
+        run: docker rm -f better-auth-go-mongo-release || true
 
   experimental-enterprise:
     name: Experimental SSO and SCIM deterministic suites
@@ -155,7 +161,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - run: go test -race -count=1 ./plugin/sso ./plugin/scim
 
@@ -167,12 +173,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: better-auth/better-auth
-          ref: v1.7.0
+          ref: v1.7.7
           path: better-auth-repo
-      - name: Verify Better Auth v1.7.0
+      - name: Verify Better Auth v1.7.7
         env:
           BETTER_AUTH_UPSTREAM_DIR: ${{ github.workspace }}/better-auth-repo
-        run: scripts/check-upstream-v1.7.0.sh
+        run: scripts/check-upstream-v1.7.7.sh
 
   install-module:
     name: External module install
@@ -181,7 +187,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.9"
           cache: true
       - name: Install candidate without replace
         run: scripts/test-install-module.sh "${{ inputs.module-ref }}"

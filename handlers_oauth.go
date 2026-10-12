@@ -183,17 +183,17 @@ func (s *Server) handleSocialCallback(providerID string) func(http.ResponseWrite
 				"The provider did not return a verified identity.", http.StatusBadGateway, trustErr,
 			)
 		}
-		if err != nil || profile.Issuer == "" || len(profile.Issuer) > 2048 ||
-			profile.ProviderAccountID == "" || len(profile.ProviderAccountID) > 512 ||
+		if err != nil || profile.ProviderAccountID == "" || len(profile.ProviderAccountID) > 512 ||
 			(!profile.EmailVerified && !trustedProvider) {
 			return s.oauthCallbackError(
 				w, state, "unable_to_get_user_info", CodeProviderFailure,
 				"The provider did not return a verified identity.", http.StatusBadGateway, err,
 			)
 		}
-		if trustedProvider {
+		if trustedProvider && !isPlaceholderEmail(profile.Email) {
 			// Membership in TrustedProviders is an application-owned assertion
 			// that this configured provider supplies verified email identity.
+			// A placeholder address is never verified, as in Better Auth.
 			profile.EmailVerified = true
 		}
 		encryptedTokens, err := s.encryptProviderTokens(r.Context(), result.Tokens)
@@ -336,6 +336,32 @@ func (s *Server) handleSocialCallback(providerID string) func(http.ResponseWrite
 		})
 		return nil
 	}
+}
+
+// accountProviderInUse reports whether providerID names a configured social
+// provider or a trusted provider for this request, like the reserved IDs
+// Better Auth's SSO plugin checks.
+func (s *Server) accountProviderInUse(request *http.Request, providerID string) (bool, error) {
+	for configured := range s.cfg.SocialProviders {
+		if strings.EqualFold(configured, strings.TrimSpace(providerID)) {
+			return true, nil
+		}
+	}
+	trustedProviders := s.cfg.Account.TrustedProviders
+	if s.cfg.Account.TrustedProviderResolver != nil {
+		resolved, err := s.cfg.Account.TrustedProviderResolver.TrustedProviders(request.Context(), request)
+		if err != nil {
+			return false, err
+		}
+		trustedProviders = resolved
+	}
+	providerID = strings.ToLower(strings.TrimSpace(providerID))
+	for _, trusted := range trustedProviders {
+		if strings.ToLower(strings.TrimSpace(trusted)) == providerID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *Server) trustedOAuthProvider(request *http.Request, providerID string) (bool, error) {

@@ -21,9 +21,14 @@ type Server struct {
 	allowedReturns map[string]struct{}
 	plugins        pluginRuntime
 	handler        http.Handler
+	schemaChecker  SchemaChecker
+	schemaGate     schemaGate
 }
 
 func New(cfg Config) (*Server, error) {
+	// Take the checker from the adapter the caller passed in. New wraps that
+	// adapter, and the wrappers do not carry optional interfaces.
+	checker, _ := cfg.Database.(SchemaChecker)
 	normalized, origins, returns, err := cfg.normalized()
 	if err != nil {
 		return nil, err
@@ -38,6 +43,7 @@ func New(cfg Config) (*Server, error) {
 		trustedOrigins: origins,
 		allowedReturns: returns,
 		plugins:        plugins,
+		schemaChecker:  checker,
 	}
 	server.handler = http.HandlerFunc(server.serveHTTP)
 	return server, nil
@@ -415,6 +421,12 @@ func (s *Server) authenticatePluginOAuth(
 // ResolveSession is safe for concurrent use. It does not mutate the request,
 // rotate the session, refresh cookies, or return the opaque session token.
 func (s *Server) ResolveSession(ctx context.Context, r *http.Request) (SessionResult, error) {
+	if ctx == nil {
+		return SessionResult{}, errors.New("betterauth: resolve session: nil context")
+	}
+	if err := s.requireSchema(ctx); err != nil {
+		return SessionResult{}, err
+	}
 	result, _, err := s.resolveSession(ctx, r)
 	return result, err
 }
@@ -518,7 +530,7 @@ func (s *Server) ensureCSRFCookie(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *Server) checkOrigin(r *http.Request) error {
-	raw := r.Header.Get("Origin")
+	raw := InferNullOrigin(r, s.cfg.PublicURL)
 	if raw == "" {
 		return publicError(CodeInvalidOrigin, "Invalid origin", http.StatusForbidden, nil)
 	}
@@ -604,4 +616,23 @@ func truncate(value string, max int) string {
 
 func (s *Server) actionURL(route, token string) string {
 	return fmt.Sprintf("%s%s%s?token=%s", s.cfg.PublicURL, s.cfg.BasePath, route, token)
+}
+
+// InferNullOrigin returns the request's Origin header. Like Better Auth, when
+// a same-origin page uses Referrer-Policy: no-referrer the browser sends
+// "Origin: null"; only for exactly "null" together with exactly
+// "Sec-Fetch-Site: same-origin" does it return the request target's origin
+// (publicURL's scheme and the request Host) instead. Browsers set
+// Sec-Fetch-Site and pages cannot change it. The result must still be checked
+// against the trusted origins.
+func InferNullOrigin(r *http.Request, publicURL string) string {
+	origin := r.Header.Get("Origin")
+	if origin != "null" || r.Header.Get("Sec-Fetch-Site") != "same-origin" || r.Host == "" {
+		return origin
+	}
+	scheme, _, found := strings.Cut(publicURL, "://")
+	if !found || scheme == "" {
+		return origin
+	}
+	return scheme + "://" + r.Host
 }

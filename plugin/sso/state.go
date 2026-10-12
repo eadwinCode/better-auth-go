@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -116,7 +117,13 @@ func safeReturnTo(ctx *betterauth.HookContext, value string) (string, error) {
 		return "", err
 	}
 	if strings.HasPrefix(value, "/") {
-		return strings.TrimSuffix(ctx.BaseURL, "/") + value, nil
+		// Better Auth redirects to the relative value as is, so the browser
+		// resolves it against the site's origin, not the auth base path.
+		base, err := url.Parse(ctx.BaseURL)
+		if err != nil {
+			return "", err
+		}
+		return base.Scheme + "://" + base.Host + value, nil
 	}
 	return value, nil
 }

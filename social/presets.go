@@ -10,8 +10,8 @@ import (
 
 // SupportedProviders is the Better Auth v1.7 built-in provider catalog.
 var SupportedProviders = []string{
-	"apple", "atlassian", "cognito", "discord", "dropbox", "facebook", "figma",
-	"github", "gitlab", "google", "huggingface", "kakao", "kick", "line",
+	"apple", "atlassian", "cloudflare", "cognito", "discord", "dropbox", "facebook",
+	"figma", "github", "gitlab", "google", "huggingface", "kakao", "kick", "line",
 	"linear", "linkedin", "microsoft", "naver", "notion", "paybin", "paypal",
 	"polar", "railway", "reddit", "roblox", "salesforce", "slack", "spotify",
 	"tiktok", "twitch", "twitter", "vercel", "vk", "wechat", "zoom",
@@ -34,6 +34,21 @@ func providerPreset(id string, options Options) (preset, error) {
 		value.userInfoURL = "https://api.atlassian.com/me"
 		value.defaultScopes = []string{"read:jira-user", "offline_access"}
 		value.authorizationExtra = map[string]string{"audience": "api.atlassian.com"}
+	case "cloudflare":
+		value.authorizationURL = "https://dash.cloudflare.com/oauth2/auth"
+		value.tokenURL = "https://dash.cloudflare.com/oauth2/token"
+		// Cloudflare's OIDC userinfo only returns `sub`, so the profile comes
+		// from the API /user endpoint, wrapped in {success, result}.
+		value.userInfoURL = "https://api.cloudflare.com/client/v4/user"
+		value.defaultScopes = []string{"user-details.read"}
+		// A client with a secret uses Basic auth by default. A client without
+		// a secret is a public PKCE client and sends no client secret.
+		value.tokenAuth = TokenAuthBasic
+		if options.ClientSecret == "" {
+			value.tokenAuth = TokenAuthNone
+		} else if options.TokenAuth == TokenAuthNone {
+			return preset{}, errors.New("social: cloudflare none token auth cannot be combined with a client secret")
+		}
 	case "cognito":
 		issuer := strings.TrimSuffix(options.Issuer, "/")
 		if issuer == "" {
@@ -69,6 +84,7 @@ func providerPreset(id string, options Options) (preset, error) {
 		value.tokenURL = "https://api.figma.com/v1/oauth/token"
 		value.userInfoURL = "https://api.figma.com/v1/me"
 		value.defaultScopes = []string{"current_user:read"}
+		value.tokenAuth = TokenAuthBasic
 	case "github":
 		value.authorizationURL = "https://github.com/login/oauth/authorize"
 		value.tokenURL = "https://github.com/login/oauth/access_token"
@@ -155,7 +171,10 @@ func providerPreset(id string, options Options) (preset, error) {
 		value.authorizationURL = "https://api.notion.com/v1/oauth/authorize"
 		value.tokenURL = "https://api.notion.com/v1/oauth/token"
 		value.userInfoURL = "https://api.notion.com/v1/users/me"
+		// Upstream sends the code exchange with Basic auth but the refresh with
+		// the default client_secret_post.
 		value.tokenAuth = TokenAuthBasic
+		value.refreshTokenAuth = TokenAuthBody
 		value.pkce = false
 		value.authorizationExtra = map[string]string{"owner": "user"}
 		value.userInfoHeaders = map[string]string{"Notion-Version": "2022-06-28"}
@@ -182,7 +201,6 @@ func providerPreset(id string, options Options) (preset, error) {
 		value.tokenURL = api + "/v1/oauth2/token"
 		value.userInfoURL = api + "/v1/identity/oauth2/userinfo?schema=paypalv1.1"
 		value.tokenAuth = TokenAuthBasic
-		value.pkce = false
 	case "polar":
 		value.authorizationURL = "https://polar.sh/oauth2/authorize"
 		value.tokenURL = "https://api.polar.sh/v1/oauth2/token"
@@ -193,12 +211,16 @@ func providerPreset(id string, options Options) (preset, error) {
 		value.tokenURL = "https://backboard.railway.com/oauth/token"
 		value.userInfoURL = "https://backboard.railway.com/oauth/me"
 		value.defaultScopes = []string{"openid", "email", "profile"}
+		value.tokenAuth = TokenAuthBasic
 	case "reddit":
 		value.authorizationURL = "https://www.reddit.com/api/v1/authorize"
 		value.tokenURL = "https://www.reddit.com/api/v1/access_token"
 		value.userInfoURL = "https://oauth.reddit.com/api/v1/me"
 		value.defaultScopes = []string{"identity"}
 		value.tokenAuth = TokenAuthBasic
+		// Reddit asks for a descriptive User-Agent. Upstream sends these
+		// headers on the code exchange only; refresh keeps the defaults.
+		value.tokenHeaders = map[string]string{"Accept": "text/plain", "User-Agent": "better-auth"}
 		value.pkce = false
 		value.authorizationExtra = map[string]string{"duration": "permanent"}
 	case "roblox":
@@ -226,15 +248,17 @@ func providerPreset(id string, options Options) (preset, error) {
 		value.tokenURL = "https://accounts.spotify.com/api/token"
 		value.userInfoURL = "https://api.spotify.com/v1/me"
 		value.defaultScopes = []string{"user-read-email"}
-		value.tokenAuth = TokenAuthBasic
 	case "tiktok":
 		value.authorizationURL = "https://www.tiktok.com/v2/auth/authorize"
 		value.tokenURL = "https://open.tiktokapis.com/v2/oauth/token/"
-		value.userInfoURL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name"
+		value.userInfoURL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,avatar_large_url,display_name,username"
 		value.defaultScopes = []string{"user.info.profile"}
 		value.clientIDParam = "client_key"
 		value.scopeSeparator = ","
 		value.pkce = false
+		// Upstream sends no code challenge to TikTok but still passes the
+		// code verifier in the token request.
+		value.tokenCodeVerifier = true
 	case "twitch":
 		value.authorizationURL = "https://id.twitch.tv/oauth2/authorize"
 		value.tokenURL = "https://id.twitch.tv/oauth2/token"
@@ -276,8 +300,6 @@ func providerPreset(id string, options Options) (preset, error) {
 		value.authorizationURL = "https://zoom.us/oauth/authorize"
 		value.tokenURL = "https://zoom.us/oauth/token"
 		value.userInfoURL = "https://api.zoom.us/v2/users/me"
-		value.tokenAuth = TokenAuthBasic
-		value.pkce = false
 	default:
 		if options.AuthorizationURL == "" || options.TokenURL == "" ||
 			(options.UserInfoURL == "" && !options.oidcDiscovery) {
@@ -295,6 +317,10 @@ func providerPreset(id string, options Options) (preset, error) {
 	}
 	if options.TokenAuth != "" {
 		value.tokenAuth = options.TokenAuth
+		value.refreshTokenAuth = ""
+	}
+	if value.refreshTokenAuth == "" {
+		value.refreshTokenAuth = value.tokenAuth
 	}
 	return value, nil
 }

@@ -150,6 +150,11 @@ type Config struct {
 	Hooks             ServerHooks
 	BackgroundTasks   BackgroundTaskRunner
 	MaxResponseBytes  int64
+	// DisableSchemaValidation turns off the live schema check that runs
+	// before requests when the adapter implements SchemaChecker. It matches
+	// Better Auth's advanced.database.validateSchema: false. The check is on
+	// by default in every environment.
+	DisableSchemaValidation bool
 }
 
 type systemClock struct{}
@@ -348,7 +353,7 @@ func (cfg Config) normalized() (Config, trustedOriginPolicy, map[string]struct{}
 		cfg.MinPasswordBytes = 8
 	}
 	if cfg.MaxPasswordBytes == 0 {
-		cfg.MaxPasswordBytes = 128
+		cfg.MaxPasswordBytes = defaultMaxPasswordBytes
 	}
 	if cfg.MinPasswordBytes < 8 || cfg.MaxPasswordBytes < cfg.MinPasswordBytes || cfg.MaxPasswordBytes > 1<<20 {
 		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: password length policy is invalid")

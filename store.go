@@ -31,9 +31,8 @@ func (s *databaseStore) CreateEmailUser(ctx context.Context, params CreateEmailU
 		}
 		_, err = tx.Create(ctx, CreateQuery{Model: ModelAccount, ForceAllowID: true, Data: Record{
 			"id": params.User.ID + ":credential", "userId": params.User.ID,
-			"providerId": credentialProvider, "issuer": CredentialAccountIssuer,
-			"accountId": params.User.ID,
-			"password":  params.PasswordHash, "createdAt": params.User.CreatedAt,
+			"providerId": credentialProvider, "accountId": params.User.ID,
+			"password": params.PasswordHash, "createdAt": params.User.CreatedAt,
 			"updatedAt": params.User.UpdatedAt,
 		}})
 		if err != nil {
@@ -113,7 +112,7 @@ func (s *databaseStore) SetPasswordHash(ctx context.Context, userID, passwordHas
 		}
 		_, err = tx.Create(ctx, CreateQuery{Model: ModelAccount, ForceAllowID: true, Data: Record{
 			"id": userID + ":credential", "userId": userID,
-			"providerId": credentialProvider, "issuer": CredentialAccountIssuer, "accountId": userID,
+			"providerId": credentialProvider, "accountId": userID,
 			"password": passwordHash, "createdAt": now.UTC(), "updatedAt": now.UTC(),
 		}})
 		return err
@@ -390,9 +389,8 @@ func (s *databaseStore) LinkOAuthAccount(
 	now time.Time,
 ) error {
 	return s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
-		existing, err := tx.FindOne(ctx, FindOneQuery{Model: ModelAccount,
-			Where: accountIdentityWhere(profile.Issuer, profile.ProviderAccountID)})
-		if err != nil && !errors.Is(err, ErrNotFound) {
+		existing, err := FindAccountByKey(ctx, tx, profile.Provider, profile.ProviderAccountID)
+		if err != nil {
 			return err
 		}
 		if existing != nil {
@@ -420,8 +418,8 @@ func (s *databaseStore) LinkOAuthAccount(
 			return err
 		}
 		_, err = tx.Create(ctx, CreateQuery{Model: ModelAccount, ForceAllowID: true, Data: Record{
-			"id": accountID, "userId": userID, "providerId": profile.Provider,
-			"issuer": profile.Issuer, "accountId": profile.ProviderAccountID,
+			"id": accountID, "userId": userID,
+			"providerId": profile.Provider, "accountId": profile.ProviderAccountID,
 			"accessToken": tokens.AccessToken, "refreshToken": tokens.RefreshToken,
 			"idToken": tokens.IDToken, "scope": tokens.Scope,
 			"accessTokenExpiresAt":  nullableTimeValue(tokens.AccessTokenExpiresAt),
@@ -729,9 +727,8 @@ func (s *databaseStore) ConsumePasswordReset(
 			if _, err = tx.Create(ctx, CreateQuery{
 				Model: ModelAccount, ForceAllowID: true, Data: Record{
 					"id": userID + ":credential", "userId": userID,
-					"providerId": credentialProvider, "issuer": CredentialAccountIssuer,
-					"accountId": userID,
-					"password":  passwordHash, "createdAt": now, "updatedAt": now,
+					"providerId": credentialProvider, "accountId": userID,
+					"password": passwordHash, "createdAt": now, "updatedAt": now,
 				},
 			}); err != nil {
 				return err
@@ -824,9 +821,8 @@ func (s *databaseStore) UpsertOAuthUser(
 	var createdSession Session
 	isNew := false
 	err := s.db.Transaction(ctx, func(tx DatabaseAdapter) error {
-		account, err := tx.FindOne(ctx, FindOneQuery{Model: ModelAccount,
-			Where: accountIdentityWhere(profile.Issuer, profile.ProviderAccountID)})
-		if err != nil && !errors.Is(err, ErrNotFound) {
+		account, err := FindAccountByKey(ctx, tx, profile.Provider, profile.ProviderAccountID)
+		if err != nil {
 			return err
 		}
 		if account != nil {
@@ -905,8 +901,8 @@ func (s *databaseStore) UpsertOAuthUser(
 			}
 			accountID := event.ID + ":account"
 			_, err = tx.Create(ctx, CreateQuery{Model: ModelAccount, ForceAllowID: true, Data: Record{
-				"id": accountID, "userId": user.ID, "providerId": profile.Provider,
-				"issuer": profile.Issuer, "accountId": profile.ProviderAccountID,
+				"id": accountID, "userId": user.ID,
+				"providerId": profile.Provider, "accountId": profile.ProviderAccountID,
 				"accessToken": tokens.AccessToken, "refreshToken": tokens.RefreshToken, "idToken": tokens.IDToken,
 				"scope": tokens.Scope, "accessTokenExpiresAt": nullableTimeValue(tokens.AccessTokenExpiresAt),
 				"refreshTokenExpiresAt": nullableTimeValue(tokens.RefreshTokenExpiresAt),
@@ -1088,10 +1084,6 @@ func accountFromRecord(row Record) (OAuthAccount, error) {
 	if err != nil {
 		return OAuthAccount{}, err
 	}
-	issuer, err := recordString(row, "issuer")
-	if err != nil {
-		return OAuthAccount{}, err
-	}
 	accountID, err := recordString(row, "accountId")
 	if err != nil {
 		return OAuthAccount{}, err
@@ -1105,7 +1097,7 @@ func accountFromRecord(row Record) (OAuthAccount, error) {
 		return OAuthAccount{}, err
 	}
 	return OAuthAccount{
-		ID: id, UserID: userID, Provider: providerID, Issuer: issuer, ProviderAccountID: accountID,
+		ID: id, UserID: userID, Provider: providerID, ProviderAccountID: accountID,
 		Scope: optionalString(row["scope"]), CreatedAt: createdAt, UpdatedAt: updatedAt,
 	}, nil
 }

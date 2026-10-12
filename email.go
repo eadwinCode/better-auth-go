@@ -76,3 +76,9 @@ func validPlaceholderNamespace(value string) bool {
 	}
 	return true
 }
+
+// isPlaceholderEmail reports whether email uses the reserved placeholder
+// domain that CreatePlaceholderEmail produces.
+func isPlaceholderEmail(email string) bool {
+	return strings.HasSuffix(strings.ToLower(email), "."+placeholderEmailDomain)
+}

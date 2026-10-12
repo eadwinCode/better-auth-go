@@ -26,6 +26,9 @@ func (instance *runtime) createProvider(
 	if err != nil {
 		return storedProvider{}, badRequest(err)
 	}
+	if err = instance.rejectAccountProviderID(ctx, normalized.ProviderID); err != nil {
+		return storedProvider{}, err
+	}
 	if err = instance.validateProvider(ctx.Context, normalized); err != nil {
 		return storedProvider{}, providerFailure(err)
 	}
@@ -283,4 +286,28 @@ func timeRecord(record betterauth.Record, field string) time.Time {
 	default:
 		return time.Time{}
 	}
+}
+
+// rejectAccountProviderID follows Better Auth 1.7.7: SSO provider IDs share
+// the account provider namespace, so a new SSO provider may not use the ID of
+// a configured social provider, a trusted provider or a default SSO provider.
+func (instance *runtime) rejectAccountProviderID(ctx *betterauth.HookContext, providerID string) error {
+	if _, isDefault := instance.defaults[providerID]; isDefault {
+		return reservedProviderIDError()
+	}
+	inUse, err := accountProviderInUse(ctx, providerID)
+	if err != nil {
+		return internal(err)
+	}
+	if inUse {
+		return reservedProviderIDError()
+	}
+	return nil
+}
+
+func accountProviderInUse(ctx *betterauth.HookContext, providerID string) (bool, error) {
+	if ctx.AccountProviderInUse == nil {
+		return false, errors.New("account provider check is unavailable")
+	}
+	return ctx.AccountProviderInUse(providerID)
 }

@@ -1,92 +1,31 @@
 # Better Auth 1.7 migration contract
 
-This repository targets Better Auth TypeScript **v1.7.0** for the migration
-described here. The primary references are the v1.7.0 release, the official
-1.7 upgrade guide, and upstream tag commit
-`c3688ba88edff12dfcb1ced007e332711509ac29`. This document records implemented
-behavior and explicit gaps; it is not a blanket parity claim.
+This repository targets Better Auth TypeScript **v1.7.7**. It started from the
+v1.7.0 release (tag commit `c3688ba88edff12dfcb1ced007e332711509ac29`); the
+changes from v1.7.2 to v1.7.7 are listed in
+[better-auth-v1.7.7.md](./better-auth-v1.7.7.md). This document records
+implemented behavior and explicit gaps; it is not a blanket parity claim.
 
-## Account identity migration
+## Account identity
 
-`account.issuer` is required in the final schema and account identity is unique
-by `(issuer, accountId)`. `providerId` remains presentation/routing metadata; it
-is not an identity namespace.
+Better Auth 1.7.0 to 1.7.2 keyed accounts by a new required `issuer` column.
+Better Auth 1.7.3 removed it again (#11153), and so does better-auth-go:
+accounts are keyed by `(providerId, accountId)`, the same as in better-auth-go
+v1.0.x. A row set where one key matches more than one account fails sign-in and
+linking with `ErrAmbiguousAccount`. Go keeps the unique index
+`uniq_provider_account`, so a Go-built database cannot hold such rows.
 
-Use `migration/v17.Backfill` between a nullable staging schema and the final
-core schema:
+- Databases from released better-auth-go versions (v1.0.0 to v1.0.2) need no
+  change.
+- Databases built from unreleased `main` between the 1.7 port and this change
+  have an `issuer` column. Follow `migration/v17/README.md`; it has tested
+  PostgreSQL and SQLite clean-up scripts and the MongoDB steps.
+- Microsoft accounts use the verified `oid` as the account ID, as upstream does.
+  `migration/v17.RewriteAccountIDs` rewrites stored IDs (for example `sub` to
+  `oid`) from a resolver you supply, and writes nothing if two rows would share
+  a key.
 
-1. Take a database backup and stop all writers that can create or link accounts.
-2. Apply `v17.StagingSchema()` so `issuer` is nullable and do **not** create the
-   final unique index yet.
-3. Export every account and review the provider-to-issuer mapping. Credentials
-   use `local:credential`; plain OAuth uses `local:oauth:<escaped-provider-id>`;
-   OIDC uses its exact verified issuer.
-4. Supply `ProviderIssuers` only after review. Use `Resolve` for rows
-   whose subject changes, including Microsoft `sub` to verified `oid` and any
-   SSO mapping-derived subject. The resolver must use a trusted provider export
-   or cryptographically verified token; the migration cannot infer these IDs.
-5. Run with `DryRun: true`. Any duplicate `(issuer, accountId)` is a hard stop
-   and produces zero writes. Resolve ownership manually; never select a winner
-   by timestamp.
-6. Run the same plan without `DryRun`, verify row counts and collision reports,
-   then finalize the physical schema as described below. Applying
-   `betterauth.CoreSchema()` installs the compound index for additive adapters,
-   but deliberately does not rewrite an existing SQL column.
-7. Start one canary writer, exercise sign-in and account linking for every
-   configured provider, then restore normal traffic.
-
-Rollback before step 6 is a restore of the account table or clearing the staged
-issuer values while writers remain stopped. After the final index is active,
-rollback requires restoring the backup and the pre-1.7 binary together. Do not
-drop `issuer` while a 1.7 binary can write.
-
-MongoDB must backfill before `EnsureIndexes`; the staging schema deliberately
-suppresses the fallback unique index. SQLite and PostgreSQL follow the same
-staging/backfill/final-schema order, followed by explicit SQL finalization.
-Memory adapter conformance covers
-same-subject/different-issuer acceptance and same-issuer/same-subject collision.
-The repository has no MySQL adapter; MySQL execution remains external adapter
-work, not an inferred support claim.
-
-### SQL finalization
-
-The SQL adapter's `Migrate` method is additive: it never tightens or rewrites an
-existing column. After applying the final schema, call
-`v17.FinalizeSQL(ctx, db, dialect, finalSchema)` while writers remain stopped.
-It repeats the null/collision checks inside its transaction, removes the legacy
-identity indexes, and tightens the column. First independently assert that no row
-has a null/empty issuer and that this query returns no rows:
-
-```sql
-SELECT issuer, accountId, COUNT(*)
-FROM account
-GROUP BY issuer, accountId
-HAVING COUNT(*) > 1;
-```
-
-For PostgreSQL, run the following in one transaction after those checks (quote
-custom table/field names from the deployment's merged schema):
-
-```sql
-BEGIN;
-DROP INDEX IF EXISTS uniq_provider_account;
-DROP INDEX IF EXISTS account_provider_account_unique;
-ALTER TABLE account ALTER COLUMN issuer SET NOT NULL;
-CREATE UNIQUE INDEX account_issuer_accountId_uidx
-  ON account (issuer, accountId);
-COMMIT;
-```
-
-SQLite cannot add `NOT NULL` to an existing column. `FinalizeSQL` therefore uses
-one maintenance transaction to create a replacement account table from the
-deployment's final merged schema, copy every column with an explicit column
-list, drop the old table, rename the replacement, then recreate the final
-indexes and verify foreign-key/integrity checks. The replacement includes
-`issuer TEXT NOT NULL` and only `UNIQUE (issuer, accountId)` for identity; do
-not carry forward `uniq_provider_account` or
-`account_provider_account_unique`. The helper refuses to run if live columns do
-not exactly match the reviewed merged schema, so application-defined account
-columns cannot be silently dropped.
+The repository has no MySQL adapter.
 
 ## Runtime behavior
 

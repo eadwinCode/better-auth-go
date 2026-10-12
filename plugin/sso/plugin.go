@@ -287,7 +287,7 @@ func validateRedirectURI(value, baseURL string, trusted []string) error {
 		return errors.New("sso: invalid shared redirect URI")
 	}
 	if !target.IsAbs() {
-		if !strings.HasPrefix(target.Path, "/") || strings.HasPrefix(target.Path, "//") {
+		if !isSafeRelativeURL(value) {
 			return errors.New("sso: shared redirect URI must be same-origin")
 		}
 		return nil
@@ -306,6 +306,38 @@ func validateRedirectURI(value, baseURL string, trusted []string) error {
 		}
 	}
 	return errors.New("sso: shared redirect URI is not trusted")
+}
+
+const relativeURLParserOrigin = "https://better-auth.invalid"
+
+// isSafeRelativeURL follows Better Auth v1.7.7: a relative URL must start
+// with one "/", must not contain a backslash or control characters, must not
+// hide a path separator as %2F or %5C, and must stay on the same origin after
+// URL parsing. Any query or fragment is allowed.
+func isSafeRelativeURL(value string) bool {
+	if !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") ||
+		strings.Contains(value, "\\") {
+		return false
+	}
+	for _, char := range value {
+		if char <= 0x1f || (char >= 0x7f && char <= 0x9f) {
+			return false
+		}
+	}
+	path := value
+	if end := strings.IndexAny(value, "?#"); end >= 0 {
+		path = value[:end]
+	}
+	lower := strings.ToLower(path)
+	if strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c") {
+		return false
+	}
+	base, _ := url.Parse(relativeURLParserOrigin)
+	reference, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+	return sameOrigin(base.ResolveReference(reference), base)
 }
 
 func sameOrigin(left, right *url.URL) bool {

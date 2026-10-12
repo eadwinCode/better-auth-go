@@ -6,6 +6,14 @@ import (
 	betterauth "github.com/eadwinCode/better-auth-go"
 )
 
+func reservedProviderIDError() error {
+	return betterauth.NewError(
+		betterauth.CodeValidation,
+		"This providerId is reserved and cannot be used for an SSO provider",
+		http.StatusUnprocessableEntity, nil,
+	)
+}
+
 func badRequest(err error) error {
 	return betterauth.NewError(
 		betterauth.CodeBadRequest, "Invalid SSO request.", http.StatusBadRequest, err,

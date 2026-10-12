@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -24,10 +25,90 @@ type storage struct {
 type Adapter struct {
 	storage *storage
 	txRows  map[string]map[string]betterauth.Record
+	rules   *rules
 }
 
+// rules holds what the adapter needs to know about the physical schema. All
+// keys are physical (stored) names, because the server maps logical names to
+// physical ones before it calls the adapter.
+type rules struct {
+	// ids maps a stored model name to its stored id field.
+	ids map[string]string
+	// unique maps a stored model name to its unique keys. Each key is a list
+	// of stored field names: one field for a unique field, or several for a
+	// unique compound index.
+	unique map[string][][]string
+}
+
+// New returns an empty adapter that enforces the core schema's unique fields
+// and indexes. A server calls WithSchema to replace them with the rules of
+// its merged schema.
 func New() *Adapter {
-	return &Adapter{storage: &storage{rows: map[string]map[string]betterauth.Record{}}}
+	return &Adapter{
+		storage: &storage{rows: map[string]map[string]betterauth.Record{}},
+		rules:   rulesFromSchema(betterauth.CoreSchema()),
+	}
+}
+
+// WithSchema returns an adapter that shares this adapter's data and enforces
+// the unique fields and unique compound indexes of the given logical schema,
+// using their stored model and field names.
+func (a *Adapter) WithSchema(schema betterauth.Schema) (betterauth.DatabaseAdapter, error) {
+	return &Adapter{storage: a.storage, txRows: a.txRows, rules: rulesFromSchema(schema)}, nil
+}
+
+func rulesFromSchema(schema betterauth.Schema) *rules {
+	result := &rules{
+		ids:    make(map[string]string, len(schema)),
+		unique: make(map[string][][]string, len(schema)),
+	}
+	for logicalModel, model := range schema {
+		storedModel := model.ModelName
+		if storedModel == "" {
+			storedModel = logicalModel
+		}
+		stored := func(logicalField string) string {
+			if name := model.Fields[logicalField].FieldName; name != "" {
+				return name
+			}
+			return logicalField
+		}
+		idField := stored("id")
+		result.ids[storedModel] = idField
+		for _, logicalField := range slices.Sorted(maps.Keys(model.Fields)) {
+			field := stored(logicalField)
+			if model.Fields[logicalField].Unique && field != idField {
+				result.unique[storedModel] = append(result.unique[storedModel], []string{field})
+			}
+		}
+		for _, index := range model.Indexes {
+			if !index.Unique || len(index.Fields) == 0 {
+				continue
+			}
+			fields := make([]string, len(index.Fields))
+			for position, logicalField := range index.Fields {
+				fields[position] = stored(logicalField)
+			}
+			result.unique[storedModel] = append(result.unique[storedModel], fields)
+		}
+	}
+	return result
+}
+
+func (a *Adapter) idField(model string) string {
+	if a.rules != nil {
+		if field := a.rules.ids[model]; field != "" {
+			return field
+		}
+	}
+	return "id"
+}
+
+func (a *Adapter) uniqueKeys(model string) [][]string {
+	if a.rules == nil {
+		return nil
+	}
+	return a.rules.unique[model]
 }
 
 func (a *Adapter) ID() string { return "memory" }
@@ -41,12 +122,12 @@ func (a *Adapter) Capabilities() betterauth.AdapterCapabilities {
 func (a *Adapter) Create(_ context.Context, query betterauth.CreateQuery) (betterauth.Record, error) {
 	return mutateValue(a, func(rows map[string]map[string]betterauth.Record) (betterauth.Record, error) {
 		record := cloneRecord(query.Data)
-		id, _ := record["id"].(string)
+		id, _ := record[a.idField(query.Model)].(string)
 		if id == "" {
 			return nil, errors.New("memory: record id is required")
 		}
 		model := ensureModel(rows, query.Model)
-		if _, exists := model[id]; exists || conflicts(rows, query.Model, record, "") {
+		if _, exists := model[id]; exists || a.conflicts(rows, query.Model, record, "") {
 			return nil, betterauth.ErrConflict
 		}
 		model[id] = record
@@ -132,12 +213,13 @@ func (a *Adapter) Update(_ context.Context, query betterauth.UpdateQuery) (bette
 				continue
 			}
 			updated := cloneRecord(record)
+			idField := a.idField(query.Model)
 			for field, value := range query.Update {
-				if field != "id" {
+				if field != idField {
 					updated[field] = cloneValue(value)
 				}
 			}
-			if conflicts(rows, query.Model, updated, id) {
+			if a.conflicts(rows, query.Model, updated, id) {
 				return nil, betterauth.ErrConflict
 			}
 			rows[query.Model][id] = updated
@@ -159,12 +241,13 @@ func (a *Adapter) UpdateMany(_ context.Context, query betterauth.UpdateQuery) (i
 				continue
 			}
 			updated := cloneRecord(record)
+			idField := a.idField(query.Model)
 			for field, value := range query.Update {
-				if field != "id" {
+				if field != idField {
 					updated[field] = cloneValue(value)
 				}
 			}
-			if conflicts(rows, query.Model, updated, id) {
+			if a.conflicts(rows, query.Model, updated, id) {
 				return 0, betterauth.ErrConflict
 			}
 			rows[query.Model][id] = updated
@@ -246,10 +329,14 @@ func (a *Adapter) IncrementOne(_ context.Context, query betterauth.IncrementQuer
 				}
 				updated[field] = current + delta
 			}
+			idField := a.idField(query.Model)
 			for field, value := range query.Set {
-				if field != "id" {
+				if field != idField {
 					updated[field] = cloneValue(value)
 				}
+			}
+			if a.conflicts(rows, query.Model, updated, id) {
+				return nil, betterauth.ErrConflict
 			}
 			rows[query.Model][id] = updated
 			return cloneRecord(updated), nil
@@ -265,7 +352,7 @@ func (a *Adapter) Transaction(_ context.Context, callback func(betterauth.Databa
 	a.storage.mu.Lock()
 	defer a.storage.mu.Unlock()
 	snapshot := cloneRows(a.storage.rows)
-	transaction := &Adapter{storage: a.storage, txRows: snapshot}
+	transaction := &Adapter{storage: a.storage, txRows: snapshot, rules: a.rules}
 	if err := callback(transaction); err != nil {
 		return err
 	}
@@ -298,39 +385,39 @@ func ensureModel(rows map[string]map[string]betterauth.Record, model string) map
 	return rows[model]
 }
 
-func conflicts(rows map[string]map[string]betterauth.Record, model string, candidate betterauth.Record, exceptID string) bool {
+// conflicts reports whether candidate repeats a unique key of another row in
+// the same model. Like SQL, a key with a nil or missing value never collides.
+func (a *Adapter) conflicts(
+	rows map[string]map[string]betterauth.Record,
+	model string,
+	candidate betterauth.Record,
+	exceptID string,
+) bool {
+	keys := a.uniqueKeys(model)
+	if len(keys) == 0 {
+		return false
+	}
 	for id, existing := range rows[model] {
 		if id == exceptID {
 			continue
 		}
-		switch model {
-		case betterauth.ModelUser:
-			if existing["email"] == candidate["email"] {
-				return true
-			}
-		case betterauth.ModelSession:
-			if existing["tokenHash"] == candidate["tokenHash"] {
-				return true
-			}
-		case betterauth.ModelAccount:
-			candidateIssuer, _ := candidate["issuer"].(string)
-			existingIssuer, _ := existing["issuer"].(string)
-			if candidateIssuer != "" && existingIssuer == candidateIssuer &&
-				existing["accountId"] == candidate["accountId"] {
-				return true
-			}
-			if candidateIssuer == "" && existingIssuer == "" &&
-				existing["providerId"] == candidate["providerId"] &&
-				existing["accountId"] == candidate["accountId"] {
-				return true
-			}
-		case betterauth.ModelVerification:
-			if existing["value"] == candidate["value"] {
+		for _, key := range keys {
+			if sameUniqueKey(existing, candidate, key) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func sameUniqueKey(left, right betterauth.Record, fields []string) bool {
+	for _, field := range fields {
+		leftValue, rightValue := left[field], right[field]
+		if leftValue == nil || rightValue == nil || !reflect.DeepEqual(leftValue, rightValue) {
+			return false
+		}
+	}
+	return true
 }
 
 func matches(record betterauth.Record, where []betterauth.Where) bool {
@@ -485,4 +572,7 @@ func cloneValue(value any) any {
 	}
 }
 
-var _ betterauth.DatabaseAdapter = (*Adapter)(nil)
+var (
+	_ betterauth.DatabaseAdapter           = (*Adapter)(nil)
+	_ betterauth.SchemaConfigurableAdapter = (*Adapter)(nil)
+)

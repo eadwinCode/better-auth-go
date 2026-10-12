@@ -21,6 +21,7 @@ contract.
 | database lifecycle hooks | `Plugin.DatabaseHooks` | in this PR |
 | request auth/adapter/cookie context | `HookContext` | in this PR |
 | session and double-submit CSRF middleware | `SessionMiddleware`, `CSRFMiddleware` | in this PR |
+| reserved account provider IDs (SSO `providerId` collision check) | `HookContext.AccountProviderInUse` | implemented (ADR 0022) |
 | attach an existing session (`setSessionCookie` on a known session) | `HookContext.ResumeSession`, `ErrSessionExpired` | implemented (ADR 0021) |
 | secure plugin cookie creation | `PluginResponse.SetCookie` | in this PR |
 | background tasks | `BackgroundTaskRunner` | in this PR |

@@ -55,6 +55,29 @@ SQL applications call the adapter's `Migrate` with the server's fully merged
 schema. MongoDB applications call `EnsureIndexes` with that same schema.
 Include enabled plugin schemas even when a plugin is experimental.
 
+To keep the PostgreSQL tables in their own schema, build the adapter with
+`postgresql.NewWithOptions(db, postgresql.Options{SchemaName: "auth"})`. Every
+statement then names its table as `"auth"."user"`, so the connection's
+`search_path` no longer matters, and `Migrate` runs `CREATE SCHEMA IF NOT
+EXISTS` before it creates tables. The role needs `CREATE` on the database for
+that first migration. SQLite rejects `SchemaName`.
+
+`Migrate` stops with an error when a view, materialized view, sequence, or
+other non-table relation in the target schema has the name of a Better Auth
+table. Rename or drop that relation and run `Migrate` again.
+
+The SQL adapters also check the live schema before the server handles
+requests. Until the check passes, every request fails with HTTP 500 and code
+`SCHEMA_MISMATCH` (or `INTERNAL_SERVER_ERROR` when the database cannot be
+read), and `ResolveSession`, `SetPassword`, and `VerifyPassword` return the
+error. The check finds missing tables, missing columns, and `NOT NULL` columns
+without a default that Better Auth never writes. Only a passing result is
+kept, so running `Migrate` fixes requests without a restart. Call
+`Server.CheckSchema` at startup to log the full `*SchemaMismatchError`
+message, which names each table and column and the fix. Set
+`Config.DisableSchemaValidation` only when another tool owns the schema and
+you accept that problems will surface as insert errors instead.
+
 For every upgrade:
 
 1. read the changelog and compatibility matrix;

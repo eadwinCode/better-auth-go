@@ -16,8 +16,8 @@ import (
 func TestSupportedProviderCatalog(t *testing.T) {
 	t.Parallel()
 	expected := []string{
-		"apple", "atlassian", "cognito", "discord", "dropbox", "facebook", "figma",
-		"github", "gitlab", "google", "huggingface", "kakao", "kick", "line",
+		"apple", "atlassian", "cloudflare", "cognito", "discord", "dropbox", "facebook",
+		"figma", "github", "gitlab", "google", "huggingface", "kakao", "kick", "line",
 		"linear", "linkedin", "microsoft", "naver", "notion", "paybin", "paypal",
 		"polar", "railway", "reddit", "roblox", "salesforce", "slack", "spotify",
 		"tiktok", "twitch", "twitter", "vercel", "vk", "wechat", "zoom",

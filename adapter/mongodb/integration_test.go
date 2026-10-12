@@ -2,6 +2,7 @@ package mongodb_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -9,7 +10,6 @@ import (
 	betterauth "github.com/eadwinCode/better-auth-go"
 	"github.com/eadwinCode/better-auth-go/adapter/mongodb"
 	"github.com/eadwinCode/better-auth-go/adaptertest"
-	v17 "github.com/eadwinCode/better-auth-go/migration/v17"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -44,6 +44,67 @@ func TestConformance(t *testing.T) {
 	})
 }
 
+func connectForTest(t *testing.T) *mongo.Client {
+	t.Helper()
+	uri := os.Getenv("MONGODB_URI")
+	if uri == "" {
+		t.Skip("MONGODB_URI is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	client, err := mongo.Connect(options.Client().ApplyURI(uri))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Ping(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
+	return client
+}
+
+func schemaFactory(t *testing.T, schema betterauth.Schema) betterauth.DatabaseAdapter {
+	t.Helper()
+	client := connectForTest(t)
+	name := fmt.Sprintf("better_auth_go_schema_%d", time.Now().UnixNano())
+	database := client.Database(name)
+	t.Cleanup(func() { _ = database.Drop(context.Background()) })
+	adapter, err := mongodb.New(mongodb.Config{Database: database})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.EnsureIndexes(t.Context(), schema); err != nil {
+		t.Fatal(err)
+	}
+	configured, err := adapter.WithSchema(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return configured
+}
+
+func TestAccountIdentity(t *testing.T) {
+	adaptertest.RunAccountIdentity(t, schemaFactory)
+}
+
+func TestMappedIdentity(t *testing.T) {
+	adaptertest.RunMappedIdentity(t, schemaFactory)
+}
+
+func TestMappedNamesWithCollectionsAreRejected(t *testing.T) {
+	client := connectForTest(t)
+	adapter, err := mongodb.New(mongodb.Config{
+		Database:    client.Database("better_auth_go_unused"),
+		Collections: map[string]string{betterauth.ModelUser: "people"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = adapter.WithSchema(adaptertest.MappedIdentitySchema()); err == nil {
+		t.Fatal("Collections mixed with schema model names was accepted")
+	}
+}
+
 func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	uri := os.Getenv("MONGODB_URI")
 	if uri == "" {
@@ -71,13 +132,6 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 		t.Fatal(err)
 	}
 	adaptertest.SeedReleaseBaseline(t, legacyDatabase)
-	stagingDatabase, err := betterauth.WrapDatabaseAdapter(adapter, v17.StagingSchema())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = v17.Backfill(t.Context(), stagingDatabase, v17.Options{}); err != nil {
-		t.Fatalf("backfill account issuer: %v", err)
-	}
 	current := betterauth.CoreSchema()
 	if err := adapter.EnsureIndexes(t.Context(), current); err != nil {
 		t.Fatalf("upgrade current indexes: %v", err)
@@ -92,7 +146,7 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	adaptertest.AssertReleaseUpgrade(t, currentDatabase)
 	for collection, expected := range map[string]string{
 		betterauth.ModelSession: "user_sessions",
-		betterauth.ModelAccount: "user_accounts",
+		betterauth.ModelAccount: "uniq_provider_account",
 	} {
 		specifications, err := database.Collection(collection).Indexes().ListSpecifications(t.Context())
 		if err != nil {
