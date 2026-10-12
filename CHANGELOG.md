@@ -4,7 +4,9 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 
 ## [Unreleased]
 
-Proposed release: `1.1.0` (new feature, no breaking change).
+Proposed release: `1.1.0`. It adds features and ports Better Auth v1.7.2 to
+v1.7.7 (see `docs/compatibility/better-auth-v1.7.7.md`). Some behavior changes
+are listed under **Changed**; read them before upgrading.
 
 ### Added
 
@@ -16,12 +18,82 @@ Proposed release: `1.1.0` (new feature, no breaking change).
   or attach an existing session without creating a new one or storing its raw
   token.
 - TypeScript oracle instances and the
-  `TestBetterAuthV170OneTimeTokenCompatibility` differential suite.
+  `TestBetterAuthV177OneTimeTokenCompatibility` differential suite.
 - ADR 0021 and the one-time-token guide, including a cross-subdomain sign-in
   example.
 
+- Cloudflare social provider (36 built-in providers).
+- `TokenAuthCustom` and `social.Options.CustomizeTokenRequest` for providers
+  that need non-standard token request authentication.
+- `postgresql.NewWithOptions(db, postgresql.Options{SchemaName: ...})` to keep
+  Better Auth tables in their own PostgreSQL schema. `Migrate` creates the
+  schema first.
+- A live database schema check: `Server.CheckSchema`, the `SchemaChecker`
+  adapter interface (SQLite and PostgreSQL), `DiffSchema`,
+  `SchemaMismatchError` and `Config.DisableSchemaValidation`.
+- `FindAccountByKey` and `ErrAmbiguousAccount`.
+- `InferNullOrigin`, `HookContext.MaxPasswordBytes` and
+  `HookContext.CheckPasswordNotTooLong` for plugins.
+- Conformance suites `adaptertest.RunAccountIdentity`,
+  `adaptertest.RunMappedIdentity` and `adaptertest.RunSchemaCheck`.
+- The TypeScript oracle now runs Better Auth 1.7.7, with
+  `scripts/check-upstream-v1.7.7.sh` and an audit of every v1.7.2 to v1.7.7
+  change.
+
+### Changed
+
+- Requests on SQLite and PostgreSQL now fail with `500 SCHEMA_MISMATCH` until
+  the database has every table and column Better Auth needs and no required
+  column it never writes. Run `Migrate` (no restart needed) or set
+  `Config.DisableSchemaValidation`.
+- An over-long password now returns `400 PASSWORD_TOO_LONG` before any lookup
+  or hash on sign-in, change-password, delete-user and the two-factor password
+  checks. Sign-in and change-password used to return `401`, and delete-user
+  `INVALID_PASSWORD`. `Server.VerifyPassword` now returns this error instead of
+  `false, nil`.
+- Change-password applies its rate limit before it checks passwords.
+- Basic-auth token requests send the client only in the `Authorization`
+  header, form-URL-encoded as RFC 6749 requires. Figma and Railway now use
+  Basic auth; Spotify and Zoom send the secret in the body; Notion refreshes
+  with the secret in the body. PayPal and Zoom use PKCE, TikTok sends the code
+  verifier, and Reddit sends its own `Accept` and `User-Agent` headers.
+- Providers that return no email use `{id}@{provider}.placeholder.invalid`.
+  Roblox, TikTok and Twitter used the username as the email, so those sign-ins
+  always failed. Stored Reddit and WeChat addresses change from
+  `@reddit.invalid` and `@wechat.invalid`. Placeholder addresses are never
+  marked verified, even for `TrustedProviders`.
+- PostgreSQL `Migrate` only looks at tables in the target schema and stops
+  with a clear error when a view or other relation has a Better Auth table name.
+- The memory adapter builds unique rules from the stored schema and no longer
+  treats empty values as duplicates. The MongoDB adapter rejects
+  `Collections` combined with schema model renames.
+- An `Origin: null` request with exactly `Sec-Fetch-Site: same-origin` is
+  checked using the request's own origin, as in Better Auth 1.7.2.
+- SSO return paths accept any safe relative URL (query, fragment, `~`) and now
+  resolve against the site origin instead of the auth base path.
+
+### Removed
+
+These APIs came with the Better Auth 1.7.0 account change on `main` and were
+never released:
+
+- the `account.issuer` column and its unique index, `OAuthAccountIssuer`,
+  `CredentialAccountIssuer`, `social.Options.AccountIssuer` and
+  `OAuthAccount.Issuer`;
+- `migration/v17` `StagingSchema`, `Backfill`, `FinalizeSQL` and
+  `ProviderIssuers`. `migration/v17.RewriteAccountIDs` remains for account ID
+  rewrites such as Microsoft `sub` to `oid`.
+
+Accounts are keyed by `(providerId, accountId)` again, as in Better Auth 1.7.3
+and better-auth-go v1.0.x. Databases from v1.0.x need no change. Databases
+built from unreleased `main` should follow `migration/v17/README.md`.
+
 ### Security
 
+- Enabling TOTP again after it is verified fails with `TOTP_ALREADY_ENABLED`
+  and keeps the old authenticator and backup codes (Better Auth #11037).
+- A provider key that matches more than one account fails sign-in and linking
+  instead of picking one.
 - One-time tokens are single-use (atomic consume) and expire after 3 minutes
   by default. The raw session token is never stored; it is sealed under a key
   derived from the one-time token. Verify never attaches a cookie for a

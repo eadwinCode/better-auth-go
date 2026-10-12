@@ -13,7 +13,7 @@ using native Go security defaults:
   opt-in deletion, sign-out, session listing/rotation/revocation, and account
   linking/unlinking;
 - password reset and email verification with single-use hash-at-rest tokens;
-- Better Auth's 35 built-in social-provider IDs plus generic OAuth2/OIDC;
+- Better Auth's 36 built-in social-provider IDs plus generic OAuth2/OIDC;
 - authorization-gated, one-hour maximum admin impersonation with durable audit;
 - Argon2id password hashes and an injected migration verifier for legacy scrypt;
 - opaque 256-bit session tokens with only SHA-256 hashes persisted;
@@ -487,6 +487,17 @@ transaction, creates missing tables/indexes, adds missing nullable columns, and
 never drops data. A newly required column on a populated table fails closed so
 the application can perform an explicit backfill migration.
 
+To keep the tables in their own PostgreSQL schema, use
+`postgresql.NewWithOptions(db, postgresql.Options{SchemaName: "auth"})`;
+`Migrate` creates the schema first.
+
+As in Better Auth 1.7.3, the server checks the live SQLite or PostgreSQL schema
+before it handles requests. Until every table and column exists, and no
+required column is one Better Auth never writes, requests fail with
+`500 SCHEMA_MISMATCH`. Running `Migrate` fixes this without a restart. Call
+`auth.CheckSchema(ctx)` at start-up to see the details, or set
+`Config.DisableSchemaValidation` if you manage the schema yourself.
+
 Email change and user deletion are disabled until
 `Config.User.ChangeEmailEnabled` and `Config.User.DeleteUserEnabled` are set.
 The former verifies the new inbox with a single-use token; credential-user
@@ -534,6 +545,8 @@ runbook is in [Production operations](./docs/production-operations.md).
 - [Better Auth v1.6 compatibility matrix](./docs/compatibility/better-auth-v1.6.md)
 - [Better Auth v1.7 migration contract](./docs/compatibility/better-auth-v1.7.md)
 - [Better Auth v1.7.1 security/interoperability overlay](./docs/compatibility/better-auth-v1.7.1.md)
+- [Better Auth v1.7.2 to v1.7.7 changes](./docs/compatibility/better-auth-v1.7.7.md)
+- [v1.7.7 compatibility decision record](./docs/adr/0022-v1.7.7-compatibility.md)
 - [Better Auth v1.6.26 production progress](./PROGRESS.md)
 - [Versioning and stability](./docs/versioning.md)
 - [In-process session resolution](./docs/session-resolution.md)

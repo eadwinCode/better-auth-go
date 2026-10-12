@@ -2,7 +2,7 @@
 
 `plugin/onetimetoken` ports Better Auth's `one-time-token` plugin. The routes,
 JSON bodies, error messages, `set-ott` header and options follow Better Auth
-1.7.0. The plugin source is the same from v1.6.25 through v1.7.7.
+1.7.7 (the differential suite runs against 1.7.7). The plugin source is the same from v1.6.25 through v1.7.7.
 
 A signed-in user asks for a short-lived token. Whoever holds the token can
 trade it **once** for the user's session. The usual use is handing a session

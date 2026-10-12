@@ -50,8 +50,8 @@ Two parts of the upstream design do not fit Go as is:
 
 ## Consequences
 
-- HTTP behavior matches Better Auth 1.7.0 for every option; the TypeScript
-  differential suite `TestBetterAuthV170OneTimeTokenCompatibility` asserts it.
+- HTTP behavior matches Better Auth 1.7.0 and 1.7.7 for every option; the TypeScript
+  differential suite `TestBetterAuthV177OneTimeTokenCompatibility` asserts it.
 - Deliberate differences: no raw session token at rest, a different
   verification row layout, no `session.token` in the verify body, no cookie on
   an expired-session error, and the structured `code` on errors.

@@ -1,7 +1,7 @@
-# Better Auth v1.7.0 Migration Progress
+# Better Auth v1.7.7 Migration Progress
 
 This file is the release tracker for `better-auth-go`. The active migration target
-is pinned to **Better Auth TypeScript 1.7.0**; the previously certified stable
+is pinned to **Better Auth TypeScript 1.7.7**; the previously certified stable
 boundary remains the documented v1.6.26 surface until the 1.7 matrix completes.
 A capability is not production
 complete merely because it compiles or has an implementation: it must satisfy
@@ -10,6 +10,9 @@ here.
 
 The 1.7 implementation status and explicit deferrals are recorded in
 `docs/compatibility/better-auth-v1.7.md`.
+
+Every Better Auth v1.7.2 to v1.7.7 change and its Go status is listed in
+[`docs/compatibility/better-auth-v1.7.7.md`](./docs/compatibility/better-auth-v1.7.7.md).
 
 Focused Better Auth v1.7.1 security and interoperability behavior is tracked in
 [`docs/compatibility/better-auth-v1.7.1.md`](./docs/compatibility/better-auth-v1.7.1.md).
@@ -58,25 +61,26 @@ applicable to the Go server.
 
 ## Evidence snapshot
 
-Last updated: 2026-08-20
+Last updated: 2026-10-12
 
 | Gate | Command or evidence | Result |
 | --- | --- | --- |
 | Go unit and black-box tests | `go test -count=1 ./...` | Pass |
 | TypeScript oracle type check | `bun run typecheck` in `compat/typescript-oracle` | Pass |
 | TypeScript oracle migration | `scripts/test-typescript-compat.sh` isolated SQLite setup | Pass |
-| Go/TypeScript v1.7.0 characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback, multi-session, email change, direct/emailed deletion, OAuth callback/error/replay/new-user, linking collision/options, provider-token, sign-out/session, impersonation-option and one-time-token (2026-10-12) suites |
-| Pinned v1.7.0 migration inventory | `scripts/check-upstream-v1.7.0.sh` | Pass at tag commit `c3688ba` |
-| Certified v1.6.26 source inventory | `scripts/check-upstream-v1.6.26.sh` | Pass at tag commit `a16b30e` |
+| Go/TypeScript v1.7.7 characterization | `scripts/test-typescript-compat.sh` | Pass (2026-10-12); lifecycle, recovery, verification, reset-callback, multi-session, email change, direct/emailed deletion, OAuth callback/error/replay/new-user, linking collision/options, same subject at two providers, provider-token, sign-out/session, impersonation-option, one-time-token, null-origin, password-length and TOTP re-enrollment suites |
+| Pinned v1.7.7 inventory | `scripts/check-upstream-v1.7.7.sh` | Pass at tag commit `db02f233` (2026-10-12) |
+| Earlier v1.7.0 inventory | `scripts/check-upstream-v1.7.0.sh` | Pass at tag commit `c3688ba`; providers checked as a subset now that Go ships Cloudflare |
+| Certified v1.6.26 source inventory | `scripts/check-upstream-v1.6.26.sh` | Pass at tag commit `a16b30e`; providers checked as a subset |
 | Formatting | `test -z "$(gofmt -l .)"` | Pass |
 | Vet | `go vet ./...` | Pass |
 | Race detector | `go test -race -count=1 ./...` | Pass |
-| Staticcheck | `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` | Pass |
+| Staticcheck | `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` | Pass (2026-10-12, with `GOTOOLCHAIN=go1.26.5`) |
 | Vulnerability scan | `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` | Pass; no called vulnerabilities |
 | Fuzz smoke matrix | 10-second targets from `.github/workflows/release-certification.yml` | Pass for the original twelve; `FuzzOpenSession` (one-time token) added and passed locally on 2026-10-12 |
 | SQLite adapter conformance | `go test -count=1 ./adapter/sqlite` | Pass as part of full suite |
-| MongoDB adapter conformance | `MONGODB_URI=... go test -count=1 ./adapter/mongodb` | Pass on MongoDB 8 single-node replica set |
-| PostgreSQL adapter conformance | `POSTGRES_DSN=... go test -count=1 ./adapter/postgresql` | Pass on PostgreSQL 17 |
+| MongoDB adapter conformance | `MONGODB_URI=... go test -count=1 ./adapter/mongodb` | Pass on MongoDB 8 single-node replica set; v1.7.7 port rerun passed on MongoDB 7 (2026-10-12) |
+| PostgreSQL adapter conformance | `POSTGRES_DSN=... go test -count=1 -race ./adapter/postgresql ./migration/...` | Pass on PostgreSQL 17 (2026-10-12), including schema name, view rejection, schema check and issuer clean-up scripts |
 | Workflow contract | `go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/*.yml` | Pass |
 | Release archive contract | `scripts/test-release-artifacts.sh` | Pass; semantic-name, archive-root, Git-metadata and checksum checks |
 | External-module install | `scripts/test-install-module.sh v1.0.0` in release run `30441089802` and independent local rerun | Pass without `replace`; resolved the exact public stable tag |
@@ -89,8 +93,10 @@ Do not convert a pending or skipped integration test into a pass.
 
 ## Compatibility baseline
 
-- Active migration source: Better Auth `v1.7.0`, commit
-  `c3688ba88edff12dfcb1ced007e332711509ac29`
+- Active migration source: Better Auth `v1.7.7`, tag commit `db02f233`;
+  sibling checkout `../better-auth-ts`, overridable with
+  `BETTER_AUTH_UPSTREAM_DIR`. The port started from `v1.7.0`, commit
+  `c3688ba88edff12dfcb1ced007e332711509ac29`.
 - Migration contract: `docs/compatibility/better-auth-v1.7.md`
 
 - Certified stable baseline: `better-auth@1.6.26`
@@ -101,7 +107,7 @@ Do not convert a pending or skipped integration test into a pass.
   with `BETTER_AUTH_TS_DIR` only when testing another compatible fixture
 - Go module: `github.com/eadwinCode/better-auth-go`
 - Default route prefix: `/api/auth`
-- Provider catalog: **35** built-in provider IDs plus the generic OAuth/OIDC
+- Provider catalog: **36** built-in provider IDs plus the generic OAuth/OIDC
   consumer API
 
 The oracle must be treated as a black box. Tests compare public HTTP status,
@@ -138,7 +144,7 @@ failure behavior.
 
 | Capability | Status | Remaining evidence |
 | --- | --- | --- |
-| 35 provider presets | Certified deterministic matrix | Live credential runs remain release-operator evidence |
+| 36 provider presets | Certified deterministic matrix | Live credential runs remain release-operator evidence |
 | Authorization code, state and PKCE | Certified | Callback success/error/new-user, state/provider binding, replay, PKCE and sanitized-error matrix pass; pinned generic-OAuth weakness is a documented difference |
 | OIDC nonce and ID-token verification | Certified | Issuer, audience, nonce, expiry, RS256, deterministic clock and JWKS rotation fixtures pass |
 | Verified-email linking | Certified | Explicit/implicit, local verification, trusted-provider evidence, same-user refresh, cross-user and concurrent collision matrix pass |
@@ -158,7 +164,7 @@ They must never log provider credentials or returned tokens.
 | Organizations | Runtime, membership, invitations, teams, roles and tests present | Experimental; outside the first v1 stability guarantee |
 | SSO | Provider management, OIDC/PKCE/JWKS, domain verification, signed SAML ACS/metadata/replay protection and SLO are implemented | Experimental; deterministic suites pass, but pinned/live interoperability promotion gates remain |
 | SCIM | Connection management, hash-only bearer authentication, metadata and complete User CRUD/list/filter/PUT/PATCH runtime | Experimental; deterministic suites pass, but pinned/live directory promotion gates remain |
-| One-time token | Generate/verify routes, every Better Auth option, `set-ott` header, server-side `Manager.Generate`; atomic single use; session token sealed at rest (ADR 0021) | Experimental; Go unit, SQLite and race tests pass, and `TestBetterAuthV170OneTimeTokenCompatibility` matches Better Auth 1.7.0 for every option |
+| One-time token | Generate/verify routes, every Better Auth option, `set-ott` header, server-side `Manager.Generate`; atomic single use; session token sealed at rest (ADR 0021) | Experimental; Go unit, SQLite and race tests pass, and `TestBetterAuthV177OneTimeTokenCompatibility` matches Better Auth 1.7.7 for every option |
 
 ### Exact pinned v1.6.26 plugin inventory
 
@@ -231,6 +237,10 @@ closed before the stable release:
 | One-time-token storage | Stores the raw session token in `verification.value` under `one-time-token:<token>` | Never stores the raw session token; seals it with a key derived from the one-time token (ADR 0021) | Deliberate credential-at-rest guarantee |
 | One-time-token verify body | Returns `session.token` | Omits the session token; the cookie (when enabled) carries the same session | Deliberate token-redaction guarantee |
 | One-time-token expired session | Sets the expired session's cookie, then returns `Session expired` | Returns `Session expired` with no cookie | Deliberate expired-session hardening |
+| Social sign-in with an unverified email | Signs the user up with `emailVerified: false` | Refused unless the provider is in `TrustedProviders`; placeholder addresses stay unverified | Deliberate verified-identity rule (affects providers without email: Reddit, Roblox, TikTok, WeChat, Twitter) |
+| Provider account uniqueness | No unique index; ambiguous `(providerId, accountId)` rejected on read | Unique index `uniq_provider_account` plus the same read check | Deliberate stricter storage rule |
+| PayPal environment default | Sandbox | Live unless `BaseURL` points at the sandbox | Deliberate; avoids breaking production sign-ins |
+| Schema check timing | At start-up; a mismatch is cached until migrated | First request or `Server.CheckSchema`; only success is cached, JSON `500 SCHEMA_MISMATCH` | Go form of #11178 |
 | Impersonation session preservation | Stores and restores the original signed admin session cookie | Revokes/rotates on entry and creates a new actor session on exit, with durable audit events | Deliberate fixation-protection and audit guarantee |
 
 No additional difference may be normalized away by the test harness without an
@@ -252,8 +262,8 @@ entry in this table and a compatibility decision.
 1. All pull-request gates from a clean checkout.
 2. Real MongoDB and PostgreSQL conformance, migrations and concurrent mutation
    tests.
-3. Complete TypeScript 1.7.0 differential endpoint and option matrix.
-4. All 35 social-provider fixtures and generic OAuth/OIDC fixtures (present).
+3. Complete TypeScript 1.7.7 differential endpoint and option matrix.
+4. All 36 social-provider fixtures and generic OAuth/OIDC fixtures (present).
 5. Selected live social-provider sandbox tests or an explicitly approved
    provider-operated-risk decision.
 6. Dependency vulnerability scan and review of any accepted finding.
