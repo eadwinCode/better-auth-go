@@ -886,7 +886,7 @@ func (p *Provider) githubEmail(ctx context.Context, accessToken string) (string,
 func (p *Provider) doJSON(request *http.Request, destination any) error {
 	response, err := p.httpClient.Do(request)
 	if err != nil {
-		return err
+		return redactURLError(err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -1249,7 +1249,7 @@ func validateOIDCEndpoint(
 func boundedJSON(client *http.Client, request *http.Request, maxResponse int64, destination any) error {
 	response, err := client.Do(request)
 	if err != nil {
-		return err
+		return redactURLError(err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -1290,4 +1290,22 @@ func cloneMap(input map[string]string) map[string]string {
 		result[key] = value
 	}
 	return result
+}
+
+// redactURLError drops the query and user info from the URL inside a
+// *url.Error. Some providers put the client secret or an access token in the
+// query (WeChat sends `secret`), and the error text can reach logs.
+func redactURLError(err error) error {
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) {
+		return err
+	}
+	redacted := *urlErr
+	if parsed, parseErr := url.Parse(urlErr.URL); parseErr == nil {
+		parsed.RawQuery, parsed.Fragment, parsed.User = "", "", nil
+		redacted.URL = parsed.String()
+	} else {
+		redacted.URL = "<redacted>"
+	}
+	return &redacted
 }

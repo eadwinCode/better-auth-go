@@ -103,6 +103,9 @@ func RewriteAccountIDs(
 	if len(report.Collisions) > 0 {
 		return report, errors.New("v17 migration: providerId/accountId collisions require manual ownership review")
 	}
+	if err := chainedRewrite(planned); err != nil {
+		return report, err
+	}
 	if options.DryRun {
 		return report, nil
 	}
@@ -209,4 +212,27 @@ func clone(row betterauth.Record) betterauth.Record {
 		result[key] = value
 	}
 	return result
+}
+
+// chainedRewrite rejects a plan where a row's new account ID is the current ID
+// of another row that also changes (a swap or a chain). The unique
+// (providerId, accountId) index is checked after every update, so such a plan
+// would fail part-way and roll back; this says why before anything runs.
+func chainedRewrite(planned []plannedAccount) error {
+	current := make(map[[2]string]string, len(planned))
+	for _, item := range planned {
+		if item.newAccountID != item.oldAccountID {
+			current[[2]string{item.providerID, item.oldAccountID}] = item.id
+		}
+	}
+	for _, item := range planned {
+		if item.newAccountID == item.oldAccountID {
+			continue
+		}
+		if other, ok := current[[2]string{item.providerID, item.newAccountID}]; ok && other != item.id {
+			return errors.New("v17 migration: a new account ID is another changing row's current ID " +
+				"(a swap or chain); rewrite those rows in separate runs")
+		}
+	}
+	return nil
 }

@@ -338,6 +338,32 @@ func (s *Server) handleSocialCallback(providerID string) func(http.ResponseWrite
 	}
 }
 
+// accountProviderInUse reports whether providerID names a configured social
+// provider or a trusted provider for this request, like the reserved IDs
+// Better Auth's SSO plugin checks.
+func (s *Server) accountProviderInUse(request *http.Request, providerID string) (bool, error) {
+	for configured := range s.cfg.SocialProviders {
+		if strings.EqualFold(configured, strings.TrimSpace(providerID)) {
+			return true, nil
+		}
+	}
+	trustedProviders := s.cfg.Account.TrustedProviders
+	if s.cfg.Account.TrustedProviderResolver != nil {
+		resolved, err := s.cfg.Account.TrustedProviderResolver.TrustedProviders(request.Context(), request)
+		if err != nil {
+			return false, err
+		}
+		trustedProviders = resolved
+	}
+	providerID = strings.ToLower(strings.TrimSpace(providerID))
+	for _, trusted := range trustedProviders {
+		if strings.ToLower(strings.TrimSpace(trusted)) == providerID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (s *Server) trustedOAuthProvider(request *http.Request, providerID string) (bool, error) {
 	trustedProviders := s.cfg.Account.TrustedProviders
 	if s.cfg.Account.TrustedProviderResolver != nil {

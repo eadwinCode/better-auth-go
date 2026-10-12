@@ -96,3 +96,31 @@ func TestRewriteAccountIDsRejectsResolverFailure(t *testing.T) {
 		t.Fatal("failed rewrite changed data")
 	}
 }
+
+func TestRewriteAccountIDsRejectsSwapsAndChainsBeforeWrites(t *testing.T) {
+	for name, next := range map[string]map[string]string{
+		"swap":  {"sub-a": "sub-b", "sub-b": "sub-a"},
+		"chain": {"sub-a": "sub-b", "sub-b": "sub-c"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			db := memory.New()
+			seedAccounts(t, db,
+				betterauth.Record{"id": "a", "userId": "user-a", "providerId": "microsoft", "accountId": "sub-a"},
+				betterauth.Record{"id": "b", "userId": "user-b", "providerId": "microsoft", "accountId": "sub-b"},
+			)
+			for _, dryRun := range []bool{true, false} {
+				report, err := v17.RewriteAccountIDs(t.Context(), db, v17.Options{DryRun: dryRun, Resolve: func(
+					_ context.Context, row betterauth.Record,
+				) (string, error) {
+					return next[row["accountId"].(string)], nil
+				}})
+				if err == nil || report.Updated != 0 {
+					t.Fatalf("dryRun=%v: %#v, %v", dryRun, report, err)
+				}
+			}
+			if accountID(t, db, "a") != "sub-a" || accountID(t, db, "b") != "sub-b" {
+				t.Fatal("rejected plan changed rows")
+			}
+		})
+	}
+}

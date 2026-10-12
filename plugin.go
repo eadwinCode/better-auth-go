@@ -194,9 +194,14 @@ type HookContext struct {
 	// can return it or attach it to a response. It does not create or rotate
 	// a session. It returns ErrSessionExpired for an expired session and
 	// ErrNoSession for a missing or revoked session or a disabled user.
-	ResumeSession   func(string) (*IssuedSession, error)
-	BackgroundTasks BackgroundTaskRunner
-	bodyDecodeError error
+	ResumeSession func(string) (*IssuedSession, error)
+	// AccountProviderInUse reports whether a provider ID already names an
+	// account-producing provider: a configured social provider or a trusted
+	// provider for this request. Accounts are keyed by (providerId,
+	// accountId), so a plugin that creates accounts must not reuse these IDs.
+	AccountProviderInUse func(string) (bool, error)
+	BackgroundTasks      BackgroundTaskRunner
+	bodyDecodeError      error
 }
 
 // CheckPasswordNotTooLong returns the PASSWORD_TOO_LONG error when password is

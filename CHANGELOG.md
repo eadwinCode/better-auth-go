@@ -94,6 +94,15 @@ built from unreleased `main` should follow `migration/v17/README.md`.
   and keeps the old authenticator and backup codes (Better Auth #11037).
 - A provider key that matches more than one account fails sign-in and linking
   instead of picking one.
+- SSO provider IDs may no longer reuse a configured social provider, trusted
+  provider or default SSO provider ID, as in Better Auth 1.7.7. With accounts
+  keyed by `(providerId, accountId)`, such an SSO provider could otherwise sign
+  in as that provider's users. SSO sign-in also refuses these IDs for
+  providers stored before this check. New `HookContext.AccountProviderInUse`.
+- Outbound provider request errors no longer include the URL query, which can
+  hold a client secret (WeChat) or an access token.
+- `migration/v17.RewriteAccountIDs` rejects swaps and chains of account IDs up
+  front with a clear error, instead of failing part-way and rolling back.
 - One-time tokens are single-use (atomic consume) and expire after 3 minutes
   by default. The raw session token is never stored; it is sealed under a key
   derived from the one-time token. Verify never attaches a cookie for a

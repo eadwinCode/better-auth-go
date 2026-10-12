@@ -613,3 +613,25 @@ func TestProviderPlaceholderEmails(t *testing.T) {
 		}
 	})
 }
+
+func TestTransportErrorsDropTheURLQuery(t *testing.T) {
+	failing := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("network down")
+	})}
+	request, err := http.NewRequest(http.MethodGet,
+		"https://api.weixin.qq.com/sns/oauth2/access_token?appid=app&secret=top-secret&code=c", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = boundedJSON(failing, request, 1024, &struct{}{})
+	if err == nil || strings.Contains(err.Error(), "top-secret") || strings.Contains(err.Error(), "code=c") {
+		t.Fatalf("error leaked the query: %v", err)
+	}
+	if !strings.Contains(err.Error(), "https://api.weixin.qq.com/sns/oauth2/access_token") {
+		t.Fatalf("error lost the endpoint: %v", err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }

@@ -20,6 +20,7 @@ Status words:
 | Version | Change | Go |
 | --- | --- | --- |
 | 1.7.3 | #11153 accounts keyed by `(providerId, accountId)`; `issuer` column removed; ambiguous keys rejected | `issuer` removed from the schema, `uniq_provider_account` restored, `FindAccountByKey` and `ErrAmbiguousAccount`. v1.0.x databases need no change. See `migration/v17/README.md` for databases built from unreleased `main`. |
+| 1.7.3 | SSO provider IDs share the account provider namespace once `issuer` is gone (upstream `sso.ts` reserved IDs) | SSO registration rejects built-in, social, trusted and default SSO provider IDs with upstream's 422 message. Go also refuses SSO sign-in for such an ID, so a provider stored earlier cannot sign in as a social provider's users. |
 | 1.7.3 | #11037 TOTP re-enrollment cannot replace an active authenticator | `TOTP_ALREADY_ENABLED`; a pending enrollment can still be replaced |
 | 1.7.6 | #11324 over-long passwords rejected with `PASSWORD_TOO_LONG` before any lookup or hash | sign-in, change-password, delete-user, `Server.VerifyPassword` and the two-factor password checks |
 | 1.7.6 | #11333 model identity kept when a renamed model matches another schema key | memory adapter builds unique rules from the stored schema; MongoDB rejects `Collections` mixed with model renames |
