@@ -104,6 +104,15 @@ func newTwoFactorTestServer(
 	configure func(*Config),
 ) (http.Handler, *memory.Adapter, fixedClock, *Manager, *string) {
 	t.Helper()
+	return newTwoFactorTestServerWith(t, configure, nil)
+}
+
+func newTwoFactorTestServerWith(
+	t *testing.T,
+	configure func(*Config),
+	configureServer func(*betterauth.Config),
+) (http.Handler, *memory.Adapter, fixedClock, *Manager, *string) {
+	t.Helper()
 	database := memory.New()
 	clock := fixedClock{now: time.Date(2026, 7, 28, 9, 0, 0, 0, time.UTC)}
 	cipher, err := betterauth.NewAESGCMTokenCipher(bytes.Repeat([]byte{7}, 32))
@@ -129,7 +138,7 @@ func newTwoFactorTestServer(
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := betterauth.New(betterauth.Config{
+	serverConfig := betterauth.Config{
 		PublicURL: "https://auth.example.com",
 		TrustedOrigins: []string{
 			"https://app.example.com",
@@ -137,7 +146,11 @@ func newTwoFactorTestServer(
 		Database: database, Clock: clock, Mailer: discardMailer{},
 		ImpersonationAuthorizer: denyImpersonation{},
 		Plugins:                 []betterauth.Plugin{manager.Plugin()},
-	})
+	}
+	if configureServer != nil {
+		configureServer(&serverConfig)
+	}
+	server, err := betterauth.New(serverConfig)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -348,7 +348,7 @@ func (cfg Config) normalized() (Config, trustedOriginPolicy, map[string]struct{}
 		cfg.MinPasswordBytes = 8
 	}
 	if cfg.MaxPasswordBytes == 0 {
-		cfg.MaxPasswordBytes = 128
+		cfg.MaxPasswordBytes = defaultMaxPasswordBytes
 	}
 	if cfg.MinPasswordBytes < 8 || cfg.MaxPasswordBytes < cfg.MinPasswordBytes || cfg.MaxPasswordBytes > 1<<20 {
 		return cfg, trustedOriginPolicy{}, nil, fmt.Errorf("betterauth: password length policy is invalid")

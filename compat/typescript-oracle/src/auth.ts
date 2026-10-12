@@ -1,7 +1,12 @@
 import { Database } from "bun:sqlite";
 import { betterAuth } from "better-auth";
 import type { BetterAuthPlugin } from "better-auth";
-import { admin, genericOAuth, oneTimeToken } from "better-auth/plugins";
+import {
+  admin,
+  genericOAuth,
+  oneTimeToken,
+  twoFactor,
+} from "better-auth/plugins";
 import { referenceConfig } from "./config.ts";
 
 export type CapturedMail = {
@@ -209,3 +214,12 @@ export const oneTimeTokenAuths: Record<string, ReturnType<typeof createAuth>> =
       sessionExpiresIn: 2,
     }),
   };
+
+// Two-factor instances. "-2fa" uses the defaults, so a TOTP enrollment stays
+// pending until verified. "-2fa-skip" marks it verified at once.
+export const twoFactorAuths: Record<string, ReturnType<typeof createAuth>> = {
+  "-2fa": ottAuth("-2fa", { plugins: [twoFactor()] }),
+  "-2fa-skip": ottAuth("-2fa-skip", {
+    plugins: [twoFactor({ skipVerificationOnEnable: true })],
+  }),
+};

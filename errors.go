@@ -59,6 +59,9 @@ const (
 	CodeProviderFailure         ErrorCode = "provider_failure"
 	CodeMethodNotAllowed        ErrorCode = "method_not_allowed"
 	CodeInternal                ErrorCode = "internal_error"
+	// CodeTOTPAlreadyEnabled is used by the two-factor plugin when a user
+	// with a verified authenticator tries to enroll TOTP again.
+	CodeTOTPAlreadyEnabled ErrorCode = "totp_already_enabled"
 )
 
 // Error is a structured public-safe authentication error.
@@ -197,6 +200,8 @@ func httpErrorCode(code ErrorCode) string {
 		return "PROVIDER_ERROR"
 	case CodeMethodNotAllowed:
 		return "METHOD_NOT_ALLOWED"
+	case CodeTOTPAlreadyEnabled:
+		return "TOTP_ALREADY_ENABLED"
 	default:
 		return "INTERNAL_SERVER_ERROR"
 	}

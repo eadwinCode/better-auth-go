@@ -160,10 +160,12 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return publicError(CodeInvalidEmail, "Invalid email", http.StatusBadRequest, err)
 	}
-	if len(input.Password) > s.cfg.MaxPasswordBytes {
-		return invalidCredentials(nil)
-	}
+	// Better Auth rate limits before the handler runs, so an over-long
+	// password still counts toward the sign-in limit.
 	if err := s.rateLimit(r.Context(), r, "sign-in/email", HashToken(email)); err != nil {
+		return err
+	}
+	if err := s.passwordTooLongError(input.Password); err != nil {
 		return err
 	}
 	user, err := s.store.FindUserByEmail(r.Context(), email)
@@ -256,7 +258,26 @@ func (s *Server) passwordPolicyError(password string) error {
 	if len(password) < s.cfg.MinPasswordBytes {
 		return publicError(CodePasswordTooShort, "Password too short", http.StatusBadRequest, nil)
 	}
-	if len(password) > s.cfg.MaxPasswordBytes {
+	return s.passwordTooLongError(password)
+}
+
+// defaultMaxPasswordBytes is the maximum password length used when the
+// configuration does not set one. It matches Better Auth's default of 128.
+const defaultMaxPasswordBytes = 128
+
+// passwordTooLongError returns PASSWORD_TOO_LONG when password is longer than
+// the configured maximum. Like Better Auth's assertPasswordNotTooLong, callers
+// run it before any database lookup or password hash, so a huge password
+// never reaches the hasher.
+func (s *Server) passwordTooLongError(password string) error {
+	return checkPasswordNotTooLong(password, s.cfg.MaxPasswordBytes)
+}
+
+func checkPasswordNotTooLong(password string, limit int) error {
+	if limit <= 0 {
+		limit = defaultMaxPasswordBytes
+	}
+	if len(password) > limit {
 		return publicError(CodePasswordTooLong, "Password too long", http.StatusBadRequest, nil)
 	}
 	return nil

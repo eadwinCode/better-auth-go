@@ -69,6 +69,15 @@ configured delivery callback, enables the gate immediately, and returns only
 TOTP enrollment and backup-code responses are the only time plaintext recovery
 codes are returned.
 
+Once a TOTP factor is verified (or was enabled with `SkipVerificationOnEnable`),
+enabling TOTP again returns `400` with code `TOTP_ALREADY_ENABLED` and keeps the
+old secret and backup codes. A pending, unverified enrollment is replaced. To
+change authenticators, disable two-factor first. This matches Better Auth 1.7.3.
+
+A password longer than the server's `MaxPasswordBytes` returns `400` with code
+`PASSWORD_TOO_LONG` before any lookup or hash, as in Better Auth 1.7.6. Plugins
+can use `HookContext.CheckPasswordNotTooLong` for the same check.
+
 ## Sign-in
 
 After the password is correct, a user with 2FA enabled receives:

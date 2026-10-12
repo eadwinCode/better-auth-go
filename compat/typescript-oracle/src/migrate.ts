@@ -1,5 +1,5 @@
 import { getMigrations } from "better-auth/db/migration";
-import { auth, database } from "./auth.ts";
+import { auth, database, twoFactorAuths } from "./auth.ts";
 
 try {
   const { toBeCreated, toBeAdded, runMigrations } = await getMigrations(
@@ -12,6 +12,11 @@ try {
     }),
   );
   await runMigrations();
+  // The two-factor plugin adds its own table and user column.
+  const twoFactorMigrations = await getMigrations(
+    twoFactorAuths["-2fa"]!.options,
+  );
+  await twoFactorMigrations.runMigrations();
 } finally {
   database.close();
 }

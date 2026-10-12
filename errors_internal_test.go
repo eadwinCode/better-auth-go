@@ -27,6 +27,7 @@ func TestHTTPErrorCodesUseBetterAuthWireVocabulary(t *testing.T) {
 		CodeProviderFailure:      "PROVIDER_ERROR",
 		CodeMethodNotAllowed:     "METHOD_NOT_ALLOWED",
 		CodeInternal:             "INTERNAL_SERVER_ERROR",
+		CodeTOTPAlreadyEnabled:   "TOTP_ALREADY_ENABLED",
 	}
 	for code, want := range expected {
 		if got := httpErrorCode(code); got != want {

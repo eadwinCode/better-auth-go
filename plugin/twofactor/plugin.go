@@ -23,6 +23,10 @@ const (
 	auditTrustedDeviceCreated = "two_factor.trusted_device.created"
 )
 
+// errTOTPAlreadyEnabled stops the enrollment transaction when the user
+// already has a verified authenticator.
+var errTOTPAlreadyEnabled = errors.New("twofactor: totp already enabled")
+
 func (instance *runtime) plugin() betterauth.Plugin {
 	sensitive := []betterauth.RequestHook{
 		betterauth.FreshSessionMiddleware, betterauth.CSRFMiddleware,
@@ -204,6 +208,22 @@ func (instance *runtime) enable(
 	now := context.Clock.Now().UTC()
 	verified := instance.config.SkipVerificationOnEnable
 	err = context.Database.Transaction(context.Context, func(tx betterauth.DatabaseAdapter) error {
+		// A verified authenticator must not be silently replaced: a stolen
+		// fresh session plus the password would otherwise swap the secret
+		// and backup codes. Only an unverified, pending row is replaced.
+		existing, findErr := tx.FindOne(context.Context, betterauth.FindOneQuery{
+			Model:  ModelTwoFactor,
+			Where:  []betterauth.Where{betterauth.Eq("userId", context.User.ID)},
+			Select: []string{"verified"},
+		})
+		if findErr != nil {
+			return findErr
+		}
+		if existing != nil {
+			if isVerified, ok := existing["verified"].(bool); !ok || isVerified {
+				return errTOTPAlreadyEnabled
+			}
+		}
 		if _, deleteErr := tx.DeleteMany(context.Context, betterauth.DeleteQuery{
 			Model: ModelTwoFactor,
 			Where: []betterauth.Where{betterauth.Eq("userId", context.User.ID)},
@@ -248,6 +268,12 @@ func (instance *runtime) enable(
 			map[string]any{"reason": "enrollment"},
 		)
 	})
+	if errors.Is(err, errTOTPAlreadyEnabled) {
+		return nil, betterauth.NewError(
+			betterauth.CodeTOTPAlreadyEnabled, "TOTP is already enabled",
+			http.StatusBadRequest, nil,
+		)
+	}
 	if err != nil {
 		return nil, internalError(err)
 	}
