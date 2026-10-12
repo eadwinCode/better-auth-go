@@ -167,28 +167,28 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("account identity is issuer scoped", func(t *testing.T) {
+	t.Run("account identity is provider scoped", func(t *testing.T) {
 		adapter := factory(t)
 		ctx := context.Background()
-		create := func(id, issuer, provider string) error {
+		create := func(id, provider string) error {
 			_, err := adapter.Create(ctx, betterauth.CreateQuery{
 				Model: betterauth.ModelAccount, ForceAllowID: true,
 				Data: betterauth.Record{
 					"id": id, "userId": "user-" + id, "providerId": provider,
-					"issuer": issuer, "accountId": "shared-subject",
+					"accountId": "shared-subject",
 					"createdAt": time.Now().UTC(), "updatedAt": time.Now().UTC(),
 				},
 			})
 			return err
 		}
-		if err := create("issuer-a", "https://issuer-a.example", "alias-a"); err != nil {
+		if err := create("provider-a", "provider-a"); err != nil {
 			t.Fatal(err)
 		}
-		if err := create("issuer-b", "https://issuer-b.example", "alias-a"); err != nil {
-			t.Fatalf("same provider/accountId under a different issuer collided: %v", err)
+		if err := create("provider-b", "provider-b"); err != nil {
+			t.Fatalf("same accountId at a different provider collided: %v", err)
 		}
-		if err := create("issuer-a-alias", "https://issuer-a.example", "alias-b"); !errors.Is(err, betterauth.ErrConflict) {
-			t.Fatalf("same issuer/accountId under a provider alias was accepted: %v", err)
+		if err := create("provider-a-again", "provider-a"); !errors.Is(err, betterauth.ErrConflict) {
+			t.Fatalf("same providerId/accountId for another user was accepted: %v", err)
 		}
 	})
 

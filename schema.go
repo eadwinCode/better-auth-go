@@ -91,7 +91,6 @@ func CoreSchema() Schema {
 				"id":                    {Type: FieldString, Required: true, Unique: true},
 				"userId":                {Type: FieldString, Required: true, Index: true, References: ModelUser},
 				"providerId":            {Type: FieldString, Required: true},
-				"issuer":                {Type: FieldString, Required: true},
 				"accountId":             {Type: FieldString, Required: true},
 				"password":              {Type: FieldString},
 				"accessToken":           {Type: FieldString},
@@ -103,8 +102,12 @@ func CoreSchema() Schema {
 				"createdAt":             {Type: FieldDate, Required: true},
 				"updatedAt":             {Type: FieldDate, Required: true},
 			},
+			// Accounts are keyed by (providerId, accountId). Better Auth has no
+			// unique index here and rejects a duplicate key when it reads it.
+			// Go keeps the index it shipped in v1.0.x so duplicates cannot be
+			// written in the first place.
 			Indexes: []IndexSchema{{
-				Name: "account_issuer_accountId_uidx", Fields: []string{"issuer", "accountId"}, Unique: true,
+				Name: "uniq_provider_account", Fields: []string{"providerId", "accountId"}, Unique: true,
 			}},
 		},
 		ModelVerification: {

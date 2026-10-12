@@ -20,6 +20,12 @@ var (
 	// ErrSignUpDisabled is returned when an OAuth provider is allowed to sign
 	// in existing identities but not create a new user for this request.
 	ErrSignUpDisabled = errors.New("betterauth: oauth sign up disabled")
+	// ErrAmbiguousAccount is returned when more than one account row has the
+	// same (providerId, accountId) key. Better Auth rejects such a key instead
+	// of choosing one of the rows. Remove the duplicate rows to fix it.
+	ErrAmbiguousAccount = errors.New(
+		"betterauth: multiple accounts match the same accountId for this provider; resolve duplicate account identities before continuing",
+	)
 )
 
 // Clock enables deterministic expiry and audit tests.

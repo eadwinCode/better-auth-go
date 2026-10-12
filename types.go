@@ -71,7 +71,6 @@ type OAuthAccount struct {
 	ID                string    `json:"id"`
 	UserID            string    `json:"userId"`
 	Provider          string    `json:"providerId"`
-	Issuer            string    `json:"issuer"`
 	ProviderAccountID string    `json:"accountId"`
 	Scope             string    `json:"scope,omitempty"`
 	CreatedAt         time.Time `json:"createdAt"`
@@ -81,7 +80,10 @@ type OAuthAccount struct {
 // OAuthProfile is the provider-neutral verified profile used for account
 // creation and linking.
 type OAuthProfile struct {
-	Provider          string
+	Provider string
+	// Issuer is the verified issuer of the identity when one is known, such
+	// as the OpenID Connect "iss" claim of a checked ID token. It is for
+	// information only: accounts are keyed by Provider and ProviderAccountID.
 	Issuer            string
 	ProviderAccountID string
 	Email             string

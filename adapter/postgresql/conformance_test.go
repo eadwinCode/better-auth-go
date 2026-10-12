@@ -1,15 +1,18 @@
 package postgresql_test
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	betterauth "github.com/eadwinCode/better-auth-go"
 	"github.com/eadwinCode/better-auth-go/adapter/postgresql"
 	"github.com/eadwinCode/better-auth-go/adaptertest"
-	v17 "github.com/eadwinCode/better-auth-go/migration/v17"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 func TestConformance(t *testing.T) {
@@ -30,6 +33,52 @@ func TestConformance(t *testing.T) {
 		t.Helper()
 		return configured
 	})
+}
+
+// schemaFactory gives each call its own PostgreSQL schema, so table and
+// index names never clash between subtests.
+func schemaFactory(t *testing.T, schema betterauth.Schema) betterauth.DatabaseAdapter {
+	t.Helper()
+	dsn := os.Getenv("POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("POSTGRES_DSN is not set")
+	}
+	admin := databaseForTest(t)
+	name := fmt.Sprintf("conformance_%d", time.Now().UnixNano())
+	if _, err := admin.ExecContext(t.Context(), `CREATE SCHEMA "`+name+`"`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = admin.ExecContext(context.Background(), `DROP SCHEMA "`+name+`" CASCADE`)
+	})
+	config, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.RuntimeParams["search_path"] = name
+	database := stdlib.OpenDB(*config)
+	database.SetMaxOpenConns(16)
+	t.Cleanup(func() { _ = database.Close() })
+	adapter, err := postgresql.New(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Migrate(t.Context(), schema); err != nil {
+		t.Fatal(err)
+	}
+	configured, err := adapter.WithSchema(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return configured
+}
+
+func TestAccountIdentity(t *testing.T) {
+	adaptertest.RunAccountIdentity(t, schemaFactory)
+}
+
+func TestMappedIdentity(t *testing.T) {
+	adaptertest.RunMappedIdentity(t, schemaFactory)
 }
 
 func TestMappedSchemaMigration(t *testing.T) {
@@ -106,39 +155,9 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	}
 	adaptertest.SeedReleaseBaseline(t, configured)
 
-	staging := releaseUpgradeSchema(v17.StagingSchema())
-	if err := adapter.Migrate(t.Context(), staging); err != nil {
-		t.Fatalf("add nullable issuer: %v", err)
-	}
-	configured, err = adapter.WithSchema(staging)
-	if err != nil {
-		t.Fatal(err)
-	}
-	configured, err = betterauth.WrapDatabaseAdapter(configured, staging)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = v17.Backfill(t.Context(), configured, v17.Options{}); err != nil {
-		t.Fatalf("backfill account issuer: %v", err)
-	}
 	current := releaseUpgradeSchema(betterauth.CoreSchema())
 	if err := adapter.Migrate(t.Context(), current); err != nil {
 		t.Fatalf("upgrade current schema: %v", err)
-	}
-	if err := v17.FinalizeSQL(t.Context(), database, v17.PostgreSQL, current); err != nil {
-		t.Fatalf("finalize account issuer: %v", err)
-	}
-	if _, err := database.ExecContext(
-		t.Context(), `UPDATE "release_upgrade_account" SET "issuer" = NULL WHERE "id" = 'upgrade-account'`,
-	); err == nil {
-		t.Fatal("finalized PostgreSQL account issuer remained nullable")
-	}
-	var legacyIndexes int
-	if err := database.QueryRowContext(t.Context(),
-		`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN (`+
-			`'uniq_provider_account', 'account_provider_account_unique')`,
-	).Scan(&legacyIndexes); err != nil || legacyIndexes != 0 {
-		t.Fatalf("legacy PostgreSQL account indexes remain: %d %v", legacyIndexes, err)
 	}
 	if err := adapter.Migrate(t.Context(), current); err != nil {
 		t.Fatalf("idempotent current migration: %v", err)
@@ -155,6 +174,7 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	for _, expected := range []string{
 		"release_upgrade_session_userId_index",
 		"release_upgrade_account_userId_index",
+		"release_upgrade_uniq_provider_account",
 	} {
 		var found int
 		if err := database.QueryRowContext(
