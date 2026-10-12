@@ -86,7 +86,8 @@ layer rather than a plugin.
   deadlocks and making PostgreSQL/MySQL key creation commit or roll back with
   that transaction;
 - bearer authentication;
-- one-time tokens;
+- one-time tokens — experimental `plugin/onetimetoken` implemented (ADR 0021),
+  with a Better Auth 1.7.0 differential suite;
 - OAuth proxy — missing; v1.6.26 proxy callbacks must preserve and safely parse
   Apple's `form_post` `user` payload before provider profile mapping.
 
@@ -140,7 +141,7 @@ authorization, and token features.
 3. enterprise SSO and SCIM interoperability certification;
 4. endpoint metadata/error registries and instrumentation;
 5. magic link, email OTP, username, anonymous, and bearer;
-6. API key, JWT, one-time-token, and multi-session;
+6. API key, JWT, and multi-session (one-time token implemented);
 7. OAuth/OIDC provider, MCP, device authorization, utilities, and external
    integrations.
 

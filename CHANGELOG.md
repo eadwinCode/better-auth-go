@@ -4,6 +4,29 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 
 ## [Unreleased]
 
+Proposed release: `1.1.0` (new feature, no breaking change).
+
+### Added
+
+- Experimental `plugin/onetimetoken`, a port of Better Auth's
+  `one-time-token` plugin: `GET /one-time-token/generate`,
+  `POST /one-time-token/verify`, every upstream option, the `set-ott` header,
+  and `Manager.Generate` for server-side token creation.
+- `HookContext.ResumeSession` and `ErrSessionExpired`, so a plugin can return
+  or attach an existing session without creating a new one or storing its raw
+  token.
+- TypeScript oracle instances and the
+  `TestBetterAuthV170OneTimeTokenCompatibility` differential suite.
+- ADR 0021 and the one-time-token guide, including a cross-subdomain sign-in
+  example.
+
+### Security
+
+- One-time tokens are single-use (atomic consume) and expire after 3 minutes
+  by default. The raw session token is never stored; it is sealed under a key
+  derived from the one-time token. Verify never attaches a cookie for a
+  revoked or expired session or a disabled user.
+
 ## [1.0.2] - 2026-08-09
 
 ### Added

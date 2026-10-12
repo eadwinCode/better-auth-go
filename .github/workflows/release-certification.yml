@@ -67,6 +67,7 @@ jobs:
       - run: go test -run=^$ -fuzz=FuzzParseFilter -fuzztime=10s ./plugin/scim
       - run: go test -run=^$ -fuzz=FuzzPatchOperations -fuzztime=10s ./plugin/scim
       - run: go test -run=^$ -fuzz=FuzzSCIMUserJSON -fuzztime=10s ./plugin/scim
+      - run: go test -run=^$ -fuzz=FuzzOpenSession -fuzztime=10s ./plugin/onetimetoken
 
   typescript:
     name: Better Auth 1.7.0 differential

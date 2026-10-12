@@ -65,7 +65,7 @@ Last updated: 2026-08-20
 | Go unit and black-box tests | `go test -count=1 ./...` | Pass |
 | TypeScript oracle type check | `bun run typecheck` in `compat/typescript-oracle` | Pass |
 | TypeScript oracle migration | `scripts/test-typescript-compat.sh` isolated SQLite setup | Pass |
-| Go/TypeScript v1.7.0 characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback, multi-session, email change, direct/emailed deletion, OAuth callback/error/replay/new-user, linking collision/options, provider-token, sign-out/session and impersonation-option suites |
+| Go/TypeScript v1.7.0 characterization | `scripts/test-typescript-compat.sh` | Pass; lifecycle, recovery, verification, reset-callback, multi-session, email change, direct/emailed deletion, OAuth callback/error/replay/new-user, linking collision/options, provider-token, sign-out/session, impersonation-option and one-time-token (2026-10-12) suites |
 | Pinned v1.7.0 migration inventory | `scripts/check-upstream-v1.7.0.sh` | Pass at tag commit `c3688ba` |
 | Certified v1.6.26 source inventory | `scripts/check-upstream-v1.6.26.sh` | Pass at tag commit `a16b30e` |
 | Formatting | `test -z "$(gofmt -l .)"` | Pass |
@@ -73,7 +73,7 @@ Last updated: 2026-08-20
 | Race detector | `go test -race -count=1 ./...` | Pass |
 | Staticcheck | `go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...` | Pass |
 | Vulnerability scan | `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` | Pass; no called vulnerabilities |
-| Fuzz smoke matrix | Twelve 10-second targets from `.github/workflows/ci.yml` | Pass |
+| Fuzz smoke matrix | 10-second targets from `.github/workflows/release-certification.yml` | Pass for the original twelve; `FuzzOpenSession` (one-time token) added and passed locally on 2026-10-12 |
 | SQLite adapter conformance | `go test -count=1 ./adapter/sqlite` | Pass as part of full suite |
 | MongoDB adapter conformance | `MONGODB_URI=... go test -count=1 ./adapter/mongodb` | Pass on MongoDB 8 single-node replica set |
 | PostgreSQL adapter conformance | `POSTGRES_DSN=... go test -count=1 ./adapter/postgresql` | Pass on PostgreSQL 17 |
@@ -158,6 +158,7 @@ They must never log provider credentials or returned tokens.
 | Organizations | Runtime, membership, invitations, teams, roles and tests present | Experimental; outside the first v1 stability guarantee |
 | SSO | Provider management, OIDC/PKCE/JWKS, domain verification, signed SAML ACS/metadata/replay protection and SLO are implemented | Experimental; deterministic suites pass, but pinned/live interoperability promotion gates remain |
 | SCIM | Connection management, hash-only bearer authentication, metadata and complete User CRUD/list/filter/PUT/PATCH runtime | Experimental; deterministic suites pass, but pinned/live directory promotion gates remain |
+| One-time token | Generate/verify routes, every Better Auth option, `set-ott` header, server-side `Manager.Generate`; atomic single use; session token sealed at rest (ADR 0021) | Experimental; Go unit, SQLite and race tests pass, and `TestBetterAuthV170OneTimeTokenCompatibility` matches Better Auth 1.7.0 for every option |
 
 ### Exact pinned v1.6.26 plugin inventory
 
@@ -181,8 +182,8 @@ The pinned monorepo also publishes seven server-plugin packages:
 - `@better-auth/sso`;
 - `@better-auth/stripe`.
 
-Passkey, two-factor, organizations, SSO, and SCIM have experimental Go
-implementations outside the first v1 guarantee. Everything else above remains
+Passkey, two-factor, organizations, SSO, SCIM, and one-time token have
+experimental Go implementations outside the first v1 guarantee. Everything else above remains
 missing or partial unless its capability matrix says otherwise. TypeScript
 adapters, Expo/Electron clients,
 telemetry internals and Redis secondary storage are not feature-plugin parity
@@ -227,6 +228,9 @@ closed before the stable release:
 | Generic OAuth provider error | Redirects to global error URL before state parsing, reflects `error_description`, and leaves state reusable | Consumes valid state first, uses only its allowlisted error URL, emits a bounded code, and never reflects provider descriptions | Deliberate provider-error and replay hardening |
 | Same-email change error | Returns only `message` for this `BAD_REQUEST` | Always returns structured `code` and `message` | Deliberate structured-error guarantee |
 | Provider refresh response | Returns the provider refresh token | Omits refresh tokens while returning safe access/ID-token metadata | Deliberate credential-redaction guarantee |
+| One-time-token storage | Stores the raw session token in `verification.value` under `one-time-token:<token>` | Never stores the raw session token; seals it with a key derived from the one-time token (ADR 0021) | Deliberate credential-at-rest guarantee |
+| One-time-token verify body | Returns `session.token` | Omits the session token; the cookie (when enabled) carries the same session | Deliberate token-redaction guarantee |
+| One-time-token expired session | Sets the expired session's cookie, then returns `Session expired` | Returns `Session expired` with no cookie | Deliberate expired-session hardening |
 | Impersonation session preservation | Stores and restores the original signed admin session cookie | Revokes/rotates on entry and creates a new actor session on exit, with durable audit events | Deliberate fixation-protection and audit guarantee |
 
 No additional difference may be normalized away by the test harness without an

@@ -15,6 +15,11 @@ provider-token, and impersonation differential flows without external calls.
 The fixture also mounts a second auth instance at `/api/auth-delete` with
 `sendDeleteAccountVerification` enabled so direct and verified account
 deletion can be characterized independently.
+One-time-token instances are mounted at `/api/auth-ott` and
+`/api/auth-ott-<option>`. Each enables the pinned `oneTimeToken` plugin with
+one option, so every option's HTTP effect is compared on its own. The
+`-ott-short-token` and `-ott-short-session` instances use one- and two-second
+lifetimes so expiry can be observed without fake timers.
 
 Install dependencies with:
 

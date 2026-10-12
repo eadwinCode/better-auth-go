@@ -109,5 +109,16 @@ sso|@better-auth/sso
 stripe|@better-auth/stripe
 PACKAGES
 
+# Ported plugin sources. A change here means the Go port must be reviewed.
+while IFS='|' read -r plugin_path expected_tree; do
+  actual_tree="$(git -C "${upstream_root}" rev-parse "${upstream_tag}:${plugin_path}")"
+  if [[ "${actual_tree}" != "${expected_tree}" ]]; then
+    echo "Ported plugin source ${plugin_path} changed: ${actual_tree}" >&2
+    exit 1
+  fi
+done <<'PORTED'
+packages/better-auth/src/plugins/one-time-token|b432c1fe019a26a079a4eda02d037962c74d875e
+PORTED
+
 echo "Better Auth ${upstream_tag} source inventory matches ${expected_commit}."
 echo "Verified 35 social providers, 25 built-in plugin exports, and 7 plugin packages."

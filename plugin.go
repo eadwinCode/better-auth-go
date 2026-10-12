@@ -187,8 +187,13 @@ type HookContext struct {
 	// transition through the core account/session store. Plugins must validate
 	// issuer, audience, nonce, signature, and verified email before calling it.
 	AuthenticateOAuth func(OAuthProfile, ProviderTokens) (*IssuedSession, bool, error)
-	BackgroundTasks   BackgroundTaskRunner
-	bodyDecodeError   error
+	// ResumeSession loads an existing session from its raw token so a plugin
+	// can return it or attach it to a response. It does not create or rotate
+	// a session. It returns ErrSessionExpired for an expired session and
+	// ErrNoSession for a missing or revoked session or a disabled user.
+	ResumeSession   func(string) (*IssuedSession, error)
+	BackgroundTasks BackgroundTaskRunner
+	bodyDecodeError error
 }
 
 func (ctx *HookContext) RunInBackground(task BackgroundTask) error {
