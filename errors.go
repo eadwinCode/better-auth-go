@@ -58,6 +58,7 @@ const (
 	CodeInvalidToken            ErrorCode = "invalid_or_expired_token"
 	CodeProviderFailure         ErrorCode = "provider_failure"
 	CodeMethodNotAllowed        ErrorCode = "method_not_allowed"
+	CodeSchemaMismatch          ErrorCode = "schema_mismatch"
 	CodeInternal                ErrorCode = "internal_error"
 )
 
@@ -197,6 +198,8 @@ func httpErrorCode(code ErrorCode) string {
 		return "PROVIDER_ERROR"
 	case CodeMethodNotAllowed:
 		return "METHOD_NOT_ALLOWED"
+	case CodeSchemaMismatch:
+		return "SCHEMA_MISMATCH"
 	default:
 		return "INTERNAL_SERVER_ERROR"
 	}

@@ -21,9 +21,14 @@ type Server struct {
 	allowedReturns map[string]struct{}
 	plugins        pluginRuntime
 	handler        http.Handler
+	schemaChecker  SchemaChecker
+	schemaGate     schemaGate
 }
 
 func New(cfg Config) (*Server, error) {
+	// Take the checker from the adapter the caller passed in. New wraps that
+	// adapter, and the wrappers do not carry optional interfaces.
+	checker, _ := cfg.Database.(SchemaChecker)
 	normalized, origins, returns, err := cfg.normalized()
 	if err != nil {
 		return nil, err
@@ -38,6 +43,7 @@ func New(cfg Config) (*Server, error) {
 		trustedOrigins: origins,
 		allowedReturns: returns,
 		plugins:        plugins,
+		schemaChecker:  checker,
 	}
 	server.handler = http.HandlerFunc(server.serveHTTP)
 	return server, nil
@@ -415,6 +421,12 @@ func (s *Server) authenticatePluginOAuth(
 // ResolveSession is safe for concurrent use. It does not mutate the request,
 // rotate the session, refresh cookies, or return the opaque session token.
 func (s *Server) ResolveSession(ctx context.Context, r *http.Request) (SessionResult, error) {
+	if ctx == nil {
+		return SessionResult{}, errors.New("betterauth: resolve session: nil context")
+	}
+	if err := s.requireSchema(ctx); err != nil {
+		return SessionResult{}, err
+	}
 	result, _, err := s.resolveSession(ctx, r)
 	return result, err
 }

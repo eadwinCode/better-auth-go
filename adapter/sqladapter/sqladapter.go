@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	betterauth "github.com/eadwinCode/better-auth-go"
 )
@@ -40,6 +41,7 @@ type Adapter struct {
 	db                    *sql.DB
 	tx                    *sql.Tx
 	dialect               Dialect
+	schemaName            string
 	schema                betterauth.Schema
 	accountModel          string
 	accountIssuerField    string
@@ -62,15 +64,64 @@ func (err *UnsafeMigrationError) Error() string {
 	)
 }
 
+// Options holds optional adapter settings.
+type Options struct {
+	// SchemaName is the PostgreSQL schema (namespace) that holds Better
+	// Auth's tables. When set, every statement names the table as
+	// "schema"."table", so the adapter no longer depends on the connection's
+	// search_path, and Migrate creates the schema before it creates tables.
+	// It matches Better Auth's database.schemaName and is PostgreSQL only.
+	SchemaName string
+}
+
+// maxPostgreSQLIdentifierBytes is PostgreSQL's NAMEDATALEN - 1. PostgreSQL
+// cuts longer names short without an error, which would make the adapter
+// look up a different schema than the one it created.
+const maxPostgreSQLIdentifierBytes = 63
+
 func New(db *sql.DB, dialect Dialect) (*Adapter, error) {
+	return NewWithOptions(db, dialect, Options{})
+}
+
+// NewWithOptions is New with optional settings. A SchemaName is rejected for
+// any dialect other than PostgreSQL.
+func NewWithOptions(db *sql.DB, dialect Dialect, options Options) (*Adapter, error) {
 	if db == nil {
 		return nil, errors.New("sqladapter: database is required")
 	}
 	if dialect != PostgreSQL && dialect != SQLite {
 		return nil, fmt.Errorf("sqladapter: unsupported dialect %q", dialect)
 	}
-	return &Adapter{db: db, dialect: dialect}, nil
+	if err := checkSchemaName(options.SchemaName, dialect); err != nil {
+		return nil, err
+	}
+	return &Adapter{db: db, dialect: dialect, schemaName: options.SchemaName}, nil
 }
+
+func checkSchemaName(name string, dialect Dialect) error {
+	if name == "" {
+		return nil
+	}
+	if dialect != PostgreSQL {
+		return fmt.Errorf(
+			"sqladapter: SchemaName is only supported on PostgreSQL, but the configured database type is %q",
+			dialect,
+		)
+	}
+	if strings.ContainsRune(name, 0) || !utf8.ValidString(name) {
+		return errors.New("sqladapter: SchemaName must be valid UTF-8 without NUL bytes")
+	}
+	if len(name) > maxPostgreSQLIdentifierBytes {
+		return fmt.Errorf(
+			"sqladapter: SchemaName must be at most %d bytes", maxPostgreSQLIdentifierBytes,
+		)
+	}
+	return nil
+}
+
+// SchemaName returns the configured PostgreSQL schema, or "" when statements
+// use the connection's search_path.
+func (adapter *Adapter) SchemaName() string { return adapter.schemaName }
 
 func (adapter *Adapter) ID() string { return string(adapter.dialect) }
 
@@ -89,7 +140,8 @@ func (adapter *Adapter) withSchema(schema betterauth.Schema) (*Adapter, error) {
 	}
 	configured := &Adapter{
 		db: adapter.db, tx: adapter.tx, dialect: adapter.dialect, schema: physical,
-		idFields: make(map[string]string, len(schema)),
+		idFields:   make(map[string]string, len(schema)),
+		schemaName: adapter.schemaName,
 	}
 	for logicalName, model := range schema {
 		modelName := model.ModelName
@@ -158,7 +210,7 @@ func (adapter *Adapter) Create(ctx context.Context, query betterauth.CreateQuery
 	if err != nil {
 		return nil, err
 	}
-	statement := "INSERT INTO " + quote(query.Model) + " (" + quoteList(columns) + ") VALUES (" +
+	statement := "INSERT INTO " + adapter.table(query.Model) + " (" + quoteList(columns) + ") VALUES (" +
 		strings.Join(placeholders, ", ") + ") RETURNING " + quoteList(selected)
 	row, err := scanRow(adapter.queryRow(ctx, statement, values...), selected)
 	return row, adapter.mapError(err)
@@ -179,7 +231,7 @@ func (adapter *Adapter) FindOne(ctx context.Context, query betterauth.FindOneQue
 	if err != nil {
 		return nil, err
 	}
-	statement := "SELECT " + quoteList(selected) + " FROM " + quote(query.Model) + where + " LIMIT 1"
+	statement := "SELECT " + quoteList(selected) + " FROM " + adapter.table(query.Model) + where + " LIMIT 1"
 	row, err := scanRow(adapter.queryRow(ctx, statement, args...), selected)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -208,7 +260,7 @@ func (adapter *Adapter) FindMany(ctx context.Context, query betterauth.FindManyQ
 	if err != nil {
 		return nil, err
 	}
-	statement := "SELECT " + quoteList(selected) + " FROM " + quote(query.Model) + where
+	statement := "SELECT " + quoteList(selected) + " FROM " + adapter.table(query.Model) + where
 	if query.Sort != nil {
 		if err := adapter.field(query.Model, query.Sort.Field); err != nil {
 			return nil, err
@@ -252,7 +304,7 @@ func (adapter *Adapter) Count(ctx context.Context, query betterauth.CountQuery) 
 		return 0, err
 	}
 	var count int64
-	err = adapter.queryRow(ctx, "SELECT COUNT(*) FROM "+quote(query.Model)+where, args...).Scan(&count)
+	err = adapter.queryRow(ctx, "SELECT COUNT(*) FROM "+adapter.table(query.Model)+where, args...).Scan(&count)
 	return count, adapter.mapError(err)
 }
 
@@ -276,8 +328,8 @@ func (adapter *Adapter) Update(ctx context.Context, query betterauth.UpdateQuery
 		return nil, err
 	}
 	id := adapter.idFields[query.Model]
-	statement := "UPDATE " + quote(query.Model) + " SET " + strings.Join(assignments, ", ") +
-		" WHERE " + quote(id) + " = (SELECT " + quote(id) + " FROM " + quote(query.Model) +
+	statement := "UPDATE " + adapter.table(query.Model) + " SET " + strings.Join(assignments, ", ") +
+		" WHERE " + quote(id) + " = (SELECT " + quote(id) + " FROM " + adapter.table(query.Model) +
 		where + " LIMIT 1) RETURNING " + quoteList(selected)
 	row, err := scanRow(adapter.queryRow(ctx, statement, args...), selected)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -302,7 +354,7 @@ func (adapter *Adapter) UpdateMany(ctx context.Context, query betterauth.UpdateQ
 		return 0, errors.New("sqladapter: update has no writable fields")
 	}
 	result, err := adapter.exec(ctx,
-		"UPDATE "+quote(query.Model)+" SET "+strings.Join(assignments, ", ")+where, args...,
+		"UPDATE "+adapter.table(query.Model)+" SET "+strings.Join(assignments, ", ")+where, args...,
 	)
 	if err != nil {
 		return 0, adapter.mapError(err)
@@ -316,8 +368,8 @@ func (adapter *Adapter) Delete(ctx context.Context, query betterauth.DeleteQuery
 		return err
 	}
 	id := adapter.idFields[query.Model]
-	_, err = adapter.exec(ctx, "DELETE FROM "+quote(query.Model)+" WHERE "+quote(id)+
-		" = (SELECT "+quote(id)+" FROM "+quote(query.Model)+where+" LIMIT 1)", args...)
+	_, err = adapter.exec(ctx, "DELETE FROM "+adapter.table(query.Model)+" WHERE "+quote(id)+
+		" = (SELECT "+quote(id)+" FROM "+adapter.table(query.Model)+where+" LIMIT 1)", args...)
 	return adapter.mapError(err)
 }
 
@@ -326,7 +378,7 @@ func (adapter *Adapter) DeleteMany(ctx context.Context, query betterauth.DeleteQ
 	if err != nil {
 		return 0, err
 	}
-	result, err := adapter.exec(ctx, "DELETE FROM "+quote(query.Model)+where, args...)
+	result, err := adapter.exec(ctx, "DELETE FROM "+adapter.table(query.Model)+where, args...)
 	if err != nil {
 		return 0, adapter.mapError(err)
 	}
@@ -343,8 +395,8 @@ func (adapter *Adapter) ConsumeOne(ctx context.Context, query betterauth.DeleteQ
 		return nil, err
 	}
 	id := adapter.idFields[query.Model]
-	statement := "DELETE FROM " + quote(query.Model) + " WHERE " + quote(id) +
-		" = (SELECT " + quote(id) + " FROM " + quote(query.Model) +
+	statement := "DELETE FROM " + adapter.table(query.Model) + " WHERE " + quote(id) +
+		" = (SELECT " + quote(id) + " FROM " + adapter.table(query.Model) +
 		where + " LIMIT 1) RETURNING " + quoteList(selected)
 	row, err := scanRow(adapter.queryRow(ctx, statement, args...), selected)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -379,8 +431,8 @@ func (adapter *Adapter) IncrementOne(ctx context.Context, query betterauth.Incre
 		return nil, err
 	}
 	id := adapter.idFields[query.Model]
-	statement := "UPDATE " + quote(query.Model) + " SET " + strings.Join(assignments, ", ") +
-		" WHERE " + quote(id) + " = (SELECT " + quote(id) + " FROM " + quote(query.Model) +
+	statement := "UPDATE " + adapter.table(query.Model) + " SET " + strings.Join(assignments, ", ") +
+		" WHERE " + quote(id) + " = (SELECT " + quote(id) + " FROM " + adapter.table(query.Model) +
 		where + " LIMIT 1) RETURNING " + quoteList(selected)
 	row, err := scanRow(adapter.queryRow(ctx, statement, args...), selected)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -405,6 +457,7 @@ func (adapter *Adapter) Transaction(ctx context.Context, callback func(betteraut
 		accountModel: adapter.accountModel, accountIssuerField: adapter.accountIssuerField,
 		accountIssuerRequired: adapter.accountIssuerRequired,
 		accountIDField:        adapter.accountIDField, idFields: adapter.idFields,
+		schemaName: adapter.schemaName,
 	}
 	if err := callback(transaction); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
@@ -438,7 +491,7 @@ func (adapter *Adapter) migrate(ctx context.Context) error {
 			if !populated {
 				var marker int
 				err = adapter.queryRow(
-					ctx, "SELECT 1 FROM "+quote(name)+" LIMIT 1",
+					ctx, "SELECT 1 FROM "+adapter.table(name)+" LIMIT 1",
 				).Scan(&marker)
 				switch {
 				case err == nil:
@@ -452,6 +505,17 @@ func (adapter *Adapter) migrate(ctx context.Context) error {
 			if populated {
 				return &UnsafeMigrationError{Model: name, Field: field}
 			}
+		}
+	}
+	if adapter.schemaName != "" {
+		for _, name := range models {
+			if len(existingByModel[name]) > 0 {
+				continue
+			}
+			if _, err := adapter.exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+quote(adapter.schemaName)); err != nil {
+				return fmt.Errorf("sqladapter: create schema %s: %w", adapter.schemaName, err)
+			}
+			break
 		}
 	}
 	for _, name := range models {
@@ -468,7 +532,7 @@ func (adapter *Adapter) migrate(ctx context.Context) error {
 			columns = append(columns, column)
 		}
 		if _, err := adapter.exec(ctx,
-			"CREATE TABLE IF NOT EXISTS "+quote(name)+" ("+strings.Join(columns, ", ")+")",
+			"CREATE TABLE IF NOT EXISTS "+adapter.table(name)+" ("+strings.Join(columns, ", ")+")",
 		); err != nil {
 			return fmt.Errorf("sqladapter: migrate %s: %w", name, err)
 		}
@@ -484,7 +548,7 @@ func (adapter *Adapter) migrate(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("sqladapter: define %s.%s: %w", name, field, err)
 			}
-			if _, err := adapter.exec(ctx, "ALTER TABLE "+quote(name)+" ADD COLUMN "+column); err != nil {
+			if _, err := adapter.exec(ctx, "ALTER TABLE "+adapter.table(name)+" ADD COLUMN "+column); err != nil {
 				return fmt.Errorf("sqladapter: add %s.%s: %w", name, field, err)
 			}
 		}
@@ -501,7 +565,7 @@ func (adapter *Adapter) migrate(ctx context.Context) error {
 			}
 			indexName := safeIndexName(name + "_" + field + "_" + kind)
 			if _, err := adapter.exec(ctx, "CREATE "+unique+"INDEX IF NOT EXISTS "+quote(indexName)+
-				" ON "+quote(name)+" ("+quote(field)+")"); err != nil {
+				" ON "+adapter.table(name)+" ("+quote(field)+")"); err != nil {
 				return fmt.Errorf("sqladapter: index %s.%s: %w", name, field, err)
 			}
 		}
@@ -521,7 +585,7 @@ func (adapter *Adapter) migrate(ctx context.Context) error {
 			indexName := safeIndexName(index.Name)
 			if _, err := adapter.exec(
 				ctx, "CREATE "+unique+"INDEX IF NOT EXISTS "+quote(indexName)+
-					" ON "+quote(name)+" ("+strings.Join(storedFields, ", ")+")",
+					" ON "+adapter.table(name)+" ("+strings.Join(storedFields, ", ")+")",
 			); err != nil {
 				return fmt.Errorf("sqladapter: compound index %s: %w", indexName, err)
 			}
@@ -548,28 +612,15 @@ func (adapter *Adapter) existingColumns(ctx context.Context, model string) (map[
 		err  error
 	)
 	if adapter.dialect == PostgreSQL {
-		rows, err = adapter.query(ctx,
-			"SELECT column_name FROM information_schema.columns "+
-				"WHERE table_schema = current_schema() AND table_name = "+adapter.placeholder(1),
-			model,
-		)
-	} else {
-		rows, err = adapter.query(ctx, "PRAGMA table_info("+quote(model)+")")
+		return adapter.existingPostgreSQLColumns(ctx, model)
 	}
+	rows, err = adapter.query(ctx, "PRAGMA table_info("+quote(model)+")")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	result := make(map[string]bool)
 	for rows.Next() {
-		if adapter.dialect == PostgreSQL {
-			var name string
-			if err := rows.Scan(&name); err != nil {
-				return nil, err
-			}
-			result[name] = true
-			continue
-		}
 		var (
 			position     int
 			name         string
@@ -1045,6 +1096,16 @@ func safeIndexName(value string) string {
 	}
 	sum := sha256.Sum256([]byte(value))
 	return "better_auth_" + hex.EncodeToString(sum[:8])
+}
+
+// table returns the quoted table name, qualified with the configured
+// PostgreSQL schema when there is one. Every statement that names a Better
+// Auth table goes through it.
+func (adapter *Adapter) table(name string) string {
+	if adapter.schemaName == "" {
+		return quote(name)
+	}
+	return quote(adapter.schemaName) + "." + quote(name)
 }
 
 func quote(identifier string) string {

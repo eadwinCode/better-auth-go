@@ -68,6 +68,14 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	setSecurityHeaders(capture.Header(), r)
 	requestID := sanitizeRequestID(r.Header.Get("X-Request-ID"))
 
+	// Like Better Auth's router onRequest, the schema check runs before
+	// routing and before any plugin can handle the request.
+	if err := s.requireSchema(r.Context()); err != nil {
+		writeError(capture, requestID, schemaRequestError(err))
+		s.commitPluginResponse(w, capture.response())
+		return
+	}
+
 	hookContext, response, reachedEndpoint, err := s.executePluginPipeline(capture, r)
 	if err != nil {
 		capture.reset()
