@@ -191,9 +191,10 @@ func (s *Server) handleSocialCallback(providerID string) func(http.ResponseWrite
 				"The provider did not return a verified identity.", http.StatusBadGateway, err,
 			)
 		}
-		if trustedProvider {
+		if trustedProvider && !isPlaceholderEmail(profile.Email) {
 			// Membership in TrustedProviders is an application-owned assertion
 			// that this configured provider supplies verified email identity.
+			// A placeholder address is never verified, as in Better Auth.
 			profile.EmailVerified = true
 		}
 		encryptedTokens, err := s.encryptProviderTokens(r.Context(), result.Tokens)

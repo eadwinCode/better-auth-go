@@ -10,8 +10,8 @@ import (
 // Providers such as Reddit and Roblox return no email, so the presets use an
 // unverified `{id}@{provider}.placeholder.invalid` address. Go keeps its
 // documented verified-email gate for these profiles: an untrusted provider is
-// refused, and a provider the application lists in TrustedProviders is
-// accepted as verified evidence.
+// refused. A provider in TrustedProviders is accepted, but, as in Better
+// Auth, the placeholder address is never marked verified.
 func TestOAuthPlaceholderEmailFollowsVerifiedEmailGate(t *testing.T) {
 	t.Parallel()
 	placeholder, err := betterauth.CreatePlaceholderEmail(betterauth.PlaceholderEmailOptions{
@@ -47,7 +47,7 @@ func TestOAuthPlaceholderEmailFollowsVerifiedEmailGate(t *testing.T) {
 		session := client.request(t, http.MethodGet, "/get-session", nil, false)
 		if session.Code != http.StatusOK ||
 			!containsAny(session.Body.String(), `"email":"reddit-user-1@reddit.placeholder.invalid"`) ||
-			!containsAny(session.Body.String(), `"emailVerified":true`) {
+			!containsAny(session.Body.String(), `"emailVerified":false`) {
 			t.Fatalf("trusted placeholder session: %s", session.Body.String())
 		}
 	})
