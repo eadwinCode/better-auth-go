@@ -181,3 +181,40 @@ func TestProviderEndSessionURLIsBoundedAndDiscriminated(t *testing.T) {
 		t.Fatalf("unexpected end-session URL: %s", destination)
 	}
 }
+
+// better-auth-go v1.0.x let a custom OAuth2 provider run without
+// AccountSubject and took the account ID from the first of these profile
+// fields. That stays the default, so v1.0.x configurations and stored account
+// IDs keep working.
+func TestCustomProviderKeepsV1AccountIDDefault(t *testing.T) {
+	t.Parallel()
+	for name, test := range map[string]struct {
+		profile map[string]any
+		want    string
+	}{
+		"sub first":       {map[string]any{"sub": "s", "id": "i"}, "s"},
+		"id":              {map[string]any{"id": "i", "user_id": "u"}, "i"},
+		"numeric id":      {map[string]any{"id": json.Number("42")}, "42"},
+		"user_id":         {map[string]any{"user_id": "u", "account_id": "a"}, "u"},
+		"account_id":      {map[string]any{"account_id": "a"}, "a"},
+		"open_id":         {map[string]any{"open_id": "o"}, "o"},
+		"openid":          {map[string]any{"openid": "w"}, "w"},
+		"wrapped in data": {map[string]any{"data": map[string]any{"id": "d"}}, "d"},
+	} {
+		got, err := customAccountSubject(test.profile)
+		if err != nil || got != test.want {
+			t.Fatalf("%s: subject=%q err=%v want %q", name, got, err, test.want)
+		}
+	}
+	if _, err := customAccountSubject(map[string]any{"email": "x@example.com"}); err == nil {
+		t.Fatal("profile without an ID was accepted")
+	}
+	if _, err := New("legacy-custom", Options{
+		ClientID: "client", ClientSecret: "secret",
+		AuthorizationURL: "https://idp.example.com/authorize",
+		TokenURL:         "https://idp.example.com/token",
+		UserInfoURL:      "https://idp.example.com/userinfo",
+	}); err != nil {
+		t.Fatalf("v1.0.x custom provider configuration was rejected: %v", err)
+	}
+}

@@ -176,3 +176,79 @@ func TestAmbiguousProviderKeyFailsSignInAndLinking(t *testing.T) {
 		t.Fatalf("ambiguous key changed account rows: %#v", rows)
 	}
 }
+
+// previousIDProvider models Microsoft after the move from "sub" to "oid": the
+// verified profile carries the new ID and the ID v1.0.x stored.
+type previousIDProvider struct{ subjectProvider }
+
+func (previousIDProvider) Exchange(
+	context.Context, string, string, string, string,
+) (betterauth.OAuthResult, error) {
+	return betterauth.OAuthResult{
+		Profile: betterauth.OAuthProfile{
+			ProviderAccountID: "oid-1", PreviousProviderAccountID: "sub-1",
+			Email: "ms@example.com", EmailVerified: true, Name: "Microsoft User",
+		},
+		Tokens: betterauth.ProviderTokens{AccessToken: "access", Scope: "openid"},
+	}, nil
+}
+
+// A v1.0.x database stored the Microsoft "sub". Signing in with a token that
+// carries both "sub" and "oid" moves that account to "oid" instead of
+// creating a second account or failing.
+func TestPreviousProviderAccountIDIsMovedOnSignIn(t *testing.T) {
+	t.Parallel()
+	database := memory.New()
+	cipher, err := betterauth.NewAESGCMTokenCipher([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, _ := newBlackBoxServerConfig(t, func(config *betterauth.Config) {
+		config.Database = database
+		config.ProviderTokenCipher = cipher
+		config.AllowedRedirectURLs = []string{"https://app.example.com/done", "https://app.example.com/error"}
+		config.SocialProviders = map[string]betterauth.OAuthProvider{"msft": previousIDProvider{}}
+	})
+	client.database = database
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	for _, record := range []struct {
+		model string
+		data  betterauth.Record
+	}{
+		{betterauth.ModelUser, betterauth.Record{
+			"id": "ms-user", "email": "ms@example.com", "name": "Microsoft User",
+			"emailVerified": true, "createdAt": now, "updatedAt": now,
+		}},
+		{betterauth.ModelAccount, betterauth.Record{
+			"id": "ms-account", "userId": "ms-user", "providerId": "msft",
+			"accountId": "sub-1", "createdAt": now, "updatedAt": now,
+		}},
+	} {
+		if _, err := database.Create(context.Background(), betterauth.CreateQuery{
+			Model: record.model, Data: record.data, ForceAllowID: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		client.session, client.csrf = nil, nil
+		callback := socialCallback(t, client, "/sign-in/social", "msft")
+		if location := callback.Header.Get("Location"); location != "https://app.example.com/done" {
+			t.Fatalf("attempt %d: sign-in redirect=%q", attempt, location)
+		}
+		session := client.request(t, http.MethodGet, "/get-session", nil, false)
+		if !strings.Contains(session.Body.String(), `"id":"ms-user"`) {
+			t.Fatalf("attempt %d: signed in as another user: %s", attempt, session.Body.String())
+		}
+	}
+	rows, err := database.FindMany(context.Background(), betterauth.FindManyQuery{
+		Model: betterauth.ModelAccount, Where: []betterauth.Where{betterauth.Eq("providerId", "msft")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0]["id"] != "ms-account" || rows[0]["accountId"] != "oid-1" {
+		t.Fatalf("accounts=%v", rows)
+	}
+}

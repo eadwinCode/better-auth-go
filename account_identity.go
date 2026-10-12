@@ -3,6 +3,8 @@ package betterauth
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 )
 
 // accountKeyWhere matches the account row a provider identity owns. Accounts
@@ -41,4 +43,42 @@ func FindAccountByKey(
 		return nil, nil
 	}
 	return rows[0], nil
+}
+
+// findProfileAccount finds the account for a verified profile. When no
+// account has the profile's current ID but one has its previous ID (for
+// example a Microsoft account stored by "sub" before "oid"), it switches that
+// account to the current ID in the same transaction and returns it.
+func findProfileAccount(
+	ctx context.Context,
+	tx DatabaseAdapter,
+	profile OAuthProfile,
+	now time.Time,
+) (Record, error) {
+	account, err := FindAccountByKey(ctx, tx, profile.Provider, profile.ProviderAccountID)
+	if err != nil || account != nil {
+		return account, err
+	}
+	previous := strings.TrimSpace(profile.PreviousProviderAccountID)
+	if previous == "" || previous == profile.ProviderAccountID {
+		return nil, nil
+	}
+	legacy, err := FindAccountByKey(ctx, tx, profile.Provider, previous)
+	if err != nil || legacy == nil {
+		return nil, err
+	}
+	id, err := recordString(legacy, "id")
+	if err != nil {
+		return nil, err
+	}
+	updated, err := tx.Update(ctx, UpdateQuery{Model: ModelAccount, Where: []Where{
+		Eq("id", id), Eq("providerId", profile.Provider), Eq("accountId", previous),
+	}, Update: Record{"accountId": profile.ProviderAccountID, "updatedAt": now.UTC()}})
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil {
+		return nil, ErrConflict
+	}
+	return updated, nil
 }

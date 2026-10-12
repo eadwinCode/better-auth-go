@@ -4,9 +4,37 @@ All notable changes are documented here. Releases follow Semantic Versioning.
 
 ## [Unreleased]
 
-Proposed release: `1.1.0`. It adds features and ports Better Auth v1.7.2 to
-v1.7.7 (see `docs/compatibility/better-auth-v1.7.7.md`). Some behavior changes
-are listed under **Changed**; read them before upgrading.
+## [1.1.0] - 2026-10-12
+
+This release tracks Better Auth TypeScript **1.7.7**. It adds the
+one-time-token plugin and ports the Better Auth 1.7 server changes (see
+`docs/compatibility/better-auth-v1.7.md`, `better-auth-v1.7.1.md` and
+`better-auth-v1.7.7.md`). The exported API only gains items, and databases
+from v1.0.x need no schema change.
+
+### Upgrading from 1.0.x
+
+- **SQL databases:** run `Migrate` with `Server.Schema()` as usual. Until the
+  live schema matches, requests fail with `500 SCHEMA_MISMATCH` (no restart
+  needed after `Migrate`). Set `Config.DisableSchemaValidation` if you manage
+  the schema yourself.
+- **Microsoft accounts** now use the directory `oid` instead of the
+  app-specific `sub`. Nothing to do: the first sign-in after the upgrade moves
+  each stored account from `sub` to `oid` using the verified ID token.
+  `migration/v17.RewriteAccountIDs` can still rewrite them ahead of time.
+- **Custom OAuth2 providers** keep v1.0.x account IDs: without
+  `Options.AccountSubject` the ID is the first of `sub`, `id`, `user_id`,
+  `account_id`, `open_id` and `openid`.
+- **Error codes:** an over-long password now returns `400 PASSWORD_TOO_LONG`
+  instead of `401`/`INVALID_PASSWORD`, and `Server.VerifyPassword` returns that
+  error.
+- **Provider token requests** changed for several presets (see **Changed**).
+  Re-test sign-in for Figma, Railway, Spotify, Zoom, Notion, PayPal, TikTok
+  and Reddit.
+- **Experimental plugins:** SCIM moved to connection-scoped `scimUser`
+  bindings, so directories must be fully reprovisioned; SAML providers with
+  `WantAssertionsSigned` must sign the assertion itself. See
+  `docs/compatibility/better-auth-v1.7.1.md`.
 
 ### Added
 
@@ -32,6 +60,15 @@ are listed under **Changed**; read them before upgrading.
   adapter interface (SQLite and PostgreSQL), `DiffSchema`,
   `SchemaMismatchError` and `Config.DisableSchemaValidation`.
 - `FindAccountByKey` and `ErrAmbiguousAccount`.
+- `OAuthProfile.PreviousProviderAccountID`: when no account matches the
+  current ID but one matches this verified previous ID, sign-in and linking
+  move that account to the current ID. The Microsoft provider sets it to
+  `sub`.
+- Better Auth 1.7 runtime (#29): verified OIDC `iss`/`sub` and Microsoft
+  `oid` account subjects, `social.Options.AccountSubject`, transactional
+  database after-hooks, two-factor `method` (`totp` or `otp`), passkey
+  `createSession`, OAuth refresh parameters, scope merging, and optional
+  RP-initiated logout.
 - `InferNullOrigin`, `HookContext.MaxPasswordBytes` and
   `HookContext.CheckPasswordNotTooLong` for plugins.
 - Conformance suites `adaptertest.RunAccountIdentity`,
@@ -71,6 +108,12 @@ are listed under **Changed**; read them before upgrading.
   checked using the request's own origin, as in Better Auth 1.7.2.
 - SSO return paths accept any safe relative URL (query, fragment, `~`) and now
   resolve against the site origin instead of the auth base path.
+
+- Better Auth 1.7.1 overlay (#28): SAML assertion signatures are verified
+  against the raw XML with signature-wrapping checks and the
+  `WantAssertionsSigned` policy; SCIM Boolean strings are case-insensitive and
+  SCIM IDs are kept apart from SSO provider IDs; SQL `Migrate` refuses to add a
+  required column without a default to a populated table.
 
 ### Removed
 
@@ -235,7 +278,8 @@ built from unreleased `main` should follow `migration/v17/README.md`.
 - Session listing now requires a fresh session, and reports the upstream
   `SESSION_NOT_FRESH` error when freshness has expired.
 
-[Unreleased]: https://github.com/eadwinCode/better-auth-go/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/eadwinCode/better-auth-go/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/eadwinCode/better-auth-go/releases/tag/v1.1.0
 [1.0.2]: https://github.com/eadwinCode/better-auth-go/releases/tag/v1.0.2
 [1.0.1]: https://github.com/eadwinCode/better-auth-go/releases/tag/v1.0.1
 [1.0.0]: https://github.com/eadwinCode/better-auth-go/releases/tag/v1.0.0
