@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
 
-export const betterAuthVersion = "1.7.0";
+export const betterAuthVersion = "1.7.7";
 
 function required(name: string): string {
   const value = Bun.env[name]?.trim();

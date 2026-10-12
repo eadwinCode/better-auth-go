@@ -212,7 +212,7 @@ func assertVerifiedSession(t *testing.T, goResult, tsResult oracleResponse, emai
 	}
 }
 
-func TestBetterAuthV170OneTimeTokenCompatibility(t *testing.T) {
+func TestBetterAuthV177OneTimeTokenCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 
 	t.Run("generate verify and single use", func(t *testing.T) {

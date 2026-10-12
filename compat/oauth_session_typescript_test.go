@@ -80,7 +80,7 @@ func assertOAuthRedirect(
 	}
 }
 
-func TestBetterAuthV170OAuthCallbackErrorReplayAndRedirectCompatibility(t *testing.T) {
+func TestBetterAuthV177OAuthCallbackErrorReplayAndRedirectCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	goClient, _ := managementCompatibilityServer(t)
 
@@ -154,7 +154,7 @@ func TestBetterAuthV170OAuthCallbackErrorReplayAndRedirectCompatibility(t *testi
 	assertOAuthRedirect(t, "TypeScript", tsReturning, oracle.origin+"/oauth-success", "")
 }
 
-func TestBetterAuthV170OAuthAccountCollisionCompatibility(t *testing.T) {
+func TestBetterAuthV177OAuthAccountCollisionCompatibility(t *testing.T) {
 	oracleA := newTypeScriptOracle(t)
 	oracleB := oracleA.clone(t)
 	goA, _ := managementCompatibilityServer(t)
@@ -208,7 +208,7 @@ func TestBetterAuthV170OAuthAccountCollisionCompatibility(t *testing.T) {
 	)
 }
 
-func TestBetterAuthV170SessionAndSignOutClosureCompatibility(t *testing.T) {
+func TestBetterAuthV177SessionAndSignOutClosureCompatibility(t *testing.T) {
 	oracle := newTypeScriptOracle(t)
 	goClient, _ := newBlackBoxServer(t)
 	for implementation, response := range map[string]oracleResponse{
