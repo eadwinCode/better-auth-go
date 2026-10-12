@@ -167,12 +167,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: better-auth/better-auth
-          ref: v1.7.0
+          ref: v1.7.7
           path: better-auth-repo
-      - name: Verify Better Auth v1.7.0
+      - name: Verify Better Auth v1.7.7
         env:
           BETTER_AUTH_UPSTREAM_DIR: ${{ github.workspace }}/better-auth-repo
-        run: scripts/check-upstream-v1.7.0.sh
+        run: scripts/check-upstream-v1.7.7.sh
 
   install-module:
     name: External module install

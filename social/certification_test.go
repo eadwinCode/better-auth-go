@@ -34,11 +34,12 @@ func TestBetterAuthV1625PresetContracts(t *testing.T) {
 	contracts := []presetContract{
 		{"apple", "appleid.apple.com", "/auth/authorize", []string{"email", "name"}, true, TokenAuthBody},
 		{"atlassian", "auth.atlassian.com", "/authorize", []string{"read:jira-user", "offline_access"}, true, TokenAuthBody},
+		{"cloudflare", "dash.cloudflare.com", "/oauth2/auth", []string{"user-details.read"}, true, TokenAuthBasic},
 		{"cognito", "tenant.auth.example", "/oauth2/authorize", []string{"openid", "profile", "email"}, true, TokenAuthBody},
 		{"discord", "discord.com", "/api/oauth2/authorize", []string{"identify", "email"}, false, TokenAuthBody},
 		{"dropbox", "www.dropbox.com", "/oauth2/authorize", []string{"account_info.read"}, true, TokenAuthBody},
 		{"facebook", "www.facebook.com", "/v24.0/dialog/oauth", []string{"email", "public_profile"}, false, TokenAuthBody},
-		{"figma", "www.figma.com", "/oauth", []string{"current_user:read"}, true, TokenAuthBody},
+		{"figma", "www.figma.com", "/oauth", []string{"current_user:read"}, true, TokenAuthBasic},
 		{"github", "github.com", "/login/oauth/authorize", []string{"read:user", "user:email"}, true, TokenAuthBody},
 		{"gitlab", "gitlab.com", "/oauth/authorize", []string{"read_user"}, true, TokenAuthBody},
 		{"google", "accounts.google.com", "/o/oauth2/v2/auth", []string{"email", "profile", "openid"}, true, TokenAuthBody},
@@ -52,23 +53,23 @@ func TestBetterAuthV1625PresetContracts(t *testing.T) {
 		{"naver", "nid.naver.com", "/oauth2.0/authorize", []string{"profile", "email"}, false, TokenAuthBody},
 		{"notion", "api.notion.com", "/v1/oauth/authorize", nil, false, TokenAuthBasic},
 		{"paybin", "idp.paybin.io", "/oauth2/authorize", []string{"openid", "email", "profile"}, true, TokenAuthBody},
-		{"paypal", "www.paypal.com", "/signin/authorize", nil, false, TokenAuthBasic},
+		{"paypal", "www.paypal.com", "/signin/authorize", nil, true, TokenAuthBasic},
 		{"polar", "polar.sh", "/oauth2/authorize", []string{"openid", "profile", "email"}, true, TokenAuthBody},
-		{"railway", "backboard.railway.com", "/oauth/auth", []string{"openid", "email", "profile"}, true, TokenAuthBody},
+		{"railway", "backboard.railway.com", "/oauth/auth", []string{"openid", "email", "profile"}, true, TokenAuthBasic},
 		{"reddit", "www.reddit.com", "/api/v1/authorize", []string{"identity"}, false, TokenAuthBasic},
 		{"roblox", "apis.roblox.com", "/oauth/v1/authorize", []string{"openid", "profile"}, true, TokenAuthBody},
 		{"salesforce", "login.salesforce.com", "/services/oauth2/authorize", []string{"openid", "email", "profile"}, true, TokenAuthBody},
 		{"slack", "slack.com", "/openid/connect/authorize", []string{"openid", "profile", "email"}, false, TokenAuthBody},
-		{"spotify", "accounts.spotify.com", "/authorize", []string{"user-read-email"}, true, TokenAuthBasic},
+		{"spotify", "accounts.spotify.com", "/authorize", []string{"user-read-email"}, true, TokenAuthBody},
 		{"tiktok", "www.tiktok.com", "/v2/auth/authorize", []string{"user.info.profile"}, false, TokenAuthBody},
 		{"twitch", "id.twitch.tv", "/oauth2/authorize", []string{"user:read:email", "openid"}, false, TokenAuthBody},
 		{"twitter", "x.com", "/i/oauth2/authorize", []string{"users.read", "tweet.read", "offline.access", "users.email"}, true, TokenAuthBasic},
 		{"vercel", "vercel.com", "/oauth/authorize", nil, true, TokenAuthBody},
 		{"vk", "id.vk.com", "/authorize", []string{"email", "phone"}, true, TokenAuthBody},
 		{"wechat", "open.weixin.qq.com", "/connect/qrconnect", []string{"snsapi_login"}, false, TokenAuthNone},
-		{"zoom", "zoom.us", "/oauth/authorize", nil, false, TokenAuthBasic},
+		{"zoom", "zoom.us", "/oauth/authorize", nil, true, TokenAuthBody},
 	}
-	if len(contracts) != 35 {
+	if len(contracts) != 36 {
 		t.Fatalf("certification matrix has %d providers", len(contracts))
 	}
 	for index, contract := range contracts {
@@ -150,6 +151,7 @@ func TestBetterAuthV1625PresetProfileMappings(t *testing.T) {
 	contracts := []profileContract{
 		{"apple", standard("apple"), "apple-account", "apple@example.com", true, "apple user", "https://images.example/apple"},
 		{"atlassian", map[string]any{"account_id": "atl", "email": "atl@example.com", "name": "Atlassian", "picture": "atl.png"}, "atl", "atl@example.com", false, "Atlassian", "atl.png"},
+		{"cloudflare", map[string]any{"id": "cloudflare", "email": "cloudflare@example.com", "first_name": "Cloud", "last_name": "Flare"}, "cloudflare", "cloudflare@example.com", false, "Cloud Flare", ""},
 		{"cognito", standard("cognito"), "cognito-account", "cognito@example.com", true, "cognito user", "https://images.example/cognito"},
 		{"discord", map[string]any{"id": "discord", "global_name": "Discord", "email": "discord@example.com", "verified": true, "image_url": "discord.png"}, "discord", "discord@example.com", true, "Discord", "discord.png"},
 		{"dropbox", map[string]any{"account_id": "dropbox", "name": map[string]any{"display_name": "Dropbox"}, "email": "dropbox@example.com", "email_verified": true, "profile_photo_url": "dropbox.png"}, "dropbox", "dropbox@example.com", true, "Dropbox", "dropbox.png"},
@@ -171,17 +173,17 @@ func TestBetterAuthV1625PresetProfileMappings(t *testing.T) {
 		{"paypal", map[string]any{"user_id": "paypal", "name": "PayPal", "email": "paypal@example.com", "email_verified": true, "picture": "paypal.png"}, "paypal", "paypal@example.com", true, "PayPal", "paypal.png"},
 		{"polar", map[string]any{"id": "polar", "public_name": "Polar", "email": "polar@example.com", "email_verified": true, "avatar_url": "polar.png"}, "polar", "polar@example.com", true, "Polar", "polar.png"},
 		{"railway", standard("railway"), "railway-account", "railway@example.com", false, "railway user", "https://images.example/railway"},
-		{"reddit", map[string]any{"id": "reddit", "name": "Reddit", "icon_img": "reddit.png?size=64"}, "reddit", "reddit@reddit.invalid", false, "Reddit", "reddit.png"},
-		{"roblox", map[string]any{"sub": "roblox", "nickname": "Roblox", "preferred_username": "roblox-user", "picture": "roblox.png"}, "roblox", "roblox-user", false, "Roblox", "roblox.png"},
+		{"reddit", map[string]any{"id": "reddit", "name": "Reddit", "icon_img": "reddit.png?size=64"}, "reddit", "reddit@reddit.placeholder.invalid", false, "Reddit", "reddit.png"},
+		{"roblox", map[string]any{"sub": "roblox", "nickname": "Roblox", "preferred_username": "roblox-user", "picture": "roblox.png"}, "roblox", "roblox@roblox.placeholder.invalid", false, "Roblox", "roblox.png"},
 		{"salesforce", map[string]any{"user_id": "salesforce", "name": "Salesforce", "email": "salesforce@example.com", "email_verified": true, "photos": map[string]any{"picture": "salesforce.png"}}, "salesforce", "salesforce@example.com", true, "Salesforce", "salesforce.png"},
 		{"slack", map[string]any{"https://slack.com/user_id": "slack", "name": "Slack", "email": "slack@example.com", "email_verified": true, "https://slack.com/user_image_512": "slack.png"}, "slack", "slack@example.com", true, "Slack", "slack.png"},
 		{"spotify", map[string]any{"id": "spotify", "display_name": "Spotify", "email": "spotify@example.com", "images": []any{map[string]any{"url": "spotify.png"}}}, "spotify", "spotify@example.com", false, "Spotify", "spotify.png"},
-		{"tiktok", map[string]any{"data": map[string]any{"user": map[string]any{"open_id": "tiktok", "display_name": "TikTok", "username": "tiktok-user", "avatar_large_url": "tiktok.png"}}}, "tiktok", "tiktok-user", false, "TikTok", "tiktok.png"},
+		{"tiktok", map[string]any{"data": map[string]any{"user": map[string]any{"open_id": "tiktok", "display_name": "TikTok", "username": "tiktok-user", "avatar_large_url": "tiktok.png"}}}, "tiktok", "tiktok@tiktok.placeholder.invalid", false, "TikTok", "tiktok.png"},
 		{"twitch", standard("twitch"), "twitch-account", "twitch@example.com", true, "twitch user", "https://images.example/twitch"},
 		{"twitter", map[string]any{"data": map[string]any{"id": "twitter", "name": "Twitter", "username": "twitter-user", "confirmed_email": "twitter@example.com", "profile_image_url": "twitter.png"}}, "twitter", "twitter@example.com", true, "Twitter", "twitter.png"},
 		{"vercel", standard("vercel"), "vercel-account", "vercel@example.com", true, "vercel user", "https://images.example/vercel"},
 		{"vk", map[string]any{"user": map[string]any{"user_id": "vk", "first_name": "V K", "last_name": "User", "email": "vk@example.com", "avatar": "vk.png"}}, "vk", "vk@example.com", false, "V K User", "vk.png"},
-		{"wechat", map[string]any{"unionid": "wechat", "nickname": "WeChat", "headimgurl": "wechat.png"}, "wechat", "wechat@wechat.invalid", false, "WeChat", "wechat.png"},
+		{"wechat", map[string]any{"unionid": "wechat", "nickname": "WeChat", "headimgurl": "wechat.png"}, "wechat", "wechat@wechat.placeholder.invalid", false, "WeChat", "wechat.png"},
 		{"zoom", map[string]any{"id": "zoom", "display_name": "Zoom", "email": "zoom@example.com", "verified": true, "pic_url": "zoom.png"}, "zoom", "zoom@example.com", true, "Zoom", "zoom.png"},
 	}
 	if len(contracts) != len(SupportedProviders) {
