@@ -112,13 +112,19 @@ jobs:
           cache: true
       - name: Start MongoDB 8 replica set
         run: |
-          docker run --rm -d --name better-auth-go-mongo-release \
+          # No --rm: if mongod exits early, its logs must still be readable.
+          docker run -d --name better-auth-go-mongo-release \
             -p 27017:27017 mongo:8 --replSet rs0 --bind_ip_all \
             --oplogSize 128 --wiredTigerCacheSizeGB 0.25
           for attempt in $(seq 1 90); do
             if docker exec better-auth-go-mongo-release mongosh --quiet \
               --eval 'db.runCommand({ ping: 1 }).ok' | grep -q '^1$'; then
               break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' better-auth-go-mongo-release)" != "true" ]; then
+              echo "MongoDB container stopped during start-up:" >&2
+              docker logs better-auth-go-mongo-release
+              exit 1
             fi
             if [ "$attempt" = "90" ]; then
               docker logs better-auth-go-mongo-release
@@ -146,7 +152,7 @@ jobs:
         run: scripts/test-real-adapter-migrations.sh
       - name: Stop MongoDB
         if: always()
-        run: docker stop better-auth-go-mongo-release || true
+        run: docker rm -f better-auth-go-mongo-release || true
 
   experimental-enterprise:
     name: Experimental SSO and SCIM deterministic suites
