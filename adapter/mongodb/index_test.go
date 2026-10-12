@@ -1,10 +1,10 @@
 package mongodb
 
 import (
+	"strings"
 	"testing"
 
 	betterauth "github.com/eadwinCode/better-auth-go"
-	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
@@ -27,47 +27,68 @@ func TestMongoIndexNamesRemainCompatibleAndNamespacePlugins(t *testing.T) {
 	}
 }
 
-func TestCoreIssuerAccountIndexMatchesV17Identity(t *testing.T) {
+func TestCoreProviderAccountIndexRetainsReleaseCompatibleName(t *testing.T) {
 	t.Parallel()
 	account := betterauth.CoreSchema()[betterauth.ModelAccount]
 	if len(account.Indexes) != 1 {
-		t.Fatalf("core account indexes = %#v, want one issuer-account index", account.Indexes)
+		t.Fatalf("core account indexes = %#v, want one provider-account index", account.Indexes)
 	}
 	index := account.Indexes[0]
-	if index.Name != "account_issuer_accountId_uidx" ||
+	if index.Name != "uniq_provider_account" ||
 		len(index.Fields) != 2 ||
-		index.Fields[0] != "issuer" ||
+		index.Fields[0] != "providerId" ||
 		index.Fields[1] != "accountId" ||
 		!index.Unique {
-		t.Fatalf("issuer-account index is not v1.7 compatible: %#v", index)
+		t.Fatalf("provider-account index is not release compatible: %#v", index)
+	}
+	if _, exists := account.Fields["issuer"]; exists {
+		t.Fatal("account schema still has the issuer field")
 	}
 }
 
-func TestCoreIssuerAccountIndexFallbackDoesNotDuplicateSchemaIndex(t *testing.T) {
+func TestCoreMongoIndexesDoNotAddAccountIdentityIndex(t *testing.T) {
 	t.Parallel()
 	models := map[string]string{betterauth.ModelAccount: betterauth.ModelAccount}
 	fields := map[string]map[string]string{
-		betterauth.ModelAccount: {
-			"issuer":    "issuer",
-			"accountId": "accountId",
-		},
+		betterauth.ModelAccount: {"providerId": "providerId", "accountId": "accountId"},
 	}
-	declared := map[string][]mongo.IndexModel{
-		betterauth.ModelAccount: {{Keys: bson.D{{Key: "issuer", Value: 1}, {Key: "accountId", Value: 1}}}},
+	indexes := map[string][]mongo.IndexModel{}
+	addCoreMongoIndexes(indexes, models, fields)
+	if len(indexes[betterauth.ModelAccount]) != 0 {
+		t.Fatalf("account identity index must come only from the schema: %#v", indexes)
 	}
-	addCoreMongoIndexes(declared, models, fields, true, true)
-	if len(declared[betterauth.ModelAccount]) != 1 {
-		t.Fatalf("schema-declared issuer-account index was duplicated: %#v", declared)
-	}
+}
 
-	legacy := map[string][]mongo.IndexModel{}
-	addCoreMongoIndexes(legacy, models, fields, false, true)
-	if len(legacy[betterauth.ModelAccount]) != 1 {
-		t.Fatalf("issuer-account fallback missing: %#v", legacy)
+func TestCollectionsAndSchemaModelNamesCannotBeMixed(t *testing.T) {
+	t.Parallel()
+	adapter := &Adapter{
+		collections: map[string]string{betterauth.ModelUser: "people"},
+		renamed:     true,
 	}
-	staging := map[string][]mongo.IndexModel{}
-	addCoreMongoIndexes(staging, models, fields, false, false)
-	if len(staging[betterauth.ModelAccount]) != 0 {
-		t.Fatalf("staging schema created the final unique index: %#v", staging)
+	schema := betterauth.CoreSchema()
+	if _, err := adapter.WithSchema(schema); err != nil {
+		t.Fatalf("Collections without schema renames was rejected: %v", err)
+	}
+	user := schema[betterauth.ModelUser]
+	user.ModelName = "members"
+	schema[betterauth.ModelUser] = user
+	if _, err := adapter.WithSchema(schema); err == nil ||
+		!strings.Contains(err.Error(), "Config.Collections") {
+		t.Fatalf("Collections mixed with schema renames was accepted: %v", err)
+	}
+	plain := &Adapter{collections: map[string]string{betterauth.ModelUser: betterauth.ModelUser}}
+	if _, err := plain.WithSchema(schema); err != nil {
+		t.Fatalf("schema renames without Collections was rejected: %v", err)
+	}
+}
+
+func TestCollectionsMustNotShareACollection(t *testing.T) {
+	t.Parallel()
+	_, err := New(Config{
+		Database:    &mongo.Database{},
+		Collections: map[string]string{betterauth.ModelUser: betterauth.ModelAccount},
+	})
+	if err == nil || !strings.Contains(err.Error(), "map to collection") {
+		t.Fatalf("two models sharing one collection was accepted: %v", err)
 	}
 }

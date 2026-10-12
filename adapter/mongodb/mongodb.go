@@ -15,13 +15,18 @@ import (
 )
 
 type Config struct {
-	Database    *mongo.Database
+	Database *mongo.Database
+	// Collections renames the collection of a model, keyed by model name. Use
+	// either Collections or the schema's ModelName to rename models, not
+	// both: a server rejects the mix, because the adapter only sees stored
+	// model names and could not tell which rename applies.
 	Collections map[string]string
 }
 
 type Adapter struct {
 	database    *mongo.Database
 	collections map[string]string
+	renamed     bool
 	transaction context.Context
 }
 
@@ -34,13 +39,43 @@ func New(config Config) (*Adapter, error) {
 		betterauth.ModelAccount: "account", betterauth.ModelVerification: "verification",
 		betterauth.ModelAuditEvent: "auditEvent", betterauth.ModelOutboxEvent: "outboxEvent",
 	}
+	renamed := false
 	for model, collection := range config.Collections {
 		if model == "" || collection == "" || strings.Contains(collection, "$") || strings.ContainsRune(collection, '\x00') {
 			return nil, fmt.Errorf("mongodb: invalid collection mapping")
 		}
+		renamed = renamed || collection != model
 		collections[model] = collection
 	}
-	return &Adapter{database: config.Database, collections: collections}, nil
+	owners := make(map[string]string, len(collections))
+	for model, collection := range collections {
+		if owner, exists := owners[collection]; exists {
+			return nil, fmt.Errorf(
+				"mongodb: models %q and %q map to collection %q", owner, model, collection,
+			)
+		}
+		owners[collection] = model
+	}
+	return &Adapter{database: config.Database, collections: collections, renamed: renamed}, nil
+}
+
+// WithSchema checks that the schema and Config.Collections do not both rename
+// models. The adapter receives stored model names, so it maps a stored name to
+// a collection through Collections only when the schema keeps the logical
+// names. Mixing the two could write rows to the wrong collection.
+func (a *Adapter) WithSchema(schema betterauth.Schema) (betterauth.DatabaseAdapter, error) {
+	if !a.renamed {
+		return a, nil
+	}
+	for logicalModel, model := range schema {
+		if model.ModelName != "" && model.ModelName != logicalModel {
+			return nil, fmt.Errorf(
+				"mongodb: schema renames model %q while Config.Collections is set; use one of them",
+				logicalModel,
+			)
+		}
+	}
+	return a, nil
 }
 
 func (a *Adapter) ID() string { return "mongodb" }
@@ -272,11 +307,12 @@ func (a *Adapter) EnsureCoreIndexes(ctx context.Context) error {
 // plugin schema plus the core compound and TTL indexes. Call it with
 // Server.Schema after constructing the server.
 func (a *Adapter) EnsureIndexes(ctx context.Context, schema betterauth.Schema) error {
+	if _, err := a.WithSchema(schema); err != nil {
+		return err
+	}
 	indexes := make(map[string][]mongo.IndexModel, len(schema))
 	modelNames := make(map[string]string, len(schema))
 	fieldNames := make(map[string]map[string]string, len(schema))
-	issuerAccountIndexDeclared := false
-	accountIssuerRequired := false
 	for logicalModel, model := range schema {
 		storedModel := model.ModelName
 		if storedModel == "" {
@@ -308,13 +344,6 @@ func (a *Adapter) EnsureIndexes(ctx context.Context, schema betterauth.Schema) e
 			})
 		}
 		for _, definition := range model.Indexes {
-			if logicalModel == betterauth.ModelAccount &&
-				definition.Unique &&
-				len(definition.Fields) == 2 &&
-				definition.Fields[0] == "issuer" &&
-				definition.Fields[1] == "accountId" {
-				issuerAccountIndexDeclared = true
-			}
 			keys := make(bson.D, len(definition.Fields))
 			for position, logicalField := range definition.Fields {
 				keys[position] = bson.E{
@@ -329,13 +358,8 @@ func (a *Adapter) EnsureIndexes(ctx context.Context, schema betterauth.Schema) e
 				Keys: keys, Options: index,
 			})
 		}
-		if logicalModel == betterauth.ModelAccount {
-			accountIssuerRequired = model.Fields["issuer"].Required
-		}
 	}
-	addCoreMongoIndexes(
-		indexes, modelNames, fieldNames, issuerAccountIndexDeclared, accountIssuerRequired,
-	)
+	addCoreMongoIndexes(indexes, modelNames, fieldNames)
 	for model, definitions := range indexes {
 		if _, err := a.collection(model).Indexes().CreateMany(a.ctx(ctx), definitions); err != nil {
 			return translateError(err)
@@ -348,8 +372,6 @@ func addCoreMongoIndexes(
 	indexes map[string][]mongo.IndexModel,
 	models map[string]string,
 	fields map[string]map[string]string,
-	issuerAccountIndexDeclared bool,
-	accountIssuerRequired bool,
 ) {
 	if model := models[betterauth.ModelSession]; model != "" {
 		indexes[model] = append(indexes[model], mongo.IndexModel{
@@ -361,16 +383,6 @@ func addCoreMongoIndexes(
 		indexes[model] = append(indexes[model], mongo.IndexModel{
 			Keys:    bson.D{{Key: fields[betterauth.ModelVerification]["expiresAt"], Value: 1}},
 			Options: options.Index().SetExpireAfterSeconds(0).SetName("ttl_expires"),
-		})
-	}
-	if model := models[betterauth.ModelAccount]; model != "" &&
-		accountIssuerRequired && !issuerAccountIndexDeclared {
-		indexes[model] = append(indexes[model], mongo.IndexModel{
-			Keys: bson.D{
-				{Key: fields[betterauth.ModelAccount]["issuer"], Value: 1},
-				{Key: fields[betterauth.ModelAccount]["accountId"], Value: 1},
-			},
-			Options: options.Index().SetUnique(true).SetName("account_issuer_accountId_uidx"),
 		})
 	}
 	if model := models[betterauth.ModelOutboxEvent]; model != "" {

@@ -7,6 +7,7 @@ import {
   dynamicOriginsAuth,
   oneTimeTokenAuths,
   twoFactorAuths,
+  twoProvidersAuth,
   wildcardOriginsAuth,
 } from "./auth.ts";
 import { betterAuthVersion, referenceConfig } from "./config.ts";
@@ -150,6 +151,12 @@ const server = Bun.serve({
       url.pathname.startsWith(referenceConfig.basePath + "-origin-dynamic/")
     ) {
       return dynamicOriginsAuth.handler(request);
+    }
+    if (
+      url.pathname === referenceConfig.basePath + "-two-providers" ||
+      url.pathname.startsWith(referenceConfig.basePath + "-two-providers/")
+    ) {
+      return twoProvidersAuth.handler(request);
     }
     // Longest suffix first, so "-ott" does not capture "-ott-hashed".
     for (const suffix of Object.keys(oneTimeTokenAuths).sort(

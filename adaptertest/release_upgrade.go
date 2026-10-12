@@ -18,9 +18,6 @@ const ReleaseUpgradeBaseline = "ecf48ac"
 // compound indexes but otherwise has the current core fields.
 func LegacyCoreSchema() betterauth.Schema {
 	schema := betterauth.CoreSchema()
-	account := schema[betterauth.ModelAccount]
-	delete(account.Fields, "issuer")
-	schema[betterauth.ModelAccount] = account
 	for modelName, model := range schema {
 		model.Indexes = nil
 		for fieldName, field := range model.Fields {
@@ -30,6 +27,95 @@ func LegacyCoreSchema() betterauth.Schema {
 		schema[modelName] = model
 	}
 	return schema
+}
+
+// ReleaseV102CoreSchema returns the frozen core schema shipped in
+// better-auth-go v1.0.2. The account issuer column of unreleased main is
+// gone again, so the current core schema matches it: a v1.0.2 database needs
+// no migration.
+func ReleaseV102CoreSchema() betterauth.Schema {
+	return betterauth.Schema{
+		betterauth.ModelUser: {
+			Fields: map[string]betterauth.FieldSchema{
+				"id":            {Type: betterauth.FieldString, Required: true, Unique: true, Returned: true},
+				"email":         {Type: betterauth.FieldString, Required: true, Unique: true, Input: true, Returned: true},
+				"emailVerified": {Type: betterauth.FieldBoolean, Required: true, Returned: true},
+				"name":          {Type: betterauth.FieldString, Input: true, Returned: true},
+				"image":         {Type: betterauth.FieldString, Input: true, Returned: true},
+				"createdAt":     {Type: betterauth.FieldDate, Required: true, Returned: true},
+				"updatedAt":     {Type: betterauth.FieldDate, Required: true, Returned: true},
+				"disabledAt":    {Type: betterauth.FieldDate},
+			},
+		},
+		betterauth.ModelSession: {
+			Fields: map[string]betterauth.FieldSchema{
+				"id":              {Type: betterauth.FieldString, Required: true, Unique: true},
+				"userId":          {Type: betterauth.FieldString, Required: true, Index: true, References: betterauth.ModelUser},
+				"tokenHash":       {Type: betterauth.FieldString, Required: true, Unique: true},
+				"expiresAt":       {Type: betterauth.FieldDate, Required: true},
+				"createdAt":       {Type: betterauth.FieldDate, Required: true},
+				"updatedAt":       {Type: betterauth.FieldDate, Required: true},
+				"lastSeenAt":      {Type: betterauth.FieldDate, Required: true},
+				"revokedAt":       {Type: betterauth.FieldDate},
+				"impersonatedBy":  {Type: betterauth.FieldString},
+				"impersonationId": {Type: betterauth.FieldString},
+			},
+		},
+		betterauth.ModelAccount: {
+			Fields: map[string]betterauth.FieldSchema{
+				"id":                    {Type: betterauth.FieldString, Required: true, Unique: true},
+				"userId":                {Type: betterauth.FieldString, Required: true, Index: true, References: betterauth.ModelUser},
+				"providerId":            {Type: betterauth.FieldString, Required: true},
+				"accountId":             {Type: betterauth.FieldString, Required: true},
+				"password":              {Type: betterauth.FieldString},
+				"accessToken":           {Type: betterauth.FieldString},
+				"refreshToken":          {Type: betterauth.FieldString},
+				"idToken":               {Type: betterauth.FieldString},
+				"accessTokenExpiresAt":  {Type: betterauth.FieldDate},
+				"refreshTokenExpiresAt": {Type: betterauth.FieldDate},
+				"scope":                 {Type: betterauth.FieldString},
+				"createdAt":             {Type: betterauth.FieldDate, Required: true},
+				"updatedAt":             {Type: betterauth.FieldDate, Required: true},
+			},
+			Indexes: []betterauth.IndexSchema{{
+				Name: "uniq_provider_account", Fields: []string{"providerId", "accountId"}, Unique: true,
+			}},
+		},
+		betterauth.ModelVerification: {
+			Fields: map[string]betterauth.FieldSchema{
+				"id":         {Type: betterauth.FieldString, Required: true, Unique: true},
+				"identifier": {Type: betterauth.FieldString, Required: true},
+				"value":      {Type: betterauth.FieldString, Required: true, Unique: true},
+				"expiresAt":  {Type: betterauth.FieldDate, Required: true},
+				"createdAt":  {Type: betterauth.FieldDate, Required: true},
+				"metadata":   {Type: betterauth.FieldJSON},
+			},
+		},
+		betterauth.ModelAuditEvent: {
+			Fields: map[string]betterauth.FieldSchema{
+				"id":            {Type: betterauth.FieldString, Required: true, Unique: true},
+				"schemaVersion": {Type: betterauth.FieldNumber, Required: true},
+				"action":        {Type: betterauth.FieldString, Required: true},
+				"actorUserId":   {Type: betterauth.FieldString, Required: true},
+				"subjectUserId": {Type: betterauth.FieldString, Required: true},
+				"sessionId":     {Type: betterauth.FieldString},
+				"occurredAt":    {Type: betterauth.FieldDate, Required: true},
+				"request":       {Type: betterauth.FieldJSON},
+				"details":       {Type: betterauth.FieldJSON},
+			},
+		},
+		betterauth.ModelOutboxEvent: {
+			Fields: map[string]betterauth.FieldSchema{
+				"id":            {Type: betterauth.FieldString, Required: true, Unique: true},
+				"schemaVersion": {Type: betterauth.FieldNumber, Required: true},
+				"name":          {Type: betterauth.FieldString, Required: true},
+				"aggregateId":   {Type: betterauth.FieldString, Required: true},
+				"occurredAt":    {Type: betterauth.FieldDate, Required: true},
+				"payload":       {Type: betterauth.FieldJSON},
+				"publishedAt":   {Type: betterauth.FieldDate},
+			},
+		},
+	}
 }
 
 // SeedReleaseBaseline stores representative data in every core model using
@@ -120,7 +206,7 @@ func AssertReleaseUpgrade(t *testing.T, database betterauth.DatabaseAdapter) {
 	updated, err := database.Update(ctx, betterauth.UpdateQuery{
 		Model: betterauth.ModelAccount,
 		Where: []betterauth.Where{
-			betterauth.Eq("issuer", betterauth.CredentialAccountIssuer),
+			betterauth.Eq("providerId", "credential"),
 			betterauth.Eq("accountId", "upgrade-user"),
 		},
 		Update: betterauth.Record{

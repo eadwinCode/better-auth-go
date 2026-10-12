@@ -66,24 +66,21 @@ type EndpointValidator func(context.Context, *url.URL) error
 // self-hosted GitLab, Cognito, Microsoft tenants, Salesforce, and compatible
 // private OAuth deployments.
 type Options struct {
-	ClientID            string
-	ClientSecret        string
-	ClientKey           string
-	Issuer              string
-	BaseURL             string
-	Tenant              string
-	Scopes              []string
-	DisableDefaultScope bool
-	AuthorizationURL    string
-	TokenURL            string
-	UserInfoURL         string
-	JWKSURL             string
-	TokenAuth           TokenAuthMethod
-	ProfileMapper       ProfileMapper
-	AccountSubject      AccountSubject
-	// AccountIssuer overrides the synthetic local:oauth namespace for a
-	// custom non-OIDC provider. It must be a stable application-owned value.
-	AccountIssuer         string
+	ClientID              string
+	ClientSecret          string
+	ClientKey             string
+	Issuer                string
+	BaseURL               string
+	Tenant                string
+	Scopes                []string
+	DisableDefaultScope   bool
+	AuthorizationURL      string
+	TokenURL              string
+	UserInfoURL           string
+	JWKSURL               string
+	TokenAuth             TokenAuthMethod
+	ProfileMapper         ProfileMapper
+	AccountSubject        AccountSubject
 	AuthorizationParams   map[string]string
 	RefreshTokenParams    map[string]string
 	EndSessionURL         string
@@ -175,7 +172,6 @@ type Provider struct {
 	postLogoutRedirectURI string
 	mapper                ProfileMapper
 	accountSubject        AccountSubject
-	accountIssuer         string
 	httpClient            *http.Client
 	maxResponseBytes      int64
 	clock                 betterauth.Clock
@@ -311,13 +307,6 @@ func New(providerID string, options Options) (*Provider, error) {
 			return providerAccountSubject(definition.id, profile)
 		}
 	}
-	accountIssuer := strings.TrimSpace(options.AccountIssuer)
-	if accountIssuer == "" && !definition.oidc {
-		accountIssuer, err = betterauth.OAuthAccountIssuer(definition.id)
-		if err != nil {
-			return nil, err
-		}
-	}
 	var verifier *idTokenVerifier
 	if definition.oidc {
 		if definition.jwksURL == "" {
@@ -348,7 +337,7 @@ func New(providerID string, options Options) (*Provider, error) {
 		endSessionURL: options.EndSessionURL, disableProviderLogout: options.DisableProviderLogout,
 		postLogoutRedirectURI: options.PostLogoutRedirectURI,
 		mapper:                mapper, accountSubject: accountSubject,
-		accountIssuer: accountIssuer, httpClient: &clientCopy, maxResponseBytes: maxResponse,
+		httpClient: &clientCopy, maxResponseBytes: maxResponse,
 		clock: clock, disableImplicitSignUp: options.DisableImplicitSignUp,
 		disableSignUp: options.DisableSignUp,
 	}, nil
@@ -584,13 +573,12 @@ func (p *Provider) Exchange(
 			profile.ProviderAccountID = stringValue(verifiedClaims["sub"])
 		}
 	} else {
-		profile.Issuer = p.accountIssuer
 		profile.ProviderAccountID, err = p.accountSubject(profileData)
 		if err != nil {
 			return betterauth.OAuthResult{}, err
 		}
 	}
-	if strings.TrimSpace(profile.Issuer) == "" || strings.TrimSpace(profile.ProviderAccountID) == "" {
+	if strings.TrimSpace(profile.ProviderAccountID) == "" {
 		return betterauth.OAuthResult{}, errors.New("social: provider returned no stable account identity")
 	}
 	tokens := betterauth.ProviderTokens{

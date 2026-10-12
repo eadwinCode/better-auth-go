@@ -7,6 +7,7 @@ import {
   oneTimeToken,
   twoFactor,
 } from "better-auth/plugins";
+import type { GenericOAuthConfig } from "better-auth/plugins";
 import { referenceConfig } from "./config.ts";
 
 export type CapturedMail = {
@@ -33,6 +34,7 @@ const createAuth = (
   extra: {
     plugins?: BetterAuthPlugin[];
     sessionExpiresIn?: number;
+    oauthProviders?: GenericOAuthConfig[];
   } = {},
 ) =>
   betterAuth({
@@ -150,6 +152,7 @@ const createAuth = (
             };
           },
         },
+        ...(extra.oauthProviders ?? []),
       ],
     }),
     ...(extra.plugins ?? []),
@@ -223,3 +226,41 @@ export const twoFactorAuths: Record<string, ReturnType<typeof createAuth>> = {
     plugins: [twoFactor({ skipVerificationOnEnable: true })],
   }),
 };
+
+// Two generic OAuth providers that return the same subject for the same code.
+// Better Auth 1.7.3+ keys accounts by (providerId, accountId), so they make two
+// separate account rows.
+export const twoProvidersAuth = createAuth(
+  referenceConfig.basePath + "-two-providers",
+  false,
+  false,
+  referenceConfig.trustedOrigins,
+  {
+    oauthProviders: [
+      {
+        providerId: "test-alt",
+        clientId: "test-client",
+        clientSecret: "test-secret",
+        authorizationUrl:
+          referenceConfig.baseURL + "/__better_auth_test/oauth/authorize",
+        tokenUrl: referenceConfig.baseURL + "/__better_auth_test/oauth/token",
+        authentication: "post",
+        scopes: ["openid", "profile"],
+        async getUserInfo(tokens) {
+          const fixtureCode = tokens.accessToken?.startsWith(
+            "fixture-access-token:",
+          )
+            ? tokens.accessToken.slice("fixture-access-token:".length)
+            : "default";
+          const identity = fixtureCode.replace(/[^a-zA-Z0-9_-]/g, "-");
+          return {
+            id: "test-provider-user-" + identity,
+            email: "provider-" + identity.toLowerCase() + "@example.com",
+            emailVerified: true,
+            name: "Provider Fixture " + identity,
+          };
+        },
+      },
+    ],
+  },
+);

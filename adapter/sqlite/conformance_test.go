@@ -10,7 +10,6 @@ import (
 	"github.com/eadwinCode/better-auth-go/adapter/sqladapter"
 	sqliteadapter "github.com/eadwinCode/better-auth-go/adapter/sqlite"
 	"github.com/eadwinCode/better-auth-go/adaptertest"
-	v17 "github.com/eadwinCode/better-auth-go/migration/v17"
 	_ "modernc.org/sqlite"
 )
 
@@ -40,6 +39,39 @@ func TestConformance(t *testing.T) {
 		}
 		return configured
 	})
+}
+
+func schemaFactory(t *testing.T, schema betterauth.Schema) betterauth.DatabaseAdapter {
+	t.Helper()
+	dsn := "file:" + filepath.Join(t.TempDir(), "schema.db") +
+		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	database, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	adapter, err := sqliteadapter.New(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Migrate(t.Context(), schema); err != nil {
+		t.Fatal(err)
+	}
+	configured, err := adapter.WithSchema(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return configured
+}
+
+func TestAccountIdentity(t *testing.T) {
+	t.Parallel()
+	adaptertest.RunAccountIdentity(t, schemaFactory)
+}
+
+func TestMappedIdentity(t *testing.T) {
+	t.Parallel()
+	adaptertest.RunMappedIdentity(t, schemaFactory)
 }
 
 func TestMappedSchemaMigration(t *testing.T) {
@@ -127,35 +159,15 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 	}
 	adaptertest.SeedReleaseBaseline(t, configured)
 
-	staging := v17.StagingSchema()
-	if err := adapter.Migrate(t.Context(), staging); err != nil {
-		t.Fatalf("add nullable issuer: %v", err)
-	}
-	configured, err = adapter.WithSchema(staging)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = v17.Backfill(t.Context(), configured, v17.Options{}); err != nil {
-		t.Fatalf("backfill account issuer: %v", err)
-	}
 	current := betterauth.CoreSchema()
 	if err := adapter.Migrate(t.Context(), current); err != nil {
 		t.Fatalf("upgrade current schema: %v", err)
 	}
-	if err := v17.FinalizeSQL(t.Context(), database, v17.SQLite, current); err != nil {
-		t.Fatalf("finalize account issuer: %v", err)
-	}
-	if _, err := database.ExecContext(
-		t.Context(), `UPDATE "account" SET "issuer" = NULL WHERE "id" = 'upgrade-account'`,
-	); err == nil {
-		t.Fatal("finalized SQLite account issuer remained nullable")
-	}
-	var legacyIndexes int
+	var issuerColumns int
 	if err := database.QueryRowContext(t.Context(),
-		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN (`+
-			`'uniq_provider_account', 'account_provider_account_unique')`,
-	).Scan(&legacyIndexes); err != nil || legacyIndexes != 0 {
-		t.Fatalf("legacy SQLite account indexes remain: %d %v", legacyIndexes, err)
+		`SELECT COUNT(*) FROM pragma_table_info('account') WHERE name = 'issuer'`,
+	).Scan(&issuerColumns); err != nil || issuerColumns != 0 {
+		t.Fatalf("upgrade added an issuer column: %d %v", issuerColumns, err)
 	}
 	if err := adapter.Migrate(t.Context(), current); err != nil {
 		t.Fatalf("idempotent current migration: %v", err)
@@ -169,7 +181,9 @@ func TestReleaseUpgradeFromEcf48ac(t *testing.T) {
 		t.Fatal(err)
 	}
 	adaptertest.AssertReleaseUpgrade(t, configured)
-	for _, expected := range []string{"session_userId_index", "account_userId_index"} {
+	for _, expected := range []string{
+		"session_userId_index", "account_userId_index", "uniq_provider_account",
+	} {
 		var found int
 		if err := database.QueryRowContext(
 			t.Context(),
