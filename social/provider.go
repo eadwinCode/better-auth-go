@@ -4,10 +4,12 @@ package social
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,7 +26,29 @@ const (
 	TokenAuthBody  TokenAuthMethod = "client_secret_post"
 	TokenAuthBasic TokenAuthMethod = "client_secret_basic"
 	TokenAuthNone  TokenAuthMethod = "none"
+	// TokenAuthCustom lets Options.CustomizeTokenRequest add the client
+	// authentication a provider needs. Nothing else is added for it.
+	TokenAuthCustom TokenAuthMethod = "custom"
 )
+
+// TokenRequest is a token endpoint request that a custom authentication hook
+// may change. The standard grant parameters are already set in Body.
+type TokenRequest struct {
+	// Body holds the form parameters sent to the token endpoint.
+	Body url.Values
+	// Header holds the request headers.
+	Header        http.Header
+	ClientID      string
+	ClientSecret  string
+	TokenEndpoint string
+	// GrantType is "authorization_code" or "refresh_token".
+	GrantType string
+}
+
+// TokenRequestHook adds provider-specific client authentication to a token
+// request. It is the Go form of Better Auth's `custom` token endpoint
+// authentication and is used only when TokenAuth is TokenAuthCustom.
+type TokenRequestHook func(context.Context, *TokenRequest) error
 
 type ProfileMapper func(map[string]any) (betterauth.OAuthProfile, error)
 
@@ -81,6 +105,10 @@ type Options struct {
 	DisableImplicitSignUp bool
 	// DisableSignUp permanently prevents this provider from creating users.
 	DisableSignUp bool
+	// CustomizeTokenRequest adds provider-specific client authentication to
+	// token requests. It is required when TokenAuth is TokenAuthCustom and is
+	// rejected otherwise.
+	CustomizeTokenRequest TokenRequestHook
 
 	oidcDiscovery bool
 }
@@ -94,6 +122,9 @@ type preset struct {
 	issuers               []string
 	defaultScopes         []string
 	tokenAuth             TokenAuthMethod
+	refreshTokenAuth      TokenAuthMethod
+	tokenHeaders          map[string]string
+	tokenCodeVerifier     bool
 	pkce                  bool
 	oidc                  bool
 	clientIDParam         string
@@ -121,6 +152,10 @@ type Provider struct {
 	userInfoURL           string
 	scopes                []string
 	tokenAuth             TokenAuthMethod
+	refreshTokenAuth      TokenAuthMethod
+	tokenHeaders          map[string]string
+	tokenCodeVerifier     bool
+	customizeTokenRequest TokenRequestHook
 	pkce                  bool
 	oidcVerifier          *idTokenVerifier
 	clientIDParam         string
@@ -164,7 +199,23 @@ func New(providerID string, options Options) (*Provider, error) {
 	if clientID == "" {
 		return nil, fmt.Errorf("social: %s client ID is required", definition.id)
 	}
-	if options.ClientSecret == "" && (definition.tokenAuth != TokenAuthNone || definition.tokenSecretParam != "") {
+	for _, method := range []TokenAuthMethod{definition.tokenAuth, definition.refreshTokenAuth} {
+		switch method {
+		case TokenAuthBody, TokenAuthBasic, TokenAuthNone, TokenAuthCustom:
+		default:
+			return nil, fmt.Errorf("social: %s token auth method %q is not supported", definition.id, method)
+		}
+	}
+	customAuth := definition.tokenAuth == TokenAuthCustom
+	if customAuth != (options.CustomizeTokenRequest != nil) {
+		return nil, fmt.Errorf(
+			"social: %s CustomizeTokenRequest must be set exactly when TokenAuth is %q",
+			definition.id, TokenAuthCustom,
+		)
+	}
+	if options.ClientSecret == "" && !customAuth &&
+		(definition.tokenAuth != TokenAuthNone || definition.refreshTokenAuth != TokenAuthNone ||
+			definition.tokenSecretParam != "") {
 		return nil, fmt.Errorf("social: %s client secret is required", definition.id)
 	}
 	if options.AuthorizationURL != "" {
@@ -285,6 +336,8 @@ func New(providerID string, options Options) (*Provider, error) {
 		id: definition.id, clientID: clientID, clientSecret: options.ClientSecret,
 		authorizationURL: definition.authorizationURL, tokenURL: definition.tokenURL,
 		userInfoURL: definition.userInfoURL, scopes: dedupe(scopes), tokenAuth: definition.tokenAuth,
+		refreshTokenAuth: definition.refreshTokenAuth, tokenHeaders: cloneMap(definition.tokenHeaders),
+		tokenCodeVerifier: definition.tokenCodeVerifier, customizeTokenRequest: options.CustomizeTokenRequest,
 		pkce: definition.pkce, oidcVerifier: verifier, clientIDParam: definition.clientIDParam,
 		userInfoMethod: definition.userInfoMethod, userInfoAuthQuery: definition.userInfoAuthQuery,
 		userInfoNeedsOpenID: definition.userInfoNeedsOpenID, userInfoBody: definition.userInfoBody,
@@ -566,18 +619,10 @@ func (p *Provider) exchangeToken(ctx context.Context, code, verifier, redirectUR
 		"code":         {code},
 		"redirect_uri": {redirectURI},
 	}
-	form.Set(p.clientIDParameter(), p.clientID)
-	if p.pkce {
+	if (p.pkce || p.tokenCodeVerifier) && verifier != "" {
 		form.Set("code_verifier", verifier)
 	}
-	if p.tokenAuth == TokenAuthBody || p.tokenSecretParam != "" {
-		secretParam := p.tokenSecretParam
-		if secretParam == "" {
-			secretParam = "client_secret"
-		}
-		form.Set(secretParam, p.clientSecret)
-	}
-	return p.requestToken(ctx, form)
+	return p.requestToken(ctx, "authorization_code", p.tokenAuth, form, p.tokenHeaders)
 }
 
 // Refresh exchanges a refresh token using the provider's configured token
@@ -592,15 +637,7 @@ func (p *Provider) Refresh(ctx context.Context, refreshToken string) (betterauth
 	}
 	form.Set("grant_type", "refresh_token")
 	form.Set("refresh_token", refreshToken)
-	form.Set(p.clientIDParameter(), p.clientID)
-	if p.tokenAuth == TokenAuthBody || p.tokenSecretParam != "" {
-		secretParam := p.tokenSecretParam
-		if secretParam == "" {
-			secretParam = "client_secret"
-		}
-		form.Set(secretParam, p.clientSecret)
-	}
-	token, err := p.requestToken(ctx, form)
+	token, err := p.requestToken(ctx, "refresh_token", p.refreshTokenAuth, form, nil)
 	if err != nil {
 		return betterauth.ProviderTokens{}, err
 	}
@@ -643,7 +680,22 @@ func (p *Provider) EndSessionURL(request betterauth.OAuthEndSessionRequest) (str
 	return destination.String(), nil
 }
 
-func (p *Provider) requestToken(ctx context.Context, form url.Values) (tokenResponse, error) {
+func (p *Provider) requestToken(
+	ctx context.Context,
+	grantType string,
+	auth TokenAuthMethod,
+	form url.Values,
+	extraHeaders map[string]string,
+) (tokenResponse, error) {
+	header := http.Header{}
+	header.Set("Content-Type", "application/x-www-form-urlencoded")
+	header.Set("Accept", "application/json")
+	for key, value := range extraHeaders {
+		header.Set(key, value)
+	}
+	if err := p.applyTokenAuth(ctx, grantType, auth, form, header); err != nil {
+		return tokenResponse{}, fmt.Errorf("social: token exchange: %w", err)
+	}
 	method := p.tokenMethod
 	if method == "" {
 		method = http.MethodPost
@@ -663,11 +715,7 @@ func (p *Provider) requestToken(ctx context.Context, form url.Values) (tokenResp
 	if err != nil {
 		return tokenResponse{}, err
 	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Accept", "application/json")
-	if p.tokenAuth == TokenAuthBasic {
-		request.SetBasicAuth(p.clientID, p.clientSecret)
-	}
+	request.Header = header
 	var token tokenResponse
 	if err := p.doJSON(request, &token); err != nil {
 		return tokenResponse{}, fmt.Errorf("social: token exchange: %w", err)
@@ -676,6 +724,93 @@ func (p *Provider) requestToken(ctx context.Context, form url.Values) (tokenResp
 		return tokenResponse{}, errors.New("social: token response contained no token")
 	}
 	return token, nil
+}
+
+// applyTokenAuth adds client authentication to a token request the same way
+// Better Auth's shared token flow does.
+func (p *Provider) applyTokenAuth(
+	ctx context.Context,
+	grantType string,
+	auth TokenAuthMethod,
+	form url.Values,
+	header http.Header,
+) error {
+	switch auth {
+	case TokenAuthBasic:
+		// The client ID goes only in the Basic header, not in the body.
+		header.Set("Authorization", encodeBasicCredentials(p.clientID, p.clientSecret))
+	case TokenAuthCustom:
+		request := &TokenRequest{
+			Body: form, Header: header, ClientID: p.clientID, ClientSecret: p.clientSecret,
+			TokenEndpoint: p.tokenURL, GrantType: grantType,
+		}
+		if err := p.customizeTokenRequest(ctx, request); err != nil {
+			return err
+		}
+		// The hook may swap Body or Header for new maps, so copy them back.
+		if request.Body == nil || request.Header == nil {
+			return errors.New("custom token request removed its body or header")
+		}
+		if request.Body.Has("client_assertion") != request.Body.Has("client_assertion_type") {
+			return errors.New("client_assertion and client_assertion_type must both be provided")
+		}
+		replaceValues(form, request.Body)
+		replaceValues(url.Values(header), url.Values(request.Header))
+	case TokenAuthNone:
+		form.Set(p.clientIDParameter(), p.clientID)
+		if p.tokenSecretParam != "" {
+			// WeChat sends its secret as a named query parameter.
+			form.Set(p.tokenSecretParam, p.clientSecret)
+		}
+	default:
+		form.Set(p.clientIDParameter(), p.clientID)
+		secretParam := p.tokenSecretParam
+		if secretParam == "" {
+			secretParam = "client_secret"
+		}
+		form.Set(secretParam, p.clientSecret)
+	}
+	return nil
+}
+
+// replaceValues makes target hold exactly the entries of source.
+// It copies source first, so it also works when both are the same map.
+func replaceValues(target, source url.Values) {
+	snapshot := maps.Clone(source)
+	clear(target)
+	maps.Copy(target, snapshot)
+}
+
+// encodeBasicCredentials builds an HTTP Basic header value for an OAuth
+// client. RFC 6749 section 2.3.1 says both values are form-URL-encoded before
+// base64, as upstream basic-credentials.ts does.
+func encodeBasicCredentials(clientID, clientSecret string) string {
+	payload := formURLEncode(clientID) + ":" + formURLEncode(clientSecret)
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(payload))
+}
+
+// formURLEncode encodes a value as application/x-www-form-urlencoded per the
+// URL Living Standard: letters, digits and `*-._` stay as they are, space
+// becomes `+`, and every other byte is percent-encoded. This differs from
+// url.QueryEscape, which keeps `~` and escapes `*`.
+func formURLEncode(value string) string {
+	const hexadecimal = "0123456789ABCDEF"
+	var encoded strings.Builder
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		switch {
+		case character >= 'a' && character <= 'z', character >= 'A' && character <= 'Z',
+			character >= '0' && character <= '9', strings.IndexByte("*-._", character) >= 0:
+			encoded.WriteByte(character)
+		case character == ' ':
+			encoded.WriteByte('+')
+		default:
+			encoded.WriteByte('%')
+			encoded.WriteByte(hexadecimal[character>>4])
+			encoded.WriteByte(hexadecimal[character&0x0F])
+		}
+	}
+	return encoded.String()
 }
 
 func (p *Provider) userInfo(ctx context.Context, token tokenResponse) (map[string]any, error) {
@@ -717,6 +852,14 @@ func (p *Provider) userInfo(ctx context.Context, token tokenResponse) (map[strin
 	var profile map[string]any
 	if err := p.doJSON(request, &profile); err != nil {
 		return nil, fmt.Errorf("social: user info: %w", err)
+	}
+	if p.id == "cloudflare" {
+		// The Cloudflare API wraps the user in {success, errors, result}.
+		result, ok := profile["result"].(map[string]any)
+		if success, _ := profile["success"].(bool); !success || !ok {
+			return nil, errors.New("social: Cloudflare user info request was not successful")
+		}
+		return result, nil
 	}
 	if p.id == "github" && stringValue(profile["email"]) == "" {
 		email, verified, emailErr := p.githubEmail(ctx, token.AccessToken)
@@ -804,8 +947,27 @@ func providerMapper(providerID string) ProfileMapper {
 		if err != nil {
 			profile = betterauth.OAuthProfile{}
 		}
+		// placeholderErr is set when a provider gives no email and a valid
+		// placeholder address cannot be built from its stable ID.
+		var placeholderErr error
 		switch providerID {
 		case "atlassian":
+			profile.EmailVerified = false
+		case "cloudflare":
+			var parts []string
+			for _, part := range []string{
+				firstString(profileData, "first_name"), firstString(profileData, "last_name"),
+			} {
+				if part != "" {
+					parts = append(parts, part)
+				}
+			}
+			profile.Name = strings.Join(parts, " ")
+			if profile.Name == "" {
+				profile.Name = profile.Email
+			}
+			profile.ImageURL = ""
+			// Cloudflare does not say whether the email is verified.
 			profile.EmailVerified = false
 		case "discord":
 			profile.Name = firstString(profileData, "global_name", "username")
@@ -851,12 +1013,15 @@ func providerMapper(providerID string) ProfileMapper {
 			profile.EmailVerified = false
 		case "reddit":
 			profile.Name = firstString(profileData, "name")
-			profile.Email = profile.ProviderAccountID + "@reddit.invalid"
+			// The identity scope returns no email, so Reddit always gets an
+			// unverified placeholder keyed to its user ID.
+			profile.Email, placeholderErr = placeholderEmail(firstString(profileData, "id"), "reddit")
 			profile.EmailVerified = false
 			profile.ImageURL = strings.Split(firstString(profileData, "icon_img"), "?")[0]
 		case "roblox":
 			profile.Name = firstString(profileData, "nickname", "preferred_username")
-			profile.Email = firstString(profileData, "preferred_username")
+			// Roblox never returns an email.
+			profile.Email, placeholderErr = placeholderEmail(firstString(profileData, "sub"), "roblox")
 			profile.EmailVerified = false
 		case "salesforce":
 			if photos := nestedMap(profileData, "photos"); photos != nil {
@@ -876,18 +1041,18 @@ func providerMapper(providerID string) ProfileMapper {
 			profile.ProviderAccountID = firstString(profileData, "open_id", "id")
 			profile.Name = firstString(profileData, "display_name", "username")
 			if profile.Email == "" {
-				profile.Email = firstString(profileData, "username")
+				profile.Email, placeholderErr = placeholderEmail(firstString(profileData, "open_id"), "tiktok")
 			}
 			profile.ImageURL = firstString(profileData, "avatar_large_url", "avatar_url")
 			profile.EmailVerified = false
 		case "twitter":
 			profile.Name = firstString(profileData, "name")
+			profile.EmailVerified = false
 			if confirmedEmail := firstString(profileData, "confirmed_email"); confirmedEmail != "" {
 				profile.Email = confirmedEmail
 				profile.EmailVerified = true
-			} else {
-				profile.Email = firstString(profileData, "username")
-				profile.EmailVerified = false
+			} else if profile.Email == "" {
+				profile.Email, placeholderErr = placeholderEmail(firstString(profileData, "id"), "twitter")
 			}
 			profile.ImageURL = firstString(profileData, "profile_image_url")
 		case "vk":
@@ -899,7 +1064,7 @@ func providerMapper(providerID string) ProfileMapper {
 			profile.ProviderAccountID = firstString(profileData, "unionid", "openid")
 			profile.Name = firstString(profileData, "nickname")
 			if profile.Email == "" {
-				profile.Email = profile.ProviderAccountID + "@wechat.invalid"
+				profile.Email, placeholderErr = placeholderEmail(profile.ProviderAccountID, "wechat")
 			}
 			profile.ImageURL = firstString(profileData, "headimgurl")
 			profile.EmailVerified = false
@@ -910,8 +1075,23 @@ func providerMapper(providerID string) ProfileMapper {
 		if profile.ProviderAccountID == "" {
 			return betterauth.OAuthProfile{}, errors.New("social: profile has no stable account ID")
 		}
+		if placeholderErr != nil {
+			return betterauth.OAuthProfile{}, placeholderErr
+		}
 		return profile, nil
 	}
+}
+
+// placeholderEmail builds Better Auth's `{id}@{provider}.placeholder.invalid`
+// address for a provider that returns no email.
+func placeholderEmail(identifier, namespace string) (string, error) {
+	email, err := betterauth.CreatePlaceholderEmail(betterauth.PlaceholderEmailOptions{
+		Identifier: identifier, Namespace: namespace,
+	})
+	if err != nil {
+		return "", fmt.Errorf("social: %s placeholder email: %w", namespace, err)
+	}
+	return email, nil
 }
 
 func nestedMap(data map[string]any, keys ...string) map[string]any {
