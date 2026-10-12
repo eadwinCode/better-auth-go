@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { betterAuth } from "better-auth";
-import { admin, genericOAuth } from "better-auth/plugins";
+import type { BetterAuthPlugin } from "better-auth";
+import { admin, genericOAuth, oneTimeToken } from "better-auth/plugins";
 import { referenceConfig } from "./config.ts";
 
 export type CapturedMail = {
@@ -24,6 +25,10 @@ const createAuth = (
     | string[]
     | ((request?: Request) => (string | undefined | null)[]) =
     referenceConfig.trustedOrigins,
+  extra: {
+    plugins?: BetterAuthPlugin[];
+    sessionExpiresIn?: number;
+  } = {},
 ) =>
   betterAuth({
   appName: "better-auth-go compatibility oracle",
@@ -95,6 +100,9 @@ const createAuth = (
     },
   },
   session: {
+    ...(extra.sessionExpiresIn
+      ? { expiresIn: extra.sessionExpiresIn, updateAge: 0 }
+      : {}),
     additionalFields: {
       label: {
         type: "string",
@@ -139,6 +147,7 @@ const createAuth = (
         },
       ],
     }),
+    ...(extra.plugins ?? []),
   ],
   });
 
@@ -164,3 +173,39 @@ export const dynamicOriginsAuth = createAuth(
   false,
   (request) => [request?.headers.get("x-tenant-origin")],
 );
+
+const ottAuth = (suffix: string, extra: Parameters<typeof createAuth>[4]) =>
+  createAuth(
+    referenceConfig.basePath + suffix,
+    false,
+    false,
+    referenceConfig.trustedOrigins,
+    extra,
+  );
+
+// One-time-token instances. Each one isolates a single plugin option so the
+// Go differential suite can compare the option's HTTP effect on its own.
+export const oneTimeTokenAuths: Record<string, ReturnType<typeof createAuth>> =
+  {
+    "-ott": ottAuth("-ott", { plugins: [oneTimeToken()] }),
+    "-ott-hashed": ottAuth("-ott-hashed", {
+      plugins: [oneTimeToken({ storeToken: "hashed" })],
+    }),
+    "-ott-no-cookie": ottAuth("-ott-no-cookie", {
+      plugins: [oneTimeToken({ disableSetSessionCookie: true })],
+    }),
+    "-ott-server-only": ottAuth("-ott-server-only", {
+      plugins: [oneTimeToken({ disableClientRequest: true })],
+    }),
+    "-ott-header": ottAuth("-ott-header", {
+      plugins: [oneTimeToken({ setOttHeaderOnNewSession: true })],
+    }),
+    // One second, so the suite can wait for real expiry.
+    "-ott-short-token": ottAuth("-ott-short-token", {
+      plugins: [oneTimeToken({ expiresIn: 1 / 60 })],
+    }),
+    "-ott-short-session": ottAuth("-ott-short-session", {
+      plugins: [oneTimeToken()],
+      sessionExpiresIn: 2,
+    }),
+  };

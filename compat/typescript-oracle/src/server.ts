@@ -5,6 +5,7 @@ import {
   database,
   deletionVerificationAuth,
   dynamicOriginsAuth,
+  oneTimeTokenAuths,
   wildcardOriginsAuth,
 } from "./auth.ts";
 import { betterAuthVersion, referenceConfig } from "./config.ts";
@@ -148,6 +149,15 @@ const server = Bun.serve({
       url.pathname.startsWith(referenceConfig.basePath + "-origin-dynamic/")
     ) {
       return dynamicOriginsAuth.handler(request);
+    }
+    // Longest suffix first, so "-ott" does not capture "-ott-hashed".
+    for (const suffix of Object.keys(oneTimeTokenAuths).sort(
+      (a, b) => b.length - a.length,
+    )) {
+      const prefix = referenceConfig.basePath + suffix;
+      if (url.pathname === prefix || url.pathname.startsWith(prefix + "/")) {
+        return oneTimeTokenAuths[suffix]!.handler(request);
+      }
     }
     return auth.handler(request);
   },

@@ -2,6 +2,7 @@ package betterauth
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,6 +12,11 @@ import (
 // It covers missing or invalid cookies, absent users or sessions, expired or
 // revoked sessions, and disabled users.
 var ErrNoSession = errors.New("betterauth: no session")
+
+// ErrSessionExpired means a session exists but has passed its expiry time.
+// HookContext.ResumeSession returns it so plugins can tell an expired session
+// apart from a missing one. errors.Is(ErrSessionExpired, ErrNoSession) is true.
+var ErrSessionExpired = fmt.Errorf("%w: session expired", ErrNoSession)
 
 type ErrorCode string
 

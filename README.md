@@ -333,6 +333,39 @@ first-factor session is revoked before a 2FA redirect is returned. See the
 [2FA guide](./docs/two-factor.md) and
 [ADR 0005](./docs/adr/0005-two-factor-authentication.md).
 
+## One-time tokens
+
+`plugin/onetimetoken` ports Better Auth's `one-time-token` plugin. A signed-in
+user gets a short-lived token that can be traded once for their session. Use
+it to sign a user in to an app on another subdomain, which never sees the
+`__Host-` session cookie:
+
+```go
+import "github.com/eadwinCode/better-auth-go/plugin/onetimetoken"
+
+ott, err := onetimetoken.New(onetimetoken.Config{
+	StoreToken:              onetimetoken.TokenStorageHashed,
+	DisableSetSessionCookie: true,
+})
+if err != nil {
+	return err
+}
+config.Plugins = append(config.Plugins, ott)
+```
+
+1. On `example.com`, the signed-in page calls
+   `GET /api/auth/one-time-token/generate` and gets `{"token":"..."}`.
+2. It redirects to `https://domains.example.com/auth/callback?token=...`.
+3. The domains app's server calls
+   `POST https://example.com/api/auth/one-time-token/verify` with
+   `{"token":"..."}` and gets `{"session":{...},"user":{...}}`. A request
+   without cookies needs no `Origin` header.
+
+Tokens last 3 minutes and work once. Bind the redirect to the browser that
+started it with a `state` value, or an attacker can sign a victim in to the
+attacker's account. See the [one-time-token guide](./docs/one-time-token.md)
+and [ADR 0021](./docs/adr/0021-one-time-token.md).
+
 ## Server plugins and hooks
 
 `Config.Plugins` provides the Better Auth-style server extension lifecycle:
@@ -519,10 +552,13 @@ runbook is in [Production operations](./docs/production-operations.md).
 - [Enterprise SSO integration status](./docs/sso.md)
 - [SCIM provisioning decision record](./docs/adr/0008-scim-provisioning.md)
 - [SCIM integration status](./docs/scim.md)
+- [One-time-token decision record](./docs/adr/0021-one-time-token.md)
+- [One-time-token guide](./docs/one-time-token.md)
 - [Changelog](./CHANGELOG.md)
 
 The stable server plugin kernel and experimental passkey, two-factor,
-organization, enterprise SSO, and SCIM feature packages are implemented.
+organization, enterprise SSO, SCIM, and one-time-token feature packages are
+implemented.
 Username, magic links, API keys, and other feature plugins remain separate
 compatibility milestones with their own threat models.
 

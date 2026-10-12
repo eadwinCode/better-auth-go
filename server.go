@@ -268,25 +268,62 @@ func (s *Server) issuePluginSessionUsing(
 			CodeUnauthorized, "Authentication required.", http.StatusUnauthorized, err,
 		)
 	}
-	now := s.cfg.Clock.Now().UTC()
 	return &IssuedSession{
 		Session: replacement,
 		User:    user,
 		csrf:    csrf,
-		cookies: []*http.Cookie{
-			{
-				Name: s.cfg.Cookie.Name, Value: raw, Path: "/",
-				Expires: replacement.ExpiresAt,
-				MaxAge:  int(replacement.ExpiresAt.Sub(now).Seconds()),
-				Secure:  true, HttpOnly: true, SameSite: s.cfg.Cookie.SameSite,
-			},
-			{
-				Name: s.cfg.Cookie.CSRFName, Value: csrf, Path: "/",
-				Expires: replacement.ExpiresAt,
-				MaxAge:  int(replacement.ExpiresAt.Sub(now).Seconds()),
-				Secure:  true, HttpOnly: false, SameSite: s.cfg.Cookie.SameSite,
-			},
+		cookies: s.sessionTransitionCookies(raw, csrf, replacement.ExpiresAt),
+	}, nil
+}
+
+// sessionTransitionCookies builds the session and double-submit CSRF cookies
+// that attach a session to a response.
+func (s *Server) sessionTransitionCookies(raw, csrf string, expires time.Time) []*http.Cookie {
+	maxAge := int(expires.Sub(s.cfg.Clock.Now().UTC()).Seconds())
+	return []*http.Cookie{
+		{
+			Name: s.cfg.Cookie.Name, Value: raw, Path: "/",
+			Expires: expires, MaxAge: maxAge,
+			Secure: true, HttpOnly: true, SameSite: s.cfg.Cookie.SameSite,
 		},
+		{
+			Name: s.cfg.Cookie.CSRFName, Value: csrf, Path: "/",
+			Expires: expires, MaxAge: maxAge,
+			Secure: true, HttpOnly: false, SameSite: s.cfg.Cookie.SameSite,
+		},
+	}
+}
+
+// resumePluginSession prepares an existing session, named by its raw token,
+// for a plugin response. It applies the same checks as request session
+// resolution, so a missing, revoked or expired session, or a disabled user,
+// is never attached.
+func (s *Server) resumePluginSession(r *http.Request, raw string) (*IssuedSession, error) {
+	if raw == "" || len(raw) > 2048 {
+		return nil, ErrNoSession
+	}
+	session, user, err := s.store.SessionByTokenHash(r.Context(), HashToken(raw))
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, ErrNoSession
+		}
+		return nil, fmt.Errorf("betterauth: resume session: %w", err)
+	}
+	if session.RevokedAt != nil || user.DisabledAt != nil {
+		return nil, ErrNoSession
+	}
+	if !session.ExpiresAt.After(s.cfg.Clock.Now().UTC()) {
+		return nil, ErrSessionExpired
+	}
+	csrf, err := s.cfg.Tokens.Token(32)
+	if err != nil {
+		return nil, err
+	}
+	return &IssuedSession{
+		Session: session,
+		User:    user,
+		csrf:    csrf,
+		cookies: s.sessionTransitionCookies(raw, csrf, session.ExpiresAt),
 	}, nil
 }
 
@@ -362,25 +399,11 @@ func (s *Server) authenticatePluginOAuth(
 		return nil, false, err
 	}
 	s.revokePreviousBrowserSession(r.Context(), r, raw)
-	now := s.cfg.Clock.Now().UTC()
 	return &IssuedSession{
 		Session: created,
 		User:    user,
 		csrf:    csrf,
-		cookies: []*http.Cookie{
-			{
-				Name: s.cfg.Cookie.Name, Value: raw, Path: "/",
-				Expires: created.ExpiresAt,
-				MaxAge:  int(created.ExpiresAt.Sub(now).Seconds()),
-				Secure:  true, HttpOnly: true, SameSite: s.cfg.Cookie.SameSite,
-			},
-			{
-				Name: s.cfg.Cookie.CSRFName, Value: csrf, Path: "/",
-				Expires: created.ExpiresAt,
-				MaxAge:  int(created.ExpiresAt.Sub(now).Seconds()),
-				Secure:  true, HttpOnly: false, SameSite: s.cfg.Cookie.SameSite,
-			},
-		},
+		cookies: s.sessionTransitionCookies(raw, csrf, created.ExpiresAt),
 	}, isNew, nil
 }
 
